@@ -1302,7 +1302,7 @@ checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "sokf"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-harness-adapter-core",
  "assert_cmd",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "sokf-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-harness-adapter-core",
  "dunce",

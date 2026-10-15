@@ -12,7 +12,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 authors = ["six5536 <10079653+six5536@users.noreply.github.com>"]
 edition = "2024"
 rust-version = "1.96.0"
@@ -49,7 +49,7 @@ boon = "0.6"
 proptest = "1.11"
 
 # Internal crates
-sokf-core = { path = "crates/lib/sokf-core", version = "0.1.0" }
+sokf-core = { path = "crates/lib/sokf-core", version = "0.1.1" }
 
 # The harness plumbing (the harnesses, install and status, hooks, loop guard,
 # CLI conventions, atomic writes)

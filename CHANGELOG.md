@@ -2,6 +2,10 @@
 
 This file records the notable changes of each release of sokf. git-cliff writes the notes of each release from the commits of the release, and the notes of 0.1.0, the first public release, describe all that sokf does. While sokf is pre-1.0, a minor version might contain breaking changes.
 
+## [0.1.1] - 2026-10-15
+
+This release changes nothing in sokf. Its crates and packages are the first that the public repository publishes to crates.io and npm through trusted publishing, with no stored token.
+
 ## [0.1.0] - 2026-10-15
 
 This release is the first public release of sokf. It publishes the crates `sokf-core` and `sokf` to crates.io, and the npm packages `@six5536/sokf` and `@six5536/sokf-<os>-<cpu>` to npm.
