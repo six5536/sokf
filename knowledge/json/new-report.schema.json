@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf new report",
+  "description": "`NewResult` is the report of `sokf new --json`: it holds the document that the command builds. The command prints the document but does not write it (CLI-6_AC-12).",
+  "type": "object",
+  "properties": {
+    "id": {
+      "description": "`id` is the `id` of the document.",
+      "type": "string"
+    },
+    "path": {
+      "description": "`path` is the path at which `--write` writes the document. An asset is a file of the knowledge that is not Markdown, such as an image, and a sidecar is the document that describes an asset. `--write` writes a sidecar beside its asset. It writes any other document as `<id>.md`, either in the directory that the schema gives the document's lifecycle states or in the directory set by `--dir`.",
+      "$ref": "#/$defs/RepoPath"
+    },
+    "document": {
+      "description": "`document` is the whole text of the document.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "path",
+    "document"
+  ],
+  "$defs": {
+    "RepoPath": {
+      "description": "A path relative to the repository root, which starts with `/` and uses forward slashes. The path `/` is the root itself.",
+      "type": "string",
+      "pattern": "^/"
+    }
+  }
+}

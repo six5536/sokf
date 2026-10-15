@@ -1,0 +1,16 @@
+[tools]
+node = "24"
+
+python = '3.14'
+# The project builds with Rust 1.96. Only the coverage command,
+# `cargo +nightly llvm-cov`, uses nightly, because only nightly honours the
+# `coverage(off)` markers.
+rust = ['1.96', 'nightly']
+zig = "0.16.0"
+cargo-binstall = "1.23.0"
+
+"npm:@anthropic-ai/claude-code" = { version = "latest", npm_args = "--ignore-scripts=false" }
+
+"cargo:cargo-zigbuild" = "0.23.4"
+"cargo:cargo-nextest" = "0.9.146"
+"cargo:cargo-llvm-cov" = "0.9.1"

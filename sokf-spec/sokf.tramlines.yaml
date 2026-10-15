@@ -1,0 +1,291 @@
+extension: sokf
+extends: tramlines-md
+version: "0.6"
+doc: >
+  This file holds what SOKF adds to the tramlines-md grammar, which lays the Markdown
+  format on the tramlines core grammar (tramlines specifications). Together they are
+  the language in which SOKF schemas are written (schema specification §9). A validator applies the structural checks of the grammar and of this file
+  together. This file adds only two things. The first is `schema-document`, the schema
+  that governs Schema documents. Schema documents are the `.md` files in `schemas/` at
+  the knowledge root other than `index.md` (format specification §2). The second is the
+  set of keys, rule maps, and values under `schema` that SOKF adds to a schema's
+  vocabulary. The fenced block of a Schema document is a schema, and the validator
+  checks it against the merged vocabulary.
+
+  This file and every schema are written in the YAML 1.2 core schema, which has no
+  anchors, aliases, or tags. A validator reports an anchor, an alias, or a tag on the
+  Schema document (schema specification §2).
+
+# sokf:begin schema-document
+schema-document:
+  line-limit: 0
+  frontmatter:
+    type:
+      const: Schema
+    description:
+      example: A one-section note.
+  preamble:
+    guidance: The document holds only the schema, in one fence of four backticks, and has no heading.
+    blocks:
+      - kind: code
+        lang: yaml
+        fence: 4
+        example: |
+          line-limit: 40
+          frontmatter:
+            type:
+              const: Note
+          sections:
+            - heading: { from: title }
+              level: 1
+              blocks:
+                - kind: prose
+                  max: 3
+                  example: Milk, bread, and the good coffee.
+# sokf:end schema-document
+
+# sokf:begin schema-keys
+schema:
+  keys:
+    additional-files:
+      type: string-or-list
+      doc: >
+        `additional-files` holds /-rooted gitignore-style globs, from the repository
+        root. The globs select the additional files that this schema governs (format
+        specification §9, schema specification §3). An additional file is a repository
+        file with no frontmatter, such as a README. A schema declares exactly one of `additional-files`, a `type` const, or
+        a `type` const with `asset-files`. A validator reports two errors on the Schema
+        document: a glob that is not /-rooted or that matches a document, and a file
+        that two schemas match. An additional file has no frontmatter, links, or lifecycle, but it can
+        carry include and definition blocks.
+    asset-files:
+      type: string-or-list
+      doc: >
+        `asset-files` holds /-rooted gitignore-style globs inside the schema's
+        knowledge. The globs select the assets that this schema's documents describe
+        (format specification §2, schema specification §3). An asset is a file that is not
+        `.md`, such as an image or a PDF. Its sidecar is the `.md` file beside it whose
+        name is the asset's filename followed by `.md`, and the sidecar is a document of
+        this type. A schema declares `asset-files` only beside a `type` const, and never
+        with `additional-files`. Every document of the type must be a sidecar, and every
+        asset must have one. A validator reports three errors on the Schema document.
+        The first is a glob that is not /-rooted, lies outside the knowledge, or
+        matches a reserved file, a file under `schemas/`, a `.md` file, or an additional
+        file. The second is a glob that does not begin with `root` followed by `/**/`
+        when the schema declares `root`. The third is a file that two schemas match.
+    root:
+      type: string
+      doc: >
+        `root` is the /-rooted directory inside the knowledge under which the documents
+        of the type sit. The documents sit in directories under `root`, and each state
+        of a lifecycle dimension with `path` names one of those directories. A schema declares
+        `root` when a dimension declares `path`, and can declare it otherwise. Without such
+        a dimension, the documents lie at any depth under `root`, and `--fix` moves a
+        document that lies outside it into it.
+    links:
+      type: list
+      of: link
+      doc: >
+        `links` lists the edges that a document can or must declare in its `links`
+        frontmatter, one entry for each `rel`. An entry demands `min` edges, one unless
+        it says otherwise, and permits at most `max`. `min: 0` permits edges without
+        demanding any. A `links` entry whose `rel` the schema does not list is an error
+        unless the schema sets `links-open`. The check runs after each `to` is resolved.
+    links-open:
+      type: boolean
+      doc: "`links-open: true` accepts a `links` entry of any `rel`."
+    cited-by:
+      type: list
+      of: citation
+      doc: >
+        `cited-by` is the inverse of `links`: it says what must point at a document of
+        this type. Each entry demands a citation of every document of the type. With
+        `from-type`, the citation is a body link from at least one document of a type in
+        `from-type`. With `from-marker`, the citation is a marker of the relationship in
+        `from-marker`. When `keys` gives a rule id, the demand falls
+        on every key that the rule captures instead of on the document. A citation is one of two things
+        (format specification §9.5). The first is a resolved `sokf:` body link in
+        another document, in any store, outside included and generated text. The second
+        is a resolved marker in a file outside every knowledge store. A citing document still cites when it has errors of its own. A validator reports a
+        missing citation on the uncited document or key. The check runs after the whole
+        repository is loaded.
+    current-links:
+      type: list
+      of: string
+      format: regex
+      doc: >
+        `current-links` lists regular expressions for paragraphs that make a promise, such
+        as a paragraph that begins with `Planned:`. A paragraph that matches one of them
+        links no archived document, because the work that an archived document records is
+        done or dropped, and the promise has lapsed.
+    plans-paths:
+      type: list
+      of: path-plan
+      doc: >
+        `plans-paths` names the sections whose path links plan files that the work of a
+        document creates, such as the Files section of an open issue. While the document
+        is in the states of an entry's `only`, each repository path that such a section
+        links is planned: a link to it, a `resource` that lists it, or an include of it
+        passes although no file exists there yet. After the document leaves those states,
+        the path is checked like any other.
+    markers:
+      type: list
+      of: string
+      doc: >
+        `markers` lists the relationships of the markers that can cite a document of
+        this type or one of its keys. `[]` refuses every marker, and an absent `markers`
+        admits every marker. A validator reports a marker of another relationship as an
+        error at its own file and line.
+    lifecycle:
+      doc: >
+        `lifecycle` lists the dimensions of state that the documents of the type move
+        through. When dimensions declare `path`, each state of those dimensions names a
+        directory of the document. The directories of the dimensions nest in the order
+        in which the schema declares the dimensions (schema specification §6). A schema declares `lifecycle` only
+        beside a `type` const.
+    archived:
+      type: boolean
+      doc: >
+        `archived: true` marks every document of the type as history, which `sokf graph`
+        leaves out unless it is given `--archived`. A schema declares `archived` only
+        when the schema has no lifecycle, because in a schema with a lifecycle a
+        dimension's `archived` says which documents are history.
+    frontmatter:
+      doc: >
+        SOKF reserves its core keys (format specification §3, schema specification
+        §4). A validator checks every core key, both when the schema declares the key
+        and when it does not. A schema declares `type` with a const. The const selects
+        the documents that the schema governs. A schema declares `id` with a `template`,
+        from which `sokf new` makes a new document's id.
+    types:
+      doc: SOKF reserves the reference types `store` and `ref` too (schema specification §7).
+# sokf:end schema-keys
+  # sokf:begin heading
+  heading:
+    keys:
+      unique:
+        enum:
+          - knowledge
+          - repository
+  # sokf:end heading
+  # sokf:begin block
+  block:
+    keys:
+      kind:
+        enum:
+          - include
+        doc: "`include` declares an include block (format specification §9)."
+      source-pattern:
+        requires:
+          kind: [include]
+        doc: >
+          The target of an include, like the target of an image, must match
+          `source-pattern`. When the target of an image or an include is a sidecar's id,
+          qualified or not, the validator matches the pattern against the path of the
+          sidecar's asset. When the marker of an include gives a region, the validator appends
+          `#<region>` to that path before it matches the pattern (format specification
+          §8, §9). When the target is a document's id, it never matches the pattern.
+          The pattern `^/` matches only a path that begins with /. So it admits a file
+          and an asset, and refuses a document.
+  # sokf:end block
+  # sokf:begin unit
+  unit:
+    keys:
+      unique:
+        enum:
+          - knowledge
+          - repository
+  # sokf:end unit
+  # sokf:begin frontmatter-constraint
+  frontmatter-constraint:
+    keys:
+      format:
+        enum:
+          - repo-path
+          - document-id
+        doc: >
+          `repo-path` admits a /-rooted path to a file that exists in the repository.
+          `document-id` admits the id of a document in the knowledge.
+  # sokf:end frontmatter-constraint
+  # sokf:begin lifecycle-dimension
+  lifecycle-dimension:
+    keys:
+      path:
+        type: boolean
+        doc: "`path: true` means that the state of this dimension is the name of one directory level under `root`. The levels nest in the order in which the dimensions with `path: true` are declared."
+      archived:
+        type: list
+        of: string
+        doc: "`archived` lists the states of this dimension that make a document history. `sokf graph` leaves such a document out unless it is given `--archived`. Each entry must be one of the dimension's states."
+  # sokf:end lifecycle-dimension
+  # sokf:begin link
+  link:
+    common: true
+    doc: A link rule declares one type of edge that a document can or must carry.
+    keys:
+      rel:
+        type: string
+        required: true
+        doc: "`rel` is the type of the relationship."
+      to-type:
+        type: string-or-list
+        doc: "`to-type` gives the document type or types that the target must have. When it is absent, the target can have any type."
+      min:
+        type: integer
+        doc: "`min` is the minimum number of edges whose `rel` and target type match the rule. When it is absent, the minimum is one. Zero permits edges without demanding any."
+      max:
+        type: integer
+        doc: "`max` is the maximum number of edges whose `rel` and target type match the rule. When it is absent, there is no maximum."
+      only:
+        type: map
+        of: string-or-list
+        doc: "`only` works as a section's `only` does."
+      guidance:
+        type: string
+        doc: "`guidance` says why the edge exists. When `sokf new` creates a document, it writes the guidance as a YAML comment line before the edge."
+  # sokf:end link
+  # sokf:begin path-plan
+  path-plan:
+    doc: A path plan names one section whose path links plan files.
+    keys:
+      section:
+        type: string
+        format: rule-id
+        required: true
+        doc: "`section` is the `rule-id` of the section whose path links plan files."
+      only:
+        type: map
+        of: string-or-list
+        doc: "`only` works as a section's `only` does: the links plan files only while the document is in these states."
+  # sokf:end path-plan
+  # sokf:begin citation
+  citation:
+    common: true
+    doc: A citation rule demands that documents of another type, or markers, cite this type's documents or keys.
+    exactly-one-of:
+      - from-type
+      - from-marker
+    keys:
+      from-type:
+        type: string-or-list
+        doc: "`from-type` gives the document type or types whose body links count as citations."
+      from-marker:
+        type: string
+        format: slug
+        doc: >
+          `from-marker` is the relationship of the markers that count as citations,
+          such as `implements` for `sokf-implements:`. A marker of any other
+          relationship does not count.
+      keys:
+        type: string
+        format: rule-id
+        doc: >
+          `keys` is the id of a rule that captures keys. Each key that the rule
+          captures must have a citation. A citation gives the key's slug, or, when the key
+          belongs to a heading, the slug of that heading. When `keys` is absent, the
+          document itself must be cited, and a link counts with or without a fragment.
+      only:
+        type: map
+        of: string-or-list
+        doc: "`only` works as a section's `only` does, over the cited document's states."
+  # sokf:end citation

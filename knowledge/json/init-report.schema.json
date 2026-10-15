@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf init report",
+  "description": "`InitResult` is the report of `sokf init --json`: it holds the directory of the store that the command created. It also holds the files that the command wrote (CLI-2_AC-12).",
+  "type": "object",
+  "properties": {
+    "root": {
+      "description": "`root` is the directory of the store that the command created.",
+      "$ref": "#/$defs/RepoPath"
+    },
+    "created": {
+      "description": "`created` holds the files that the command created, ordered by path.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RepoPath"
+      }
+    },
+    "updated": {
+      "description": "`updated` holds the files that the command changed, ordered by path. The list holds `/.sokf/config.toml` when the command added the store to `knowledge.roots`, and is empty otherwise.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RepoPath"
+      }
+    }
+  },
+  "required": [
+    "root",
+    "created",
+    "updated"
+  ],
+  "$defs": {
+    "RepoPath": {
+      "description": "A path relative to the repository root, which starts with `/` and uses forward slashes. The path `/` is the root itself.",
+      "type": "string",
+      "pattern": "^/"
+    }
+  }
+}

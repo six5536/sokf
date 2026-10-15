@@ -1,0 +1,1 @@
+../../../../../../harness/skills/sokf/SKILL.md

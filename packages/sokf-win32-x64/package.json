@@ -1,0 +1,34 @@
+{
+  "name": "@six5536/sokf-win32-x64",
+  "version": "0.1.0",
+  "description": "Prebuilt sokf binary for win32-x64.",
+  "homepage": "https://github.com/six5536/sokf#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/six5536/sokf.git",
+    "directory": "packages/sokf-win32-x64"
+  },
+  "bugs": {
+    "url": "https://github.com/six5536/sokf/issues"
+  },
+  "author": "six5536 <10079653+six5536@users.noreply.github.com>",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "cli",
+    "command-line"
+  ],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ],
+  "license": "Elastic-2.0"
+}

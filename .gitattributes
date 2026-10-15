@@ -1,0 +1,7 @@
+# Every text file is checked out with LF line endings on every platform, so
+# the files that the build embeds and the fixtures that the tests compare are
+# the same bytes on Windows as on Linux and macOS.
+* text=auto eol=lf
+
+# This fixture tests CRLF line endings on purpose.
+crates/lib/sokf-core/tests/fixtures/indexes/knowledge/crlf/index.md -text

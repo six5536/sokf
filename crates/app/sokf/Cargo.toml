@@ -1,0 +1,38 @@
+[package]
+name = "sokf"
+description = "sokf validates knowledge stores in the Superdev Open Knowledge Format (SOKF): directories of Markdown documents with YAML frontmatter, which sokf checks against their schemas."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "sokf"
+path = "src/main.rs"
+
+[lints.rust]
+# cargo-llvm-cov sets the `coverage_nightly` cfg in the nightly coverage job.
+# Declare it as expected, so that no toolchain warns that it is unknown.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
+[dependencies]
+sokf-core.workspace = true
+agent-harness-adapter-core = { workspace = true }
+clap = { workspace = true }
+clap_complete = { workspace = true }
+clap_mangen = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+insta = { workspace = true }
+boon = { workspace = true }
+dunce = { workspace = true }
+proptest = { workspace = true }

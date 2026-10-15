@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf validate report",
+  "description": "`ValidateReport` is the report that `sokf validate --json` prints. It holds every error, every warning, and each repair by `--fix` (CLI-4_AC-12).",
+  "type": "object",
+  "properties": {
+    "errors": {
+      "description": "Every error, ordered by path, then by line.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      }
+    },
+    "warnings": {
+      "description": "Every warning, ordered by path, then by line.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      }
+    },
+    "fixes": {
+      "description": "The repairs that `--fix` made: the moves first, then the created files, then the rewritten files, with each group ordered by path. The list is empty when the command runs without `--fix`.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Fix"
+      }
+    },
+    "summary": {
+      "description": "The number of errors, warnings, and fixes in the report.",
+      "$ref": "#/$defs/Summary"
+    }
+  },
+  "required": [
+    "errors",
+    "warnings",
+    "fixes",
+    "summary"
+  ],
+  "$defs": {
+    "Finding": {
+      "description": "One finding.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The path of the file where the finding occurs, relative to the repository root and starting with `/`.",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line of the finding in the file. It is absent when no line applies.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "message": {
+          "description": "What is wrong, followed in parentheses by the key of the criterion that the file breaks, such as `SOKF_FORMAT_53` or `TLMD_152`. When a schema rule raises the finding, the id of the schema comes in parentheses before the key. When the finding has the place of the rule in the schema, that place comes in the parentheses too.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "message"
+      ]
+    },
+    "Fix": {
+      "description": "One repair that `--fix` made.",
+      "oneOf": [
+        {
+          "description": "A file moved to the directory of its lifecycle state.",
+          "type": "object",
+          "properties": {
+            "from": {
+              "description": "The path before the move.",
+              "type": "string"
+            },
+            "to": {
+              "description": "The path after the move.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "moved"
+            }
+          },
+          "required": [
+            "op",
+            "from",
+            "to"
+          ]
+        },
+        {
+          "description": "A file that `--fix` created, such as an index.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The file.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "created"
+            }
+          },
+          "required": [
+            "op",
+            "path"
+          ]
+        },
+        {
+          "description": "A file that `--fix` rewrote.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The file.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "rewrote"
+            }
+          },
+          "required": [
+            "op",
+            "path"
+          ]
+        }
+      ]
+    },
+    "Summary": {
+      "description": "The summary holds the number of errors, warnings, and fixes in the report. The last line of the text output shows the same counts of errors and warnings (CLI-4_AC-31).",
+      "type": "object",
+      "properties": {
+        "errors": {
+          "description": "The number of errors.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "warnings": {
+          "description": "The number of warnings.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "fixes": {
+          "description": "The number of repairs that `--fix` made.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "errors",
+        "warnings",
+        "fixes"
+      ]
+    }
+  }
+}

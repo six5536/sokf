@@ -1,0 +1,82 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/app/*",
+  "crates/lib/*",
+]
+# Without default members, a bare `cargo build` fails with "the workspace has no
+# members".
+default-members = [
+  "crates/app/sokf",
+  "crates/lib/sokf-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["six5536 <10079653+six5536@users.noreply.github.com>"]
+edition = "2024"
+rust-version = "1.96.0"
+readme = "README.md"
+license = "Elastic-2.0"
+repository = "https://github.com/six5536/sokf"
+homepage = "https://github.com/six5536/sokf"
+keywords = ["cli", "command-line"]
+categories = ["command-line-utilities"]
+
+[workspace.dependencies]
+# External dependencies (alphabetical)
+clap = { version = "4.6", features = ["derive"] }
+clap_complete = "4.6"
+clap_mangen = "0.3"
+dunce = "1.0"
+globset = "0.4"
+ignore = "0.4"
+jmespath = "0.5"
+regex = "1.13"
+rusqlite = { version = "0.40", features = ["bundled"] }
+schemars = "1.2"
+serde = { version = "1", features = ["derive"] }
+# sokf-implements: CLI-7_AC-58
+serde_json = { version = "1.0", features = ["preserve_order"] }
+thiserror = "2.0"
+toml = "1.1"
+toml_edit = "0.25"
+
+# Development dependencies
+assert_cmd = "2.2"
+insta = "1.47"
+boon = "0.6"
+proptest = "1.11"
+
+# Internal crates
+sokf-core = { path = "crates/lib/sokf-core", version = "0.1.0" }
+
+# The harness plumbing (the harnesses, install and status, hooks, loop guard,
+# CLI conventions, atomic writes)
+agent-harness-adapter-core = "0.1.0"
+
+# The schema engine, from crates.io
+tramlines-core = "0.2.0"
+tramlines-md = "0.2.0"
+
+# Optimise release builds for size
+[profile.release]
+opt-level = "z"  # optimise for size rather than speed
+strip = true  # strip the debug information and symbols
+lto = true  # optimise at link time across all the crates
+panic = "abort"  # abort on a panic, without the cost of unwinding
+codegen-units = 1  # build one code generation unit, so the compiler can optimise across the whole crate
+
+[profile.test]
+opt-level = 0
+debug = 0
+split-debuginfo = "unpacked"  # on macOS, the linker skips dsymutil, which makes linking faster
+
+# Optimise the dependencies of the tests, but not the workspace crates.
+# The tests and property tests call the dependencies, such as the parsers and
+# the regular expression engine, hundreds of times, so the dependencies build at
+# opt-level 2 instead of 0. Cargo builds them only once, and after a change to a
+# workspace crate it rebuilds only that crate, which stays quick because it is
+# not optimised.
+[profile.test.package."*"]
+opt-level = 2

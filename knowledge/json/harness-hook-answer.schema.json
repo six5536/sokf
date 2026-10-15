@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf harness hook answer",
+  "description": "A `HookAnswer` is the answer that `sokf harness hook claude stop` prints on stdout, and that Codex and Factory Droid read in the same form: an empty object lets the agent stop, and a block makes the agent continue (CLI-3_AC-25, CLI-3_AC-26). Every other harness reads the answer in its own form.",
+  "anyOf": [
+    {
+      "description": "When errors remain, the agent continues with the reason as its input.",
+      "type": "object",
+      "properties": {
+        "decision": {
+          "description": "The decision is always `block`.",
+          "$ref": "#/$defs/Decision"
+        },
+        "reason": {
+          "description": "The reason starts with `sokf:` and the number of remaining errors. It then lists the fixes that `validate --fix` made, and the errors as `validate` reports them.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "reason"
+      ]
+    },
+    {
+      "description": "When no error remains, or the hook has already blocked on the same report, the agent stops.",
+      "type": "object",
+      "maxProperties": 0
+    }
+  ],
+  "$defs": {
+    "Decision": {
+      "description": "A `Decision` tells Claude Code what to do with the agent. Its only value, `block`, makes the agent continue.",
+      "oneOf": [
+        {
+          "description": "The agent continues.",
+          "type": "string",
+          "const": "block"
+        }
+      ]
+    }
+  }
+}

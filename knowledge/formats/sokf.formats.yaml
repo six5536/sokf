@@ -1,0 +1,145 @@
+formats: sokf
+version: "0.6"
+doc: >
+  This file holds the line formats that every schema shares. The sokf binary holds a copy
+  of this file, and the tool reads that copy. When the tool looks up a format, it checks
+  this file last: this file is the shared layer, after the formats of the schema and of the
+  repository. A unit rule picks one of these formats by giving its name in the `format` key
+  (grammar `schema.unit`). Each entry has the same keys as an entry in a schema's
+  `formats` (grammar `schema.format`): one line template or several variants, the
+  patterns that a line must not contain, and one example for each template. When a line
+  does not match a template, the error message shows that template's example. `types`
+  holds the placeholder types that the templates use, in addition to the built-in types.
+  A repository's `/.sokf/formats.yaml` has the same keys as this file, and each of its
+  entries and types replaces the whole entry or type of the same name in this file. A
+  schema's `formats` and `types` replace, in the same way, the entries and types of the
+  same name in the repository's file and in this file. To print the formats and types
+  that apply to a schema after every replacement, run `sokf info formats`.
+types:
+  requirement-code: '[A-Z]{1,10}'
+  requirement-id: '[A-Z]{1,10}-\d+(?:\.\d+)?'
+  criterion-id: '[A-Z]{1,10}-\d+_AC-\d+'
+  property-id: '[A-Z]{1,10}_P-\d+'
+  indefinite-article: [A, AN]
+  property-shape: [round-trip, invariant, idempotent, order-independent, equivalent, metamorphic]
+  evolution-kind: [Versioning, Backwards compatibility, Deprecation]
+  sentence: '[A-Z].*\.'
+  predicate: '[a-z].*\.'
+  code-name: '[^`]+'
+  channel-name: '[^:]+'
+registry:
+  user-story:
+    key: id
+    template: '${id:requirement-id}: AS ${:indefinite-article} ${}, I WANT ${}, SO THAT ${}.'
+    prohibited-patterns: [{pattern: '\b(SHALL|SHOULD|MUST)\b', message: 'A user story states a need, so it holds no SHALL, SHOULD, or MUST.'}]
+    example: "ST-1: AS A user, I WANT a click on a file name to open the file in the editor, SO THAT I go from a compiler error to the code in one click."
+  requirement-ears:
+    key: id
+    variants:
+      ubiquitous:
+        template: '${id:criterion-id} [ubiquitous]: the ${} SHALL ${}.'
+        example: "PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`."
+      event:
+        template: '${id:criterion-id} [event]: WHEN ${}, the ${} SHALL ${}.'
+        example: "PLUMB-1_AC-1 [event]: WHEN a program writes a message to `/mnt/plumb/send`, the plumber SHALL deliver the message to the port that the first matching rule set names."
+      state:
+        template: '${id:criterion-id} [state]: WHILE ${}, the ${} SHALL ${}.'
+        example: "PLUMB-2_AC-2 [state]: WHILE a program's queue for the port is empty, the plumber SHALL delay its reply to the program's read until a message arrives."
+      unwanted:
+        template: '${id:criterion-id} [unwanted]: IF ${}, THEN the ${} SHALL ${}.'
+        example: "PLUMB-1_AC-2 [unwanted]: IF no rule set matches and the message names no port, THEN the plumber SHALL fail the write with the error `no matching plumb rule`."
+      optional:
+        template: '${id:criterion-id} [optional]: WHERE ${}, the ${} SHALL ${}.'
+        example: "PLUMB-1_AC-4 [optional]: WHERE the message has a `click` attribute, the plumber SHALL replace the data with the text that the matching rule set's patterns match around the click position."
+      complex-event:
+        template: '${id:criterion-id} [complex]: WHILE ${}, WHEN ${}, the ${} SHALL ${}.'
+        example: "PLUMB-1_AC-3 [complex]: WHILE no program has the destination port open, WHEN a message for that port arrives, the plumber SHALL start the program that the rule set's `plumb client` action names."
+      complex-unwanted:
+        template: '${id:criterion-id} [complex]: WHILE ${}, IF ${}, THEN the ${} SHALL ${}.'
+        example: "PLUMB-3_AC-4 [complex]: WHILE a program has `/mnt/plumb/rules` open for writing, IF a second program opens it for writing, THEN the plumber SHALL fail the open with the error `file already open`."
+    prohibited-patterns:
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: 'The line uses no weak modal verb, such as should, must, will, may, might, or can.'
+      - pattern: '\bSHALL\b.*\bSHALL\b'
+        message: 'The line holds one SHALL.'
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: 'The line uses no vague word, such as fast, easy, appropriate, or as needed.'
+      - pattern: '\betc\.'
+        message: 'The line ends no list with etc.'
+      - pattern: 'and/or'
+        message: 'The line uses no and/or.'
+      - pattern: '\bSHALL (NOT )?be (\w+ed|\w+[^p\W]en|\w+wn|sent|kept|built|left|lost|made|read|set|put|held|told|found|sold|run|done|shut|meant|spent|paid|laid|said|brought|bought|caught|taught|thought)\b'
+        message: 'A criterion states its response in the active voice.'
+  requirement-property:
+    key: id
+    template: '${id:property-id} [${:property-shape}]: FOR ANY ${}, the ${} SHALL ${}.'
+    example: "PLUMB_P-2 [idempotent]: FOR ANY rules text, the plumber SHALL have the same rule sets after a program writes the text twice as after it writes the text once."
+    prohibited-patterns:
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: 'The line uses no weak modal verb, such as should, must, will, may, might, or can.'
+      - pattern: '\bSHALL\b.*\bSHALL\b'
+        message: 'The line holds one SHALL.'
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: 'The line uses no vague word, such as fast, easy, appropriate, or as needed.'
+      - pattern: '\betc\.'
+        message: 'The line ends no list with etc.'
+      - pattern: 'and/or'
+        message: 'The line uses no and/or.'
+      - pattern: '\bSHALL (NOT )?be (\w+ed|\w+[^p\W]en|\w+wn|sent|kept|built|left|lost|made|read|set|put|held|told|found|sold|run|done|shut|meant|spent|paid|laid|said|brought|bought|caught|taught|thought)\b'
+        message: 'A criterion states its response in the active voice.'
+  requirement-evolution:
+    template: '${:evolution-kind}: ${:sentence}'
+    example: "Versioning: The contract has a version number of its own, and the changelog records what each version changes."
+    prohibited-patterns:
+      - pattern: '\bSHALL\b'
+        message: 'The line describes the part, so it holds no SHALL.'
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: 'The line uses no weak modal verb, such as should, must, will, may, might, or can.'
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed|[Ee]ventually)\b'
+        message: 'The line uses no vague word, such as fast, easy, appropriate, or eventually.'
+      - pattern: '\betc\.'
+        message: 'The line ends no list with etc.'
+      - pattern: 'and/or'
+        message: 'The line uses no and/or.'
+      - pattern: '\b(is|are|was|were|be|been) (\w+ed|\w+[^p\W]en|\w+wn|sent|kept|built|left|lost|made|read|set|put|held|told|found|sold|run|done|shut|meant|spent|paid|laid|said|brought|bought|caught|taught|thought)\b'
+        message: 'An entry states its change in the active voice.'
+  requirement-summary:
+    variants:
+      named:
+        template: '`${:code-name}` ${:predicate}'
+        example: '`/mnt/plumb/send` takes a message from a program and delivers it to the port that the first matching rule set names.'
+      described:
+        template: 'The ${:predicate}'
+        example: 'The rules file lets a user change the rules while the plumber runs.'
+    prohibited-patterns:
+      - pattern: '\bSHALL\b'
+        message: 'The line describes the part, so it holds no SHALL.'
+      - pattern: '\. '
+        message: 'A summary is one sentence.'
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: 'The line uses no weak modal verb, such as should, must, will, may, might, or can.'
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: 'The line uses no vague word, such as fast, easy, appropriate, or as needed.'
+      - pattern: '\betc\.'
+        message: 'The line ends no list with etc.'
+      - pattern: 'and/or'
+        message: 'The line uses no and/or.'
+  requirement-channel:
+    variants:
+      none:
+        text: None.
+        example: None.
+      channel:
+        template: '${:channel-name}: ${}.'
+        example: "stdout: the rules in use, as text."
+    prohibited-patterns:
+      - pattern: '\bSHALL\b'
+        message: 'The line describes the part, so it holds no SHALL.'
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: 'The line uses no weak modal verb, such as should, must, will, may, might, or can.'
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: 'The line uses no vague word, such as fast, easy, appropriate, or as needed.'
+      - pattern: '\betc\.'
+        message: 'The line ends no list with etc.'
+      - pattern: 'and/or'
+        message: 'The line uses no and/or.'

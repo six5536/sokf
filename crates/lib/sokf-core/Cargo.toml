@@ -1,0 +1,38 @@
+[package]
+name = "sokf-core"
+description = "sokf-core holds the logic of the sokf command-line tool: it loads and validates Superdev Open Knowledge Format (SOKF) knowledge stores, and runs each sokf command."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+agent-harness-adapter-core = { workspace = true, features = ["schemars"] }
+dunce.workspace = true
+globset.workspace = true
+ignore.workspace = true
+jmespath.workspace = true
+regex.workspace = true
+rusqlite.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+tramlines-core.workspace = true
+tramlines-md.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+proptest.workspace = true

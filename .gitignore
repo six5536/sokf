@@ -1,0 +1,32 @@
+/target
+**/*.rs.bk
+/.vs
+/.idea
+/.vscode/mise-tools
+/.DS_Store
+/.playwright-mcp
+
+# Books and other reference material that the project has no licence to distribute
+/archive/books/
+
+# Build output and installed dependencies of the WebAssembly (WASM) and
+# TypeScript packages
+*.tsbuildinfo
+/packages/*/wasm/
+/packages/*/dist/
+/packages/*/node_modules/
+/node_modules/
+
+# `npm run build:<platform>` copies each platform's binary into its package's
+# bin/ directory. A .gitkeep file keeps each bin/ directory in the repository.
+/packages/sokf-*/bin/sokf
+/packages/sokf-*/bin/sokf.exe
+
+/.cache/
+*.local.json
+.mise.local.toml
+
+# Coverage output of cargo-llvm-cov
+/target/llvm-cov
+/target/llvm-cov-target
+*.profraw

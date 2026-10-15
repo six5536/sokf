@@ -1,0 +1,9 @@
+# The public mirror holds the specification store of SOKF, and its knowledge
+# root is the store's folder. The source keeps the markers that cite the
+# contracts of sokf's own development, whose store this repository doesn't
+# hold, so sokf doesn't check markers here.
+[knowledge]
+roots = ["/sokf-spec"]
+
+[markers]
+check = "off"

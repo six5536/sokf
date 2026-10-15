@@ -1,0 +1,25 @@
+{
+  "name": "@six5536/sokf-workspace",
+  "private": true,
+  "description": "sokf validates knowledge stores in the Superdev Open Knowledge Format (SOKF): directories of Markdown documents with YAML frontmatter, which sokf checks against their schemas.",
+  "workspaces": [
+    "packages/sokf"
+  ],
+  "scripts": {
+    "build": "cargo build --workspace",
+    "build:all": "npm run build:linux-x64 && npm run build:linux-arm64 && npm run build:darwin-x64 && npm run build:darwin-arm64",
+    "build:linux-x64": "rustup target add x86_64-unknown-linux-musl && mise exec -- cargo zigbuild --release --target x86_64-unknown-linux-musl -p sokf && install -m 0755 target/x86_64-unknown-linux-musl/release/sokf packages/sokf-linux-x64/bin/sokf",
+    "build:linux-arm64": "rustup target add aarch64-unknown-linux-musl && mise exec -- cargo zigbuild --release --target aarch64-unknown-linux-musl -p sokf && install -m 0755 target/aarch64-unknown-linux-musl/release/sokf packages/sokf-linux-arm64/bin/sokf",
+    "build:darwin-x64": "rustup target add x86_64-apple-darwin && mise exec -- cargo zigbuild --release --target x86_64-apple-darwin -p sokf && install -m 0755 target/x86_64-apple-darwin/release/sokf packages/sokf-darwin-x64/bin/sokf",
+    "build:darwin-arm64": "rustup target add aarch64-apple-darwin && mise exec -- cargo zigbuild --release --target aarch64-apple-darwin -p sokf && install -m 0755 target/aarch64-apple-darwin/release/sokf packages/sokf-darwin-arm64/bin/sokf",
+    "dev": "cargo run -p sokf --",
+    "lint": "cargo clippy --workspace",
+    "fmt": "cargo fmt --all",
+    "smoke": "node scripts/release-smoke.mjs",
+    "smoke:launcher": "node scripts/launcher-smoke.mjs",
+    "verify-version": "node scripts/verify-version.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2"
+  }
+}

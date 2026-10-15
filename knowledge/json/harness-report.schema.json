@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf harness report",
+  "description": "The report of `sokf harness install --json` and `sokf harness status --json`: one entry for each harness named, in sokf's order of the harnesses, with one entry for each part (CLI-3_AC-20).",
+  "type": "object",
+  "properties": {
+    "scope": {
+      "description": "The scope: `project`, `user`, or `local`.",
+      "$ref": "#/$defs/Scope"
+    },
+    "harnesses": {
+      "description": "The harnesses, in sokf's order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HarnessResult"
+      }
+    },
+    "warnings": {
+      "description": "The content that an agent may load twice.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "scope",
+    "harnesses",
+    "warnings"
+  ],
+  "$defs": {
+    "Scope": {
+      "description": "Where a harness integration is installed.",
+      "oneOf": [
+        {
+          "description": "The project: files beside the project's own files.",
+          "type": "string",
+          "const": "project"
+        },
+        {
+          "description": "The user: files under the home directory, in each harness's own configuration directory.",
+          "type": "string",
+          "const": "user"
+        },
+        {
+          "description": "The project's local, git-ignored files (e.g. `.claude/settings.local.json`), under the project root.",
+          "type": "string",
+          "const": "local"
+        }
+      ]
+    },
+    "HarnessResult": {
+      "description": "The parts of one harness.",
+      "type": "object",
+      "properties": {
+        "harness": {
+          "description": "The name of the harness, for example `claude`.",
+          "type": "string"
+        },
+        "parts": {
+          "description": "The parts, in the harness's order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Part"
+          }
+        },
+        "unsupported": {
+          "description": "The items of sokf's integration that the harness has no place for at the scope, for example `permissions`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Item"
+          }
+        },
+        "notes": {
+          "description": "What the user still has to do in the agent, for example trust the folder.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "harness",
+        "parts",
+        "unsupported",
+        "notes"
+      ]
+    },
+    "Part": {
+      "description": "One part of a harness.",
+      "type": "object",
+      "properties": {
+        "part": {
+          "description": "The name of the part, for example `skills` or `hooks`.",
+          "type": "string"
+        },
+        "state": {
+          "description": "The state in which the command found the part, before it wrote anything: `skipped`, `shared`, `absent`, `current`, `stale`, or `edited`.",
+          "$ref": "#/$defs/State"
+        },
+        "action": {
+          "description": "For `install`, what the command did to the part: `created`, `rewrote`, or `updated`. The key is absent when the command left the part as it found it, and always for `status`.",
+          "$ref": "#/$defs/Action"
+        },
+        "path": {
+          "description": "The file or directory to which the command writes the part: a path from the repository root, which starts with `/`, or at the user scope a path from the home directory, which starts with `~/`. For a shared part, the location that another harness writes.",
+          "type": "string"
+        },
+        "by": {
+          "description": "For a shared part, the harness whose part writes it. The key is absent for every other part.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "part",
+        "state",
+        "path"
+      ]
+    },
+    "State": {
+      "description": "The state of a part.",
+      "oneOf": [
+        {
+          "description": "Declined by the user.",
+          "type": "string",
+          "const": "skipped"
+        },
+        {
+          "description": "Another harness's part puts the same content in a location this harness loads; nothing is written for it.",
+          "type": "string",
+          "const": "shared"
+        },
+        {
+          "description": "The file, the block or the entries are not there.",
+          "type": "string",
+          "const": "absent"
+        },
+        {
+          "description": "Equal to the tool's content.",
+          "type": "string",
+          "const": "current"
+        },
+        {
+          "description": "Differs from the tool's content and equals the recorded hash: the tool wrote it and has changed since.",
+          "type": "string",
+          "const": "stale"
+        },
+        {
+          "description": "Differs from both, or present with no recorded hash.",
+          "type": "string",
+          "const": "edited"
+        }
+      ]
+    },
+    "Action": {
+      "description": "What install did to a part.",
+      "oneOf": [
+        {
+          "description": "Written where nothing was.",
+          "type": "string",
+          "const": "created"
+        },
+        {
+          "description": "A `file` part's files written again.",
+          "type": "string",
+          "const": "rewrote"
+        },
+        {
+          "description": "A region or merge part written into the existing file, or an external part written again.",
+          "type": "string",
+          "const": "updated"
+        },
+        {
+          "description": "Taken out by uninstall.",
+          "type": "string",
+          "const": "removed"
+        },
+        {
+          "description": "Left by uninstall because other installed harnesses, named in `by`, still read it.",
+          "type": "string",
+          "const": "kept"
+        }
+      ]
+    },
+    "Item": {
+      "description": "One kind of thing in an integration. An item becomes at most one part per harness, named by the item's name (e.g. `hooks`).",
+      "oneOf": [
+        {
+          "description": "The instructions block.",
+          "type": "string",
+          "const": "instructions"
+        },
+        {
+          "description": "Skills.",
+          "type": "string",
+          "const": "skills"
+        },
+        {
+          "description": "Hooks.",
+          "type": "string",
+          "const": "hooks"
+        },
+        {
+          "description": "MCP servers.",
+          "type": "string",
+          "const": "mcp"
+        },
+        {
+          "description": "Allowed commands.",
+          "type": "string",
+          "const": "permissions"
+        },
+        {
+          "description": "Subagents.",
+          "type": "string",
+          "const": "agents"
+        },
+        {
+          "description": "Slash commands.",
+          "type": "string",
+          "const": "commands"
+        }
+      ]
+    }
+  }
+}

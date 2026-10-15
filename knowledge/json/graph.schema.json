@@ -1,0 +1,380 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf graph",
+  "description": "The graph of `sokf graph --json`: the starts (the document ids, paths, and keys given on the command line), then every node and edge that the text form prints, and every inverse of each printed edge (CLI_P-8).",
+  "type": "object",
+  "properties": {
+    "start": {
+      "description": "Each resolved start as a path, in the order given: a key is the path of its document, then `#` and the slug of the key. When no start is given, the list holds the knowledge roots.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "nodes": {
+      "description": "The nodes, ordered by path. The missing nodes follow, ordered by target.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Node"
+      }
+    },
+    "edges": {
+      "description": "The edges, ordered by `from`, then kind, then `to`, then `rel`, then `region`, then `note`.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Edge"
+      }
+    },
+    "summary": {
+      "description": "The counts that the last line of the text form shows: what the graph printed and what it left out.",
+      "$ref": "#/$defs/Summary"
+    }
+  },
+  "required": [
+    "start",
+    "nodes",
+    "edges",
+    "summary"
+  ],
+  "$defs": {
+    "Node": {
+      "description": "One node. Its parent is the parent of its path.",
+      "oneOf": [
+        {
+          "description": "A knowledge root.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The path of the root, starting with `/` at the repository root.",
+              "type": "string"
+            },
+            "name": {
+              "description": "The `name` of the manifest. It is absent when the manifest is absent or does not parse.",
+              "type": "string"
+            },
+            "scope": {
+              "description": "The `scope` of the manifest: the owner of the store. The identity of the store is `SCOPE/NAME`, where `SCOPE` is the scope and `NAME` is the name. Absent when the manifest has none.",
+              "type": "string"
+            },
+            "description": {
+              "description": "The `description` of the manifest, when it has one.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "root"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ]
+        },
+        {
+          "description": "A directory in a root, with a document, an additional file, or an asset somewhere beneath it. A directory that a start points to is a directory node too.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The directory.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "directory"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ]
+        },
+        {
+          "description": "A document, including a schema.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The document.",
+              "type": "string"
+            },
+            "type": {
+              "description": "The `type` of the frontmatter, as read."
+            },
+            "id": {
+              "description": "The `id` of the frontmatter, as read. It is absent when the document has none."
+            },
+            "title": {
+              "description": "The `title` of the frontmatter, as read."
+            },
+            "status": {
+              "description": "The `status` of the frontmatter, as read. It is `stable` when the frontmatter has none."
+            },
+            "broken": {
+              "description": "True when the frontmatter does not parse or has no `id`.",
+              "const": true
+            },
+            "reason": {
+              "description": "Why the document is broken.",
+              "enum": [
+                "frontmatter does not parse",
+                "no id"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "document"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "status"
+          ]
+        },
+        {
+          "description": "An additional file.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The file.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "The `id` of the schema that governs the file.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "additional"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ]
+        },
+        {
+          "description": "An asset.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The asset.",
+              "type": "string"
+            },
+            "sidecar": {
+              "description": "The `id` of the sidecar of the asset.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "asset"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ]
+        },
+        {
+          "description": "A repository file or directory as the target of an edge. A repository file that a start points to is a file node too.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The file or the directory.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "file"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ]
+        },
+        {
+          "description": "A key that a start identifies.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The document that defines the key, then `#` and the slug of the key.",
+              "type": "string"
+            },
+            "key": {
+              "description": "The key as it is written in its document.",
+              "type": "string"
+            },
+            "line": {
+              "description": "The line of the document where the key is defined.",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "key"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "key",
+            "line"
+          ]
+        },
+        {
+          "description": "A target that resolves to nothing.",
+          "type": "object",
+          "properties": {
+            "target": {
+              "description": "The text that named the target.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "missing"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ]
+        }
+      ]
+    },
+    "Edge": {
+      "description": "One edge.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "The kind of the edge.",
+          "$ref": "#/$defs/EdgeKind"
+        },
+        "from": {
+          "description": "The path of the source node, or the `target` of a missing node.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The path of the target node, or the `target` of a missing node.",
+          "type": "string"
+        },
+        "rel": {
+          "description": "The relationship, from the source to the target.",
+          "type": "string"
+        },
+        "note": {
+          "description": "The `note` of a `links` entry. An inverse edge, which the tool makes from a declared one, never has a note.",
+          "type": "string"
+        },
+        "region": {
+          "description": "The region of an include, when the marker names one, or the slug of the fragment that a code marker cites. It is absent from a folded include or marker edge, the one edge that replaces all the includes or markers of one file.",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line of a code marker in its file. It is absent from a folded marker edge.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "regions": {
+          "description": "The number of regions that a folded include replaces. Absent unless the include is folded.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "markers": {
+          "description": "The number of markers that a folded marker edge replaces. Absent unless the marker edge is folded.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "synthesised": {
+          "description": "True when the tool made the edge as the inverse of a declared one. It is absent otherwise.",
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "kind",
+        "from",
+        "to",
+        "rel"
+      ]
+    },
+    "EdgeKind": {
+      "description": "The kinds of edge.",
+      "oneOf": [
+        {
+          "description": "An include marker.",
+          "type": "string",
+          "const": "includes"
+        },
+        {
+          "description": "A key and its document, or a document that cites the key.",
+          "type": "string",
+          "const": "keys"
+        },
+        {
+          "description": "A `links` entry, or a body link that no entry declares.",
+          "type": "string",
+          "const": "links"
+        },
+        {
+          "description": "A code marker in a file outside the knowledge roots, and the document or the key that it cites.",
+          "type": "string",
+          "const": "marker"
+        },
+        {
+          "description": "A `resource` that is a `/` path.",
+          "type": "string",
+          "const": "resource"
+        },
+        {
+          "description": "A `sources[].resource` that is a `/` path.",
+          "type": "string",
+          "const": "sources"
+        }
+      ]
+    },
+    "Summary": {
+      "description": "The summary counts what the graph printed and what the same view prints with `--all`, `--archived`, and no filter, as the last line of the text form does (CLI-7_AC-78).",
+      "type": "object",
+      "properties": {
+        "documents": {
+          "description": "The document nodes.",
+          "$ref": "#/$defs/Count"
+        },
+        "archived": {
+          "description": "The archived documents.",
+          "$ref": "#/$defs/Count"
+        }
+      },
+      "required": [
+        "documents",
+        "archived"
+      ]
+    },
+    "Count": {
+      "description": "What the graph printed, out of what the whole view holds.",
+      "type": "object",
+      "properties": {
+        "shown": {
+          "description": "What the graph printed.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "total": {
+          "description": "What the view prints with `--all`, `--archived`, and no filter.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "shown",
+        "total"
+      ]
+    }
+  }
+}

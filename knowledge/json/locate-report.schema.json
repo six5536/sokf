@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf locate report",
+  "description": "The report of `sokf locate --json`: one entry for each id, in argument order (CLI-8_AC-5).",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/Location"
+  },
+  "$defs": {
+    "Location": {
+      "description": "A location entry holds one id and where its document is.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "The id, as given.",
+          "type": "string"
+        },
+        "path": {
+          "description": "The absolute filesystem path of the document.",
+          "type": "string"
+        },
+        "asset": {
+          "description": "The absolute filesystem path of the asset, when the document is a sidecar: a document that describes a separate file, the asset.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ]
+    }
+  }
+}
