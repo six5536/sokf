@@ -1,6 +1,6 @@
 {
   "name": "@six5536/sokf-darwin-arm64",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "This package contains the prebuilt sokf binary for darwin-arm64.",
   "homepage": "https://github.com/six5536/sokf#readme",
   "repository": {

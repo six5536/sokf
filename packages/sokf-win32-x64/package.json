@@ -1,6 +1,6 @@
 {
   "name": "@six5536/sokf-win32-x64",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Prebuilt sokf binary for win32-x64.",
   "homepage": "https://github.com/six5536/sokf#readme",
   "repository": {

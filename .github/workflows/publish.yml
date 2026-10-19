@@ -242,13 +242,30 @@ jobs:
           fi
           echo "$actual"
 
+      # A crate or a package whose version is already on its registry is
+      # left out, as the publish steps skip it, because a dry run refuses a
+      # published version too, and a run again after a half-failed release
+      # would stop here.
       - name: Dry-run every publish before doing any of them
         run: |
-          cargo publish --workspace --locked --dry-run
-          for pkg in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
-            npm publish "./packages/sokf-$pkg" --dry-run --tag "$NPM_TAG"
+          exclude=""
+          for crate in sokf-core sokf; do
+            status="$(curl -s -o /dev/null -w '%{http_code}' -A 'sokf-publish (github.com/six5536/sokf)' \
+              "https://crates.io/api/v1/crates/$crate/$VERSION")"
+            if [ "$status" = 200 ]; then exclude="$exclude --exclude $crate"; fi
           done
-          npm publish ./packages/sokf --dry-run --tag "$NPM_TAG"
+          if [ "$(echo $exclude | wc -w)" -lt 4 ]; then
+            cargo publish --workspace --locked --dry-run $exclude
+          fi
+          for dir in packages/sokf-linux-x64 packages/sokf-linux-arm64 packages/sokf-darwin-x64 \
+                     packages/sokf-darwin-arm64 packages/sokf-win32-x64 packages/sokf; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already published"
+            else
+              npm publish "./$dir" --dry-run --tag "$NPM_TAG"
+            fi
+          done
 
       - name: Authenticate to crates.io with trusted publishing
         if: env.HAS_CARGO_TOKEN != 'true'
@@ -329,7 +346,7 @@ jobs:
             stage="dist/stage/sokf-$VERSION-$pkg"
             mkdir -p "$stage"
             install -m 0755 "artifacts/sokf-$pkg/sokf" "$stage/sokf"
-            cp README.md LICENSE CHANGELOG.md "$stage/"
+            cp README.md LICENSE "$stage/"
             cp -r dist/share "$stage/share"
             tar -czf "dist/out/sokf-$VERSION-$pkg.tar.gz" -C dist/stage "sokf-$VERSION-$pkg"
           done
@@ -338,7 +355,7 @@ jobs:
           stage="dist/stage/sokf-$VERSION-win32-x64"
           mkdir -p "$stage"
           install -m 0755 "artifacts/sokf-win32-x64/sokf.exe" "$stage/sokf.exe"
-          cp README.md LICENSE CHANGELOG.md "$stage/"
+          cp README.md LICENSE "$stage/"
           cp -r dist/share "$stage/share"
           (cd dist/stage && zip -qr "../out/sokf-$VERSION-win32-x64.zip" "sokf-$VERSION-win32-x64")
           cd dist/out && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS && cat SHA256SUMS
