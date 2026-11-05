@@ -21,12 +21,20 @@
       "items": {
         "$ref": "#/$defs/RepoPath"
       }
+    },
+    "hand_written_indexes": {
+      "description": "`hand_written_indexes` holds each `index.md` under the directory that is not in the generated form of an index, ordered by path. `validate --fix` doesn't overwrite such a file, and `validate` reports it until its content moves into a document (CLI-2_AC-32).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RepoPath"
+      }
     }
   },
   "required": [
     "root",
     "created",
-    "updated"
+    "updated",
+    "hand_written_indexes"
   ],
   "$defs": {
     "RepoPath": {

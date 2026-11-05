@@ -23,6 +23,9 @@ pub struct NewOptions {
     pub id: Option<String>,
     /// `title` is the value of `--title`.
     pub title: Option<String>,
+    /// `seq` is the value of `--seq`, the sequence number that the id takes
+    /// in place of the next one.
+    pub seq: Option<u64>,
     /// `states` holds the values of `--state`, each a key and a state, in the
     /// order of the arguments.
     pub states: Vec<(String, String)>,
@@ -44,8 +47,9 @@ pub struct NewOptions {
 }
 
 /// `NewResult` is the report of `sokf new --json`: it holds the document that
-/// the command builds. The command prints the document but does not write it
-/// (CLI-6_AC-12).
+/// the command builds. Without `--write`, the command prints the document but
+/// does not write it (CLI-6_AC-12). With `--write`, it also writes the
+/// document at `path` (CLI-6_AC-72).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[schemars(title = "sokf new report")]
 pub struct NewResult {
@@ -87,7 +91,7 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
     let cache = Cache::open(root, opts.cache);
     let mut model = super::load_for_lookup(root, &config, &cache)?;
     super::admit_schemas_of_type(&mut model, root, &cache, type_name)?;
-    let compiled = grammar::compile_all(&model, grammar, repo);
+    let compiled = grammar::compile_all(&model, grammar, &repo);
     let chosen = chosen_store(root, &model, opts, store, type_name)?;
     let (knowledge, schema) = scaffold::schema_for(&model, &compiled, type_name, chosen)?;
     // A qualified `Schema` goes in the `schemas/` directory of its store.
@@ -160,6 +164,9 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         Some((_, sidecar)) => sidecar.clone(),
         None => scaffold::place(&site, knowledge, &id, dir)?,
     };
+    // The title comes before the scaffold, so that a type whose schema sets a
+    // rule for `title` refuses before anything is built.
+    let title = scaffold::title(type_name, schema, &states, opts.title.as_deref())?;
     // sokf-implements: CLI-6_AC-16
     // sokf-implements: CLI-6_AC-59
     let seed = scaffold::seed(schema, &states).map_err(|refusals| {
@@ -172,7 +179,7 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
     let identity = scaffold::identity(
         &id,
         slug.as_deref(),
-        opts.title.as_deref(),
+        title.as_deref(),
         states.clone(),
         asset.as_ref().map(|(a, _)| a.clone()),
     );
@@ -251,7 +258,8 @@ fn chosen_store(
 }
 
 /// `resolve_id` returns the id of the document under the rules of CLI-6
-/// for `--slug` and `--id`.
+/// for `--slug`, `--id`, and `--seq`. The number comes from `--seq` when it
+/// is given, and is otherwise the next one.
 // sokf-implements: CLI-6_AC-34
 // sokf-implements: CLI-6_AC-49
 // sokf-implements: CLI-6_AC-50
@@ -273,14 +281,26 @@ fn resolve_id(
                     "`--id {given}` is given, but `{type_name}` has an id template, so use `--slug`"
                 )));
             }
-            let seq = if template.seq_width().is_some() {
-                scaffold::next_seq(model, k, type_name, template)?
-            } else {
-                0
+            let seq = match (template.seq_width(), opts.seq) {
+                (Some(_), Some(given)) => {
+                    scaffold::given_seq(model, k, type_name, template, given)?
+                }
+                (Some(_), None) => scaffold::next_seq(model, k, type_name, template)?,
+                (None, Some(given)) => {
+                    return Err(Error::New(format!(
+                        "`--seq {given}` is given, but the id template of `{type_name}` has no `seq` placeholder"
+                    )));
+                }
+                (None, None) => 0,
             };
             scaffold::render_id(template, seq, slug, states)
         }
         _ => {
+            if let Some(given) = opts.seq {
+                return Err(Error::New(format!(
+                    "`--seq {given}` is given, but `{type_name}` has no id template"
+                )));
+            }
             if opts.id_only {
                 return Err(Error::New(format!(
                     "`{type_name}` has no id template, so give the id with `--id`"

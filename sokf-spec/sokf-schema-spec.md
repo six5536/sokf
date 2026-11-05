@@ -58,6 +58,8 @@ An additional file belongs to the knowledge store of the schema that governs it.
 
 The schema of a sidecar defines its body, as for any other document, and `blocks: []` makes a sidecar that has only frontmatter.
 
+An asset and its sidecar lie within the knowledge store of their schema (SOKF_SCHEMA_8), because the sidecar is a document, and only a `.md` file in a knowledge store is a document ([format specification][sokf:sokf-format-spec] §2). Outside every knowledge store, the sidecar would be a repository file. A file that has to stay outside every knowledge store, such as a JSON Schema that its consumers fetch from a fixed path, is instead the `resource` of an ordinary document in a knowledge store (format specification §3).
+
 - <a id="sokf_schema_3"></a>SOKF_SCHEMA_3 [ubiquitous]: the schema SHALL say what it governs in exactly one of the three ways.
 - <a id="sokf_schema_4"></a>SOKF_SCHEMA_4 [ubiquitous]: the schema SHALL declare `additional-files` on its own, without `type`, `asset-files`, or `lifecycle`.
 - <a id="sokf_schema_5"></a>SOKF_SCHEMA_5 [ubiquitous]: the schema SHALL declare `additional-files` globs that are `/`-rooted and match no document and no index in a knowledge store.
@@ -86,7 +88,9 @@ A schema is strict: it requires everything it declares and allows nothing else. 
 - <a id="sokf_schema_49"></a>SOKF_SCHEMA_49 [ubiquitous]: the marker SHALL have one of the relationships in the `markers` list of the cited document's schema, where that schema declares `markers`.
 - <a id="sokf_schema_52"></a>SOKF_SCHEMA_52 [ubiquitous]: the schema SHALL name, in the `section` of each `plans-paths` entry, the `rule-id` of one of its sections.
 - <a id="sokf_schema_53"></a>SOKF_SCHEMA_53 [ubiquitous]: the validator SHALL accept a body link to, a `resource` that lists, and an include of a path that a document plans, although no file exists there.
+- <a id="sokf_schema_55"></a>SOKF_SCHEMA_55 [event]: WHEN a planning section of a document in the states of its plan links a `/`-rooted path that ends with `/`, the validator SHALL accept every path under that directory as planned.
 - <a id="sokf_schema_54"></a>SOKF_SCHEMA_54 [ubiquitous]: the body SHALL link no archived document from a paragraph that a pattern in the `current-links` of its schema matches.
+- <a id="sokf_schema_56"></a>SOKF_SCHEMA_56 [ubiquitous]: the body SHALL link, from each unit that a unit rule with `to-type` accepts, only documents of a type in that `to-type`.
 - <a id="sokf_schema_37"></a>SOKF_SCHEMA_37 [ubiquitous]: the frontmatter SHALL contain the path of a file in the repository as each value that its schema binds to the format `repo-path`.
 - <a id="sokf_schema_38"></a>SOKF_SCHEMA_38 [ubiquitous]: the frontmatter SHALL contain the id of a document in its knowledge store as each value that its schema binds to the format `document-id`.
 
@@ -96,9 +100,11 @@ An entry that names `from-marker` counts markers in place of body links ([format
 
 A schema declares `markers`, a list of relationships, to limit the markers that cite its documents and their keys, and `markers: []` refuses every marker. When the list refuses a marker, the validator reports the failure at the file and line of that marker.
 
-A schema declares `plans-paths` to let a document plan the files that its work creates. Each entry names a section by its `rule-id`, and can declare `only`. While a document is in the states of an entry's `only`, each `/`-rooted path that a link in such a section names is planned. The section runs from its heading to the next heading of the same or a higher level. When the document leaves those states, or the file exists, the path is checked like any other, and the fix fills an include of the file from the file.
+A schema declares `plans-paths` to let a document plan the files that its work creates. Each entry names a section by its `rule-id`, and can declare `only`. While a document is in the states of an entry's `only`, each `/`-rooted path that a link in such a section names is planned. A path that ends with `/` plans the directory and every path under it, as a gitignore pattern `dir/` matches the directory and its contents, because a writer who plans a directory of fixtures doesn't yet know the names of its files. The section runs from its heading to the next heading of the same or a higher level. When the document leaves those states, or the file exists, the path is checked like any other, and the fix fills an include of the file from the file.
 
 A schema declares `current-links` to keep its promises current. Each entry is a pattern for a paragraph that makes a promise, such as one that begins with `Planned:`, and such a paragraph links no archived document, because the work that an archived document records is done or dropped.
+
+A unit rule declares `to-type` to say what a body link reaches, as a `links` entry does for the frontmatter. Each `sokf:` link in a unit that the rule accepts then resolves to a document of one of its types. A link with a fragment counts by the type of the document that the fragment lies in, so a story can cite a part of a contract. A link that resolves to nothing breaks SOKF_FORMAT_61 of the [format specification][sokf:sokf-format-spec] instead, and a path link or a URL has no type to check.
 
 A `links` entry requires at least one link unless it declares `min`, and allows any number unless it declares `max`. An entry with `only` applies only in the states that it names.
 
@@ -112,7 +118,7 @@ The validator checks every document against the core frontmatter keys of the for
 
 A tool creates a new document of a type from a scaffold of its schema, not from the complete documents in `examples`. The validator derives one scaffold for each combination of the states of the schema. The text of a scaffold comes only from the fixed texts and the `example` values of the rules, and from the `examples` of the sections that repeat. A new document keeps the `sokf:optional` regions of its scaffold.
 
-The [tramlines-md specification](https://github.com/six5536/tramlines/blob/main/knowledge/spec/tramlines-md-spec.md#9-scaffolds) states how the validator derives a scaffold, writes its markers, and checks it and each example against the schema (TLMD_114 to TLMD_124, TLMD_164, TLMD_176 to TLMD_191, TL_64, TL_66, and TL_69). It also states that a governed document keeps no `only` or `guidance` marker (TLMD_10 and TLMD_158), pairs each `optional` marker (TLMD_12), and draws a warning for an `optional` region (TLMD_11). SOKF spells the markers `sokf:only`, `sokf:guidance`, and `sokf:optional`.
+The [tramlines-md specification](https://github.com/six5536/tramlines/blob/main/knowledge/spec/tramlines-md-spec.md#9-scaffolds) states how the validator derives a scaffold, writes its markers, and checks it and each example against the schema (TLMD_114 to TLMD_124, TLMD_164, TLMD_176 to TLMD_191, TLMD_205 to TLMD_208, TLMD_216, TL_64, TL_66, TL_69, TL_126, TL_127, and TL_129). It also states that a governed document keeps no `only` or `guidance` marker (TLMD_10 and TLMD_158), pairs each `optional` marker (TLMD_12), and draws a warning for an `optional` region (TLMD_11). SOKF spells the markers `sokf:only`, `sokf:guidance`, and `sokf:optional`.
 
 A `sokf:guidance` line is an HTML comment in the body and a YAML comment in the frontmatter.
 

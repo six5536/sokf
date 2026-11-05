@@ -40,16 +40,16 @@ pub struct GraphOptions {
 pub fn graph(root: &RepoRoot, opts: &GraphOptions) -> Result<(Graph, GraphResult)> {
     let config = config::load_config(root)?;
     let cache = Cache::open(root, opts.cache);
-    // A `START` that is a key needs the keys that the schemas define. An id
-    // doesn't, so `graph` loads keys only when one of the `START` arguments is
-    // a key.
-    let keyed = opts.query.start.iter().any(|s| graph::is_key_reference(s));
+    // A `START` that is a key, or an id with a fragment that can name a key,
+    // needs the keys that the schemas define. An id alone doesn't, so `graph`
+    // loads keys only when one of the `START` arguments has a fragment.
+    let keyed = opts.query.start.iter().any(|s| has_fragment(s));
     // With no `START` and no layout edges, `graph` needs no edge, so it reads
     // none (CLI-7_AC-1). Otherwise, with `--no-cache`, it builds every edge,
     // and resolves every marker with every key.
     let every_edge = !cache.is_on() && (!opts.query.start.is_empty() || opts.query.layout_edges);
     let (mut model, keys, all_keys): (Model, Option<KeyIndex>, Option<KeyIndex>) = if keyed {
-        let slugs = super::locate::key_slugs(&opts.query.start);
+        let slugs = super::locate::key_slugs(&opts.query.start, has_fragment);
         let (model, keys) = super::load_keys_for(root, &config, &cache, &slugs)?;
         (model, Some(keys), None)
     } else if every_edge {
@@ -89,6 +89,12 @@ pub fn graph(root: &RepoRoot, opts: &GraphOptions) -> Result<(Graph, GraphResult
     }
     let result = graph::run(&mut graph, &model, keys.as_ref(), &opts.cwd, &opts.query)?;
     Ok((graph, result))
+}
+
+/// `has_fragment` reports whether `arg` is a reference with a fragment that
+/// is not empty, `#key` or `<id>#<fragment>`, whose fragment can name a key.
+fn has_fragment(arg: &str) -> bool {
+    arg.split_once('#').is_some_and(|(_, f)| !f.is_empty())
 }
 
 /// `hydrator` returns the `Hydrator` that reads a document node's fields from

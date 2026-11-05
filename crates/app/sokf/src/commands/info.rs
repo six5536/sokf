@@ -22,6 +22,7 @@ pub fn info(repo_root: Option<&Path>, cache: CacheMode, args: InfoArgs) -> sokf_
             let layer = match f.layer {
                 Some(Layer::Embedded) => InfoLayer::Embedded,
                 Some(Layer::Repo) => InfoLayer::Repo,
+                Some(Layer::Pack) => InfoLayer::Pack,
                 Some(Layer::Effective) | None => InfoLayer::Effective,
             };
             let needs_root = f.schema.is_some() || layer != InfoLayer::Embedded;

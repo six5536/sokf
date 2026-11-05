@@ -122,7 +122,7 @@ pub(super) struct SyncState {
     pub(super) keys_of: BTreeMap<RepoPath, Vec<crate::model::KeyEntry>>,
     /// The paths that each checked document plans, which the commit writes
     /// in place of the document's rows in `plans`.
-    pub(super) plans_of: BTreeMap<RepoPath, BTreeSet<RepoPath>>,
+    pub(super) plans_of: BTreeMap<RepoPath, BTreeSet<crate::model::Planned>>,
     /// The output of each check that the run ran.
     pub(super) outputs: BTreeMap<RepoPath, Vec<crate::Finding>>,
     /// The queries of each check that the run ran.
@@ -131,8 +131,8 @@ pub(super) struct SyncState {
     pub(super) citations: BTreeMap<RepoPath, Vec<super::CitationRow>>,
     /// The edges of each document that the run checked.
     pub(super) edges: BTreeMap<RepoPath, Vec<crate::graph::RawEdge>>,
-    /// Whether each path that the run probed outside the walk exists.
-    pub(super) probes: BTreeMap<RepoPath, bool>,
+    /// What each path that the run probed outside the walk names on disk.
+    pub(super) probes: BTreeMap<RepoPath, crate::walk::OnDisk>,
     /// The asset pairings that the run found.
     pub(super) assets: Option<Vec<super::AssetRow>>,
     /// The schema files that the run found, by key.

@@ -1,0 +1,140 @@
+# This file defines the formats and the types that the schemas of the sokf pack
+# share. Most of the formats give the form of a line in a diagram, in the
+# architecture overview or in a design. Two give the form of a line in a design:
+# the `Planned:` line and the decision line. One gives the form of a part's name
+# in a contract or a design. A schema uses a format by naming it.
+types:
+  phrase: '[A-Z][^"<]*'
+  capitalised: '[A-Z].*'
+  label: '[^"<]+'
+  boundary-kind: '[A-Z][a-z]+(?: [a-z]+)?'
+  flow: '-\.?->'
+  verb-line: '(?:[A-Z][^"<]*<br/>)?'
+  class: [user, block, neighbour, external, store, contract, group]
+  hex: '[0-9a-f]{6}'
+  identifier: '[a-z][a-z0-9_]*'
+  message-arrow: '--?>>'
+  class-relation: ['<|--', '*--', 'o--', '-->', '--', '..>', '..|>', '..']
+  scope: [public, internal]
+  part-name: '(?:`[^`]+`|[A-Z][a-z]\S*)(?: .*)?'
+  topic: '[A-Z][^:]*'
+
+registry:
+  theme:
+    text: '%%{init: {"theme": "neutral", "themeVariables": {"darkMode": false, "background": "#f6f8fa", "clusterBkg": "#f6f8fa", "clusterBorder": "#d0d0d0", "edgeLabelBackground": "#f6f8fa", "lineColor": "#555555", "textColor": "#1a1a1a", "primaryTextColor": "#1a1a1a", "actorBkg": "#ffffff", "actorBorder": "#6c8ebf", "actorLineColor": "#767676", "actorTextColor": "#1a1a1a", "signalColor": "#555555", "signalTextColor": "#1a1a1a", "labelBoxBkgColor": "#f5f5f5", "labelBoxBorderColor": "#6c8ebf", "labelTextColor": "#1a1a1a", "classText": "#1a1a1a"}}}%%'
+    example: '%%{init: {"theme": "neutral", "themeVariables": {"darkMode": false, "background": "#f6f8fa", "clusterBkg": "#f6f8fa", "clusterBorder": "#d0d0d0", "edgeLabelBackground": "#f6f8fa", "lineColor": "#555555", "textColor": "#1a1a1a", "primaryTextColor": "#1a1a1a", "actorBkg": "#ffffff", "actorBorder": "#6c8ebf", "actorLineColor": "#767676", "actorTextColor": "#1a1a1a", "signalColor": "#555555", "signalTextColor": "#1a1a1a", "labelBoxBkgColor": "#f5f5f5", "labelBoxBorderColor": "#6c8ebf", "labelTextColor": "#1a1a1a", "classText": "#1a1a1a"}}}%%'
+  caption:
+    template: '${:capitalised}.'
+    prohibited-patterns:
+      - pattern: '["<]'
+        message: A caption contains no quotation mark and no angle bracket.
+    example: "The file server passes each message that a program writes to the matcher."
+  acc-title:
+    template: 'accTitle: ${:capitalised}'
+    prohibited-patterns:
+      - pattern: '["<]'
+        message: The title of a diagram contains no quotation mark and no angle bracket, because Mermaid reads them as markup.
+    example: 'accTitle: The subsystems of the plumbing system'
+  acc-descr:
+    template: 'accDescr: ${:capitalised}'
+    prohibited-patterns:
+      - pattern: '["<]'
+        message: The description of a diagram contains no quotation mark and no angle bracket, because Mermaid reads them as markup.
+    example: 'accDescr: The plumber passes messages between the window system, the editor, and the image viewer.'
+  canvas:
+    text: 'subgraph canvas[" "]'
+    example: '  subgraph canvas[" "]'
+  boundary:
+    template: 'subgraph ${id:word}["${:phrase}<br/><i>[${:boundary-kind}]</i>"]'
+    example: '    subgraph plumbing["Plumbing system<br/><i>[System]</i>"]'
+  boundary-style:
+    template: 'style ${:word} fill:#f6f8fa,stroke:#999999,stroke-dasharray: 5 5'
+    example: '  style plumbing fill:#f6f8fa,stroke:#999999,stroke-dasharray: 5 5'
+  box:
+    text: 'box rgb(246, 248, 250)'
+    example: "  box rgb(246, 248, 250)"
+  participant:
+    template: 'participant ${:word} as ${:label}'
+    example: "  participant fsys as File server"
+  ground-end:
+    text: end
+    example: "  end"
+  flowchart-type:
+    text: flowchart LR
+    example: flowchart LR
+  class-type:
+    text: classDiagram
+    example: classDiagram
+  sequence-type:
+    text: sequenceDiagram
+    example: sequenceDiagram
+  node:
+    prohibited-patterns:
+      - pattern: '[A-Z]{2,} +[A-Z]{2,}'
+        message: 'A node''s label has no two words in capitals in a row.'
+      - pattern: '^(graph|subgraph|end|class|classDef|style|linkStyle|click|call|href|default|direction)[\[({]'
+        message: 'A node''s id is no Mermaid keyword.'
+    variants:
+      user:
+        template: '${id:word}(["${name:label}<br/><i>${what:label}</i>"]):::user'
+        example: '    user(["User<br/><i>a person</i>"]):::user'
+      block:
+        template: '${id:word}["${name:label}<br/><i>${what:label}</i>"]:::block'
+        example: '    plumber["Plumber<br/><i>C</i>"]:::block'
+      neighbour:
+        template: '${id:word}["${name:label}<br/><i>${what:label}</i>"]:::neighbour'
+        example: '    reader["Rules reader<br/><i>C</i>"]:::neighbour'
+      external:
+        template: '${id:word}["${name:label}<br/><i>${what:label}</i>"]:::external'
+        example: '    editor["Editor<br/><i>acme</i>"]:::external'
+      store:
+        template: '${id:word}[("${name:label}<br/><i>${what:label}</i>")]:::store'
+        example: '    rules[("Rule sets<br/><i>in memory</i>")]:::store'
+      contract:
+        template: '${id:word}{{"${name:label}<br/><i>${what:scope}</i>"}}:::contract'
+        example: '    plumbing{{"Plumbing<br/><i>public</i>"}}:::contract'
+      group:
+        template: '${id:word}[["${name:label}<br/><i>${what:label}</i>"]]:::group'
+        example: '    fsys[["File server<br/><i>C</i>"]]:::group'
+  arrow:
+    template: '${from:word} ${:flow}|"${:verb-line}<i>${what:label}</i>"| ${to:word}'
+    example: '    matcher -->|"Reads<br/><i>rule sets</i>"| rules'
+  class-style:
+    template: 'classDef ${:class} fill:#${:hex},stroke:#${:hex},color:#${:hex}'
+    example: '  classDef block fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a'
+  class-namespace:
+    template: 'namespace ${:identifier} {'
+    example: '  namespace plumber {'
+  class-open:
+    template: 'class ${name:word} {'
+    example: '    class Ruleset {'
+  class-declare:
+    template: 'class ${name:word}'
+    example: '    class Ruleset'
+  class-close:
+    text: '}'
+    example: '  }'
+  class-relation:
+    template: '${:word} ${:class-relation} ${:word}'
+    example: '  Exec ..> Plumbmsg'
+  class-box-style:
+    template: 'style ${name:word} fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a'
+    example: '  style Ruleset fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a'
+  sequence-message:
+    template: '${:word}${:message-arrow}${:word}: ${}'
+    example: '  fsys->>matcher: matchruleset(message, rule set)'
+  er-type:
+    text: erDiagram
+    example: erDiagram
+  state-type:
+    text: stateDiagram-v2
+    example: stateDiagram-v2
+  activity-type:
+    text: flowchart TD
+    example: flowchart TD
+  planned:
+    template: 'Planned: ${:sentence}'
+    example: 'Planned: The matcher reports which pattern failed, so that the `plumb` command can say why a message matched no rule set.'
+  decision:
+    template: '`${:topic}` - ${}. Why: ${}.'
+    example: '`File server` - Programs send and receive messages by writing and reading files. Why: a program needs no new mechanism to use the plumber.'

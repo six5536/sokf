@@ -9,7 +9,7 @@ use std::{
 
 use serde_json::Value;
 
-use super::{Graph, NodeKey, NodeKind, Start, json, resolve_start};
+use super::{Graph, NodeKey, NodeKind, Start, json, resolve_start, start::note};
 use crate::{Expr, Model, RepoPath, Result, model::KeyIndex};
 
 /// `LIMIT` is the number of entries of one group that print without
@@ -166,6 +166,9 @@ pub struct GraphResult {
     pub summary: Summary,
     /// The `query` result, when one was given.
     pub projection: Option<Value>,
+    /// The notes about the starts, in the order of the starts, which the
+    /// command prints to standard error (CLI-7_AC-98).
+    pub notes: Vec<String>,
 }
 
 /// `starts` returns the starts of `query` in the order given, or each
@@ -287,6 +290,11 @@ pub fn run(
         folded: m.folded,
         summary,
         projection: None,
+        notes: query
+            .start
+            .iter()
+            .filter_map(|arg| note(model, keys, arg))
+            .collect(),
     };
     if let Some(q) = &query.query {
         // sokf-implements: CLI-7_AC-22

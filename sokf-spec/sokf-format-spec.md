@@ -72,6 +72,7 @@ Each normative rule of this specification is a criterion in the EARS (Easy Appro
 - <a id="writer"></a>`writer` - An agent or a human that writes documents.
 - <a id="process"></a>`process` - A deterministic program that writes to the knowledge, such as a link checker.
 - <a id="consumer"></a>`consumer` - A program that reads a knowledge store to display, search, or export it, or to pass it to an agent.
+- <a id="schema-pack"></a>`schema pack` - A directory with the manifest `pack.sokf.yaml` that holds schemas, documents, and formats for a tool to copy into a knowledge store (§2).
 
 ## 2. SOKF knowledge store structure
 
@@ -139,6 +140,34 @@ The store identity is `<scope>/<name>`, and documents in other stores use it to 
 - <a id="sokf_format_15"></a>SOKF_FORMAT_15 [ubiquitous]: the agent SHALL leave the `name` and `scope` of the manifest unchanged.
 - <a id="sokf_format_16"></a>SOKF_FORMAT_16 [ubiquitous]: the manifest SHALL contain no `producer`, `generated`, or `counts` key in the working tree (§4).
 
+A schema pack is a directory that holds the method of a knowledge store: schemas, formats, and documents that a tool, such as `sokf pack sync`, copies into a store. The directory is the root of a repository or any directory inside one, so a project can publish its pack beside its code. A schema pack holds these files:
+
+- `pack.sokf.yaml` - The manifest of the pack, at its root.
+- `schemas/` - Schema documents, which a copy places in the `schemas/` directory of the store.
+- `documents/` - Documents, such as documentation standards, which a copy places at the same path relative to the store.
+- `formats.yaml` - The line formats and placeholder types of the pack, in the form of a formats file, which a tool adds to its lookup of formats.
+- `instructions.md` - A fragment of the instructions that an agent harness reads.
+
+The manifest describes the pack:
+
+```yaml
+name: method
+version: 1.2.0
+requires-sokf: 0.1.3
+description: The schemas and the documentation standards with which a team records its work.
+```
+
+- `name` - The name of the pack, which the copies of the pack in every store share.
+- `version` - The version of the pack, in semantic versioning.
+- `requires-sokf` - The oldest version of sokf that the pack works with.
+- `description` - A summary of the pack.
+
+A copy of a pack belongs to the store: the store's writers edit it, and a later copy merges the pack's own changes with those edits.
+
+- <a id="sokf_format_160"></a>SOKF_FORMAT_160 [ubiquitous]: the schema pack SHALL hold a manifest, `pack.sokf.yaml`, at its root.
+- <a id="sokf_format_161"></a>SOKF_FORMAT_161 [ubiquitous]: the schema pack SHALL declare in its manifest a slug `name`, a `version` and a `requires-sokf` of the form `MAJOR.MINOR.PATCH`, and a `description`, and no other key.
+- <a id="sokf_format_162"></a>SOKF_FORMAT_162 [ubiquitous]: the schema pack SHALL hold only Schema documents in `schemas/`, and only documents in `documents/`.
+
 ## 3. Documents
 
 A document is a UTF-8 Markdown file: a YAML frontmatter block followed by a body in standard Markdown. The schema of the document defines the sections of the body ([schema specification][sokf:sokf-schema-spec]), and the rest of the body is free-form. A footnote attributes a claim to a source (§6).
@@ -151,7 +180,7 @@ The frontmatter of a document can hold these core fields:
 - `description` - A one-line summary, for indexes and previews.
 - `tags` - Short labels that group documents across directories.
 - `resource` - The `/` path or URL of what the document describes, or a list of them. An abstract document, which describes no file and no URL, omits it.
-- `status` - `draft`, `stable`, or `deprecated`. When it is absent, the status is `stable`.
+- `status` - `draft`, `stable`, or `deprecated`. When it is absent, the status is `stable`. The status serves readers and the filters of `sokf graph`, such as `-l "status=='draft'"`. `draft` and `stable` change no check. `deprecated` adds a warning at each citation of the document ([validation specification][sokf:sokf-validation-spec] SOKF_VALIDATION_57 to SOKF_VALIDATION_59) and changes no error.
 - `sources` - The sources of the document (§6).
 - `links` - The links of the document (§8).
 - `verified` - The confirmations of the document (§7).
@@ -434,9 +463,14 @@ Paths take one of three forms:
 - `<path>` - A path relative to the file that contains it, as in standard Markdown, used in body links.
 - `<url>` - An absolute URL.
 
+A `/`-rooted path that ends with `/` names a directory, as it does under POSIX: `/src/` resolves to the directory `/src`, and `/README.md/` resolves to nothing, because `/README.md` is a file.
+
 Globs in this specification follow gitignore rules: `*` matches within one directory level, and `**` matches at any depth.
 
 - <a id="sokf_format_76"></a>SOKF_FORMAT_76 [ubiquitous]: the body SHALL make each path that it links to or embeds resolve to a file or directory in the repository.
+- <a id="sokf_format_157"></a>SOKF_FORMAT_157 [event]: WHEN a body link names a `/`-rooted path that ends with one or more `/` characters, the consumer SHALL resolve the link only to a directory at the path without those characters.
+- <a id="sokf_format_158"></a>SOKF_FORMAT_158 [unwanted]: IF a body link names a `/`-rooted path that ends with `/`, and a file exists at the path without the trailing `/` characters, THEN the validator SHALL report that the link names a file, not a directory.
+- <a id="sokf_format_159"></a>SOKF_FORMAT_159 [unwanted]: IF a body link names a `/`-rooted path with an empty, `.`, or `..` segment before any trailing `/` characters, THEN the validator SHALL report that the path is not a valid repository path.
 - <a id="sokf_format_125"></a>SOKF_FORMAT_125 [ubiquitous]: the validator SHALL match each glob by gitignore rules, where `*` stops at `/` and `**` matches at any depth.
 
 ### 9.1 Definition blocks
@@ -598,7 +632,7 @@ A marker is a comment line in a repository file outside every knowledge store. I
 fn parse(args: &[String]) -> Options {
 ```
 
-The tag of a marker is the first word of its line after whitespace and ASCII punctuation, such as `//`, `#`, `--`, `/*`, or `<!--`, so a marker fits the comment syntax of any file. The tag is `sokf-`, a relationship in the form that §8 gives, and a colon, with whitespace after the colon. A qualified id, such as `sokf-spec:glossary`, has no whitespace after its colon, so it is not a tag.
+The tag of a marker is the first word of its line after whitespace and ASCII punctuation, such as `//`, `#`, `--`, `/*`, or `<!--`, so a marker fits the comment syntax of any file that has comments. A file without comments, such as a JSON file, holds no marker. The tag is `sokf-`, a relationship in the form that §8 gives, and a colon, with whitespace after the colon. A qualified id, such as `sokf-spec:glossary`, has no whitespace after its colon, so it is not a tag.
 
 One reference follows the tag, and after the reference come only whitespace and characters that are neither letters nor digits, such as the end of a block comment. A marker states one fact, so a line of code that implements two criteria has two markers.
 

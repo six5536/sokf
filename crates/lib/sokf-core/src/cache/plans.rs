@@ -8,21 +8,24 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::params;
 
 use super::{Cache, conn::Conn, sync::SyncState};
-use crate::{RepoPath, model::PlanIndex};
+use crate::{
+    RepoPath,
+    model::{PlanIndex, Planned},
+};
 
 impl Cache {
     /// `record_plans_of` keeps the paths that each document in `checked`
     /// plans in this run. The commit writes them in place of the document's
     /// rows in the store.
     pub fn record_plans_of(&self, plans: &PlanIndex, checked: &BTreeSet<RepoPath>) {
-        let rows: BTreeMap<RepoPath, BTreeSet<RepoPath>> =
+        let rows: BTreeMap<RepoPath, BTreeSet<Planned>> =
             checked.iter().map(|p| (p.clone(), plans.of(p))).collect();
         self.state.borrow_mut().plans_of.extend(rows);
     }
 
     /// `old_plans_of` returns the paths that the document at `path` planned,
     /// as the store recorded them.
-    pub fn old_plans_of(&self, path: &RepoPath) -> BTreeSet<RepoPath> {
+    pub fn old_plans_of(&self, path: &RepoPath) -> BTreeSet<Planned> {
         self.conn()
             .rows(
                 "SELECT target FROM plans WHERE path = ?1",
@@ -30,7 +33,7 @@ impl Cache {
                 |r| r.get::<_, String>(0),
             )
             .iter()
-            .filter_map(|t| RepoPath::parse(t))
+            .filter_map(|t| Planned::parse(t))
             .collect()
     }
 
@@ -43,7 +46,7 @@ impl Cache {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         });
         for (path, target) in rows {
-            let (Some(path), Some(target)) = (RepoPath::parse(&path), RepoPath::parse(&target))
+            let (Some(path), Some(target)) = (RepoPath::parse(&path), Planned::parse(&target))
             else {
                 continue;
             };
@@ -65,7 +68,7 @@ impl Cache {
         for (path, targets) in &state.plans_of {
             delete.execute([path.as_str()])?;
             for target in targets {
-                put.execute(params![path.as_str(), target.as_str()])?;
+                put.execute(params![path.as_str(), target.key()])?;
             }
         }
         Ok(())

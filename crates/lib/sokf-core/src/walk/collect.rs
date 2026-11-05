@@ -13,7 +13,7 @@ use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use ignore::{DirEntry, ParallelVisitor, ParallelVisitorBuilder, WalkBuilder, WalkState};
 
 use super::{Tree, WalkedDir, WalkedFile, innermost};
-use crate::{Config, Error, RepoPath, RepoRoot, Result, Stat, cache::CACHE_DIR};
+use crate::{Config, Error, RepoPath, RepoRoot, Result, Stat, cache::CACHE_DIR, pack::PACKS_DIR};
 
 /// A `Keep` limits the walk outside the knowledge roots to the paths for
 /// which it returns true. The walk descends into a directory only when
@@ -185,9 +185,13 @@ pub(crate) fn walk_outside(
             // The walk skips the cache, which belongs to the tool: sokf
             // rebuilds an unreadable cache and doesn't report it
             // (CLI-4_AC-19).
+            // The walk also skips the packs' directories, whose base copies
+            // repeat the packs' documents (CONF-8_AC-5).
             // sokf-implements: CACHE-2_AC-1
+            // sokf-implements: CONF-8_AC-5
             Some(rp) => {
                 rp.relative() != CACHE_DIR
+                    && rp.relative() != PACKS_DIR
                     && !exclude.is_match(rp.relative())
                     && keep.as_ref().is_none_or(|keep| keep(&rp))
             }

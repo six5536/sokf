@@ -94,10 +94,12 @@ sections:
       - kind: prose
         max: 1
         guidance: >
-          The opening says what the architecture helps its reader do and what it contains.
+          The opening says what the architecture describes and what it contains, because an
+          architecture describes the structure of a system, and its reader studies that
+          structure.
         each:
           pattern: '^[A-Z].*\.$'
-          example: 'This architecture helps a developer find the part of the plumbing system that a change touches. It shows the system in its context, its three subsystems and their parts, its contracts, two flows, where it runs, and the technology it depends on.'
+          example: 'This architecture describes the structure of the plumbing system. It shows the system in its context, its subsystems and their parts, its contracts, its main flows, where it runs, and the technology it depends on.'
       - kind: bullet-list
         guidance: >
           A contents list follows the opening, with one item for each level-2 section of
@@ -255,9 +257,16 @@ sections:
               example: The plumbing system consists of the plumber, the plumbing library `libplumb`, and the plumb command. The window system, the mail file system, and the plumb command send messages through the library. The image viewer reads messages through it, and the editor does both. The library reaches the plumber over 9P, the Plan 9 file protocol, and the plumber reads the user's rules from `lib/plumbing`.
           - kind: code
             guidance: >
-              The diagram shows only what a reader needs at this level. A crowded diagram
-              means that the system is divided too finely, and the system then needs fewer,
-              larger subsystems, whose parts appear in their own sections.
+              The diagram shows only what a reader needs at this level. It has at most nine
+              nodes and at most nine arrows, because a reader follows each arrow as one step
+              of a flow, and a larger diagram shows too much for one level. At most seven of
+              its nodes are subsystems, because a reader holds about seven things in mind at
+              once, and the subsystems are what a reader takes from this level. A crowded
+              diagram means that the system is divided too finely, and the system then needs
+              fewer, larger subsystems, whose parts appear in their own sections. A system with
+              more than seven subsystems joins related ones into one larger subsystem. The
+              larger subsystem's diagram draws each of them as a `:::group` node, and a Group
+              section with a diagram of its own shows what is inside each group.
             lang: mermaid
             rule-id: subsystems
             each:

@@ -29,7 +29,7 @@ sections:
       which steps it covers.
     blocks:
       - kind: prose
-        example: 'This recipe explains how to add a rule set that sends a PostScript file to the image viewer, and how to test the rule set while the plumber runs. A developer uses it when the plumber has to route a new kind of message. The recipe covers four steps: writing the rule set, loading the rules, testing the rule set, and restoring the old rules.'
+        example: 'This recipe explains how to add a rule set that sends a PostScript file to the image viewer, and how to test the rule set while the plumber runs. A developer uses it when the plumber has to route a new kind of message. It covers writing the rule set, loading the rules, testing the rule set, and restoring the old rules.'
       - kind: bullet-list
         guidance: >
           The contents list has one item for each level-2 section, in order. Each item links
@@ -102,22 +102,37 @@ sections:
       - kind: bullet-list
         optional: true
         repeat: true
+        example:
+          - '**`type is text`**: the rule set accepts only a message whose data is text.'
+          - '**`arg isfile $0`**: the rule set accepts the name only when the file exists.'
+          - '**`plumb client page -wi`**: the plumber starts the image viewer when no program has opened the `image` port.'
       - kind: numbered-list
         optional: true
         repeat: true
+        example:
+          - 'The developer adds the rule set to `lib/plumbing` and loads the rules:'
+          - 'After the test, the developer removes the rule set from `lib/plumbing` and loads the rules again:'
         each:
           blocks:
             - kind: code
               lang: any
               optional: true
+              example: |
+                cat $home/lib/plumbing > /mnt/plumb/rules
       - kind: table
         optional: true
         repeat: true
         columns-open: true
         columns: []
+        example-columns: [Data, Port, Program]
+        each:
+          example:
+            - '`plumb.ps` | `image` | `page`'
+            - '`mem.c` | `edit` | `acme`'
       - kind: blockquote
         optional: true
         repeat: true
+        example: 'Add a rule set to `lib/plumbing` that sends a PostScript file to the image viewer, before the rule set that sends text files to the editor.'
 
   - heading: { template: '${}', example: Write the rule for PostScript files }
     level: 3
@@ -131,28 +146,47 @@ sections:
     blocks:
       - kind: prose
         repeat: true
+        example: 'The rule for PostScript files matches a file name that ends in `.ps` or `.eps`:'
       - kind: code
         lang: any
         optional: true
         repeat: true
+        example: |
+          data matches '([a-zA-Z0-9_\-./]+)\.(ps|eps)'
       - kind: bullet-list
         optional: true
         repeat: true
+        example:
+          - '**`$0`**: the whole text that the pattern matched, such as `plumb.ps`.'
+          - '**`$1`**: the text of the first group, such as `plumb`.'
+          - '**`$2`**: the text of the second group, such as `ps`.'
       - kind: numbered-list
         optional: true
         repeat: true
+        example:
+          - 'Before the change, the developer reads the rules in use:'
+          - 'After the rules load, the developer reads them again, and sees the new rule before the rule set for text files:'
         each:
           blocks:
             - kind: code
               lang: any
               optional: true
+              example: |
+                cat /mnt/plumb/rules
       - kind: table
         optional: true
         repeat: true
         columns-open: true
         columns: []
+        example-columns: [Data, Matches]
+        each:
+          example:
+            - '`plumb.ps` | Yes'
+            - '`plumb.eps` | Yes'
+            - '`plumb.pdf` | No'
       - kind: blockquote
         optional: true
         repeat: true
+        example: 'Write a rule that matches a file name that ends in `.ps` or `.eps`.'
 
 ````

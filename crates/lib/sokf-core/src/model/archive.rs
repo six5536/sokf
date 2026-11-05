@@ -121,7 +121,13 @@ impl Archived {
 /// `id`, `type`, `title`, and `description`, which the store keeps as
 /// columns.
 pub fn scalars(doc: &Document) -> Vec<(String, String)> {
-    let Some(entries) = doc.frontmatter.as_ref().and_then(Spanned::as_map) else {
+    scalars_of(doc.frontmatter.as_ref())
+}
+
+/// `scalars_of` returns the scalar values of `frontmatter`, as `scalars`
+/// does for a document.
+pub fn scalars_of(frontmatter: Option<&Spanned>) -> Vec<(String, String)> {
+    let Some(entries) = frontmatter.and_then(Spanned::as_map) else {
         return Vec::new();
     };
     entries
@@ -174,6 +180,23 @@ impl Model {
             }
         }
         rules
+    }
+
+    /// `is_archived` returns whether a document of store `knowledge` is
+    /// archived, from its type and its frontmatter, as `archived_documents`
+    /// decides it.
+    pub fn is_archived(
+        &self,
+        knowledge: usize,
+        type_name: Option<&str>,
+        frontmatter: Option<&Spanned>,
+    ) -> bool {
+        let Some(type_name) = type_name else {
+            return false;
+        };
+        self.archive_rules()
+            .get(&(knowledge, type_name.to_string()))
+            .is_some_and(|rule| rule.holds(&scalars_of(frontmatter)))
     }
 
     /// `archived_documents` returns the archived documents of every store.

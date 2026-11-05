@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // verify-version.mjs checks that every place in the tree holds the same
 // version: the Cargo workspace, the internal sokf-core pin, every package.json
-// under packages/, the launcher's optionalDependencies, and both lockfiles.
+// under packages/, the launcher's optionalDependencies, the manifest of each
+// embedded pack under packs/, and both lockfiles.
 //
 // Usage: node scripts/verify-version.mjs [EXPECTED_VERSION]
 //
@@ -11,7 +12,7 @@
 // argument. The release workflow uses the argument to check a tag against the
 // tree.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -53,6 +54,15 @@ for (const name of readdirSync(join(root, "packages"))) {
       record(`packages/${name}/package.json optionalDependencies["${dep}"]`, range);
     }
   }
+}
+
+// --- packs/*/pack.sokf.yaml: the manifest of each embedded pack -------------
+// An embedded pack changes only with a release, so its version is the tool's.
+const packsDir = join(root, "packs");
+for (const name of existsSync(packsDir) ? readdirSync(packsDir) : []) {
+  const path = join(packsDir, name, "pack.sokf.yaml");
+  if (!existsSync(path)) continue;
+  record(`packs/${name}/pack.sokf.yaml version`, readFileSync(path, "utf8").match(/^version: *(\S+)$/m)?.[1]);
 }
 
 // --- Cargo.lock -------------------------------------------------------------

@@ -24,7 +24,8 @@ root: /knowledge/issues
 markers: []
 
 # While an issue is open, each new file that its Files section links is planned,
-# so a design can link and include the file before the code exists.
+# so any document, such as a design or a contract, can link and include the file
+# before the code exists.
 plans-paths:
   - section: files
     only: { state: [open] }
@@ -312,7 +313,7 @@ sections:
             pattern: '\(not done: .+\)$'
             min: 0
             example: '[ ] [PLUMB-1_AC-6][sokf:contract-plumbing#plumb-1_ac-6] (not done: an error string of 9P, the Plan 9 file protocol, holds at most 128 bytes)'
-          - pattern: '^\[[ x]\] \[[A-Z]+(?:_[A-Z]+)*(?:-[0-9]+)?(?:_AC-[0-9]+|_P-[0-9]+|_[0-9]+)?\](?:\[sokf:[^\]]+\]|\(https://github\.com/six5536(?:-private)?/sokf/blob/[0-9a-f]{40}/[^)]+\))(?:(?:, and |, | and | to )\[[A-Z]+(?:_[A-Z]+)*(?:-[0-9]+)?(?:_AC-[0-9]+|_P-[0-9]+|_[0-9]+)?\](?:\[sokf:[^\]]+\]|\(https://github\.com/six5536(?:-private)?/sokf/blob/[0-9a-f]{40}/[^)]+\)))*$'
+          - pattern: '^\[[ x]\] \[[A-Z]+(?:_[A-Z]+)*(?:-[0-9]+)?(?:_AC-[0-9]+|_P-[0-9]+|_[0-9]+)?\](?:\[sokf:[^\]]+\]|\(https://[^/)\s]+(?:/[^/)\s]+)*/[0-9a-f]{40}/[^)\s]+\))(?:(?:, and |, | and | to )\[[A-Z]+(?:_[A-Z]+)*(?:-[0-9]+)?(?:_AC-[0-9]+|_P-[0-9]+|_[0-9]+)?\](?:\[sokf:[^\]]+\]|\(https://[^/)\s]+(?:/[^/)\s]+)*/[0-9a-f]{40}/[^)\s]+\)))*$'
             min: 0
             example: '[x] [PLUMB-1_AC-5][sokf:contract-plumbing#plumb-1_ac-5]'
           - pattern: '^\[[ x]\] (?:(?:WHEN|WHILE|WHERE) [^,]+, |IF .+, THEN )?[Tt]he .+ SHALL .+\.$'
@@ -379,8 +380,14 @@ sections:
       - kind: bullet-list
         guidance: >
           Each decision has a key (D-1, D-2, and so on), because a later issue cites a decision
-          by its key. Each decision states its reason after _because_. A decision that refines
-          an earlier one is a new decision that cites the earlier one.
+          by its key. Each decision states its reason after _because_. The reason lets a later
+          writer judge whether the decision still holds, and a decision without one can't be
+          revisited safely. A decision that refines an earlier one is a new decision
+          that cites the earlier one. A decision converted from a plan that gave no reason ends
+          with "because the original plan records no reason", and a reason that the writer
+          inferred is marked "(inferred from the plan's …)". An invented reason is always
+          marked, because an issue keeps the context of a decision as it was, and a reader has
+          to tell a recorded reason from a reconstructed one.
         each:
           template: '${id:decision-id} ${}, because ${}.'
           key: id
@@ -394,8 +401,9 @@ sections:
     guidance: >
       This section lists the files that the work changes or creates, and the existing code to
       reuse, one in each item. Each item gives the path as a link, a colon, and what changes.
-      While the issue is open, a link to a file that doesn't exist yet plans that file, so a
-      design can link and include it before the code exists. A removed file is in code font.
+      While the issue is open, a link to a file that doesn't exist yet plans that file, so any
+      document, such as a design or a contract, can link and include it before the code
+      exists. A removed file is in code font.
     blocks:
       - kind: bullet-list
         example:

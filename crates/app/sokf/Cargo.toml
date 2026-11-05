@@ -36,3 +36,4 @@ insta = { workspace = true }
 boon = { workspace = true }
 dunce = { workspace = true }
 proptest = { workspace = true }
+toml = { workspace = true }

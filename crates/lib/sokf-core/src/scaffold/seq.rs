@@ -1,9 +1,10 @@
 //! For `sokf new`, this module finds the schema of a type, renders an id
-//! from the schema's id template, and computes the next sequence number.
+//! from the schema's id template, and computes the next sequence number or
+//! checks a given one.
 
 use super::IdTemplate;
 use crate::{
-    Compiled, Error, Model, Result,
+    Compiled, Error, Model, RepoPath, Result,
     grammar::{SokfSchema, States},
     markdown::is_slug,
 };
@@ -85,22 +86,80 @@ fn ambiguous(model: &Model, type_name: &str, roots: &[usize]) -> String {
 }
 
 /// `next_seq` returns the next sequence number for `type_name`, which is
-/// the highest number in use plus one. It refuses when a document's
-/// frontmatter does not parse or a document's id does not match the id
-/// template. Without the refusal, the next number could repeat a number
-/// that such a document already uses. It also refuses when the next number
-/// needs more digits than the `seq` placeholder allows.
+/// the highest number in use plus one. It refuses what `numbers` refuses,
+/// and a next number that needs more digits than the `seq` placeholder
+/// allows.
 // sokf-implements: SOKF_SCHEMA_46
 // sokf-implements: CLI-6_AC-4
 // sokf-implements: CLI-6_AC-21
-// sokf-implements: CLI-6_AC-47
-// sokf-implements: CLI-6_AC-48
 pub fn next_seq(
     model: &Model,
     knowledge: usize,
     type_name: &str,
     template: &IdTemplate,
 ) -> Result<u64> {
+    let (width, numbers) = numbers(model, knowledge, type_name, template)?;
+    let next = numbers.iter().map(|d| d.seq).max().unwrap_or(0) + 1;
+    if next.to_string().len() > width {
+        return Err(Error::New(format!(
+            "the next number {next} needs more than {width} digits"
+        )));
+    }
+    Ok(next)
+}
+
+/// `given_seq` returns `seq`, the number that `--seq` gives, for
+/// `type_name`. It refuses what `numbers` refuses, a number that needs more
+/// digits than the `seq` placeholder allows, and a number that a document
+/// of the type already has, whatever its other placeholders, because the
+/// sequence number is unique within the type.
+// sokf-implements: CLI-6_AC-69
+// sokf-implements: CLI-6_AC-70
+// sokf-implements: CLI-6_AC-71
+pub fn given_seq(
+    model: &Model,
+    knowledge: usize,
+    type_name: &str,
+    template: &IdTemplate,
+    seq: u64,
+) -> Result<u64> {
+    let (width, numbers) = numbers(model, knowledge, type_name, template)?;
+    if seq.to_string().len() > width {
+        return Err(Error::New(format!(
+            "the number {seq} needs more than {width} digits"
+        )));
+    }
+    if let Some(d) = numbers.iter().find(|d| d.seq == seq) {
+        return Err(Error::New(format!(
+            "`{}` in {} already has the number {seq}",
+            d.id, d.path
+        )));
+    }
+    Ok(seq)
+}
+
+/// `Numbered` is a document of a type with a `seq` placeholder: its path,
+/// its id, and its sequence number.
+struct Numbered {
+    path: RepoPath,
+    id: String,
+    seq: u64,
+}
+
+/// `numbers` returns the width of the `seq` placeholder, and each document
+/// of `type_name` with its number. It refuses
+/// a template without a `seq` placeholder, a document whose frontmatter
+/// does not parse, and a document whose id does not match the id template.
+/// The number of such a document is unknown, so a number chosen without
+/// the refusal could repeat it.
+// sokf-implements: CLI-6_AC-47
+// sokf-implements: CLI-6_AC-48
+fn numbers(
+    model: &Model,
+    knowledge: usize,
+    type_name: &str,
+    template: &IdTemplate,
+) -> Result<(usize, Vec<Numbered>)> {
     let refuse = |msg: String| Error::New(msg);
     let Some(width) = template.seq_width() else {
         return Err(refuse(format!(
@@ -115,24 +174,16 @@ pub fn next_seq(
             "{path} has frontmatter that does not parse"
         )));
     }
-    let mut highest = 0u64;
+    let mut numbers = Vec::new();
     for (path, id) in model.ids_of_type(knowledge, type_name) {
-        match template.seq_of(&id) {
-            Some(n) => highest = highest.max(n),
-            None => {
-                return Err(refuse(format!(
-                    "{path} has an id that does not match the id template"
-                )));
-            }
-        }
+        let Some(seq) = template.seq_of(&id) else {
+            return Err(refuse(format!(
+                "{path} has an id that does not match the id template"
+            )));
+        };
+        numbers.push(Numbered { path, id, seq });
     }
-    let next = highest + 1;
-    if next.to_string().len() > width {
-        return Err(refuse(format!(
-            "the next number {next} needs more than {width} digits"
-        )));
-    }
-    Ok(next)
+    Ok((width, numbers))
 }
 
 /// `render_id` fills in the id template with the number and the slug. It refuses a slug that is not lowercase letters and digits

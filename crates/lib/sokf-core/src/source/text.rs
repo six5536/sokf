@@ -33,8 +33,13 @@ impl LineEnding {
     /// `detect` returns the line ending of the first line of `text`, or LF when
     /// `text` has no line break.
     pub fn detect(text: &str) -> Self {
-        match text.find('\n') {
-            Some(i) if i > 0 && text.as_bytes()[i - 1] == b'\r' => LineEnding::CrLf,
+        Self::detect_bytes(text.as_bytes())
+    }
+
+    /// `detect_bytes` is `detect` for bytes that need not be UTF-8.
+    pub fn detect_bytes(bytes: &[u8]) -> Self {
+        match bytes.iter().position(|&b| b == b'\n') {
+            Some(i) if i > 0 && bytes[i - 1] == b'\r' => LineEnding::CrLf,
             _ => LineEnding::Lf,
         }
     }

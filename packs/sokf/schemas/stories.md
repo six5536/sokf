@@ -129,6 +129,7 @@ sections:
           through the contracts that depend on it.
         each:
           pattern: '^Contracts: \[[A-Z]+\]\[sokf:[^\]]+\](?:, \[[A-Z]+\]\[sokf:[^\]]+\])*\.$'
+          to-type: Contract
           example: 'Contracts: [PLUMB][sokf:contract-plumbing].'
       - kind: prose
         optional: true

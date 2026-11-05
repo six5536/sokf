@@ -412,6 +412,13 @@ impl Model {
         self.tree.exists(path)
     }
 
+    /// `is_dir` reports whether `path` is a directory of the repository, and
+    /// records the question as the query of `exists`.
+    pub fn is_dir(&self, path: &RepoPath) -> bool {
+        self.note(Query::Exists(path.clone()));
+        self.tree.is_dir(path)
+    }
+
     /// `loaded_document` returns the knowledge and the document at `path`,
     /// when `path` is a document or a schema that the run loaded.
     pub(crate) fn loaded_document(&self, path: &RepoPath) -> Option<(usize, &Document)> {

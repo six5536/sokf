@@ -52,21 +52,120 @@ pub fn is_key_reference(arg: &str) -> bool {
         .is_some_and(|(head, _)| split_store(head).1.is_empty())
 }
 
-/// `key_entry` returns the key that a reference to a key alone identifies,
-/// with the key's slug, when the reference identifies exactly one document
-/// (CLI-7_AC-74).
+/// `key_entry` returns the key that a reference identifies, with the key's
+/// slug. A reference to a key alone identifies the key when exactly one
+/// document captures it (CLI-7_AC-74), at repository or knowledge scope or,
+/// failing those, at document scope (CLI-7_AC-98). A reference
+/// `<id>#<key>` identifies the key when the document with that id captures
+/// it (CLI-7_AC-97).
 pub fn key_entry(model: &Model, keys: &KeyIndex, arg: &str) -> Option<(KeyEntry, String)> {
-    if !is_key_reference(arg) {
+    let written = arg.split_once('#')?.1;
+    if written.is_empty() {
         return None;
     }
-    let [path] = paths_of_reference(model, Some(keys), arg).try_into().ok()?;
-    let written = arg.split_once('#')?.1;
+    let path = match paths_of_reference(model, Some(keys), arg).as_slice() {
+        [one] => one.clone(),
+        [] => match document_scoped(model, keys, arg).as_slice() {
+            [(one, _)] => one.clone(),
+            _ => return None,
+        },
+        _ => return None,
+    };
     [written.to_string(), crate::markdown::slug(written)]
         .into_iter()
         .find_map(|slug| {
             let entry = keys.document.get(&(path.clone(), slug.clone()))?.first()?;
             Some((entry.clone(), slug))
         })
+}
+
+/// `document_scoped` returns each document that captures the key of `arg`,
+/// with the key's slug, in the order of the documents' paths, when `arg` is
+/// a reference to a key alone that matches no key of repository or knowledge
+/// scope (CLI-7_AC-98 to CLI-7_AC-100). The documents lie in the stores
+/// that the reference gives, or in every store when it gives none.
+fn document_scoped(model: &Model, keys: &KeyIndex, arg: &str) -> Vec<(RepoPath, String)> {
+    if !is_key_reference(arg) || !paths_of_reference(model, Some(keys), arg).is_empty() {
+        return Vec::new();
+    }
+    let reference = arg.strip_prefix("sokf:").unwrap_or(arg);
+    let Some((head, written)) = reference.split_once('#') else {
+        return Vec::new();
+    };
+    let stores = stores_of(model, split_store(head).0);
+    let slugs = [written.to_string(), crate::markdown::slug(written)];
+    let mut found: Vec<(RepoPath, String)> = keys
+        .document
+        .keys()
+        .filter(|(p, s)| {
+            slugs.contains(s) && model.knowledge_of(p).is_some_and(|k| stores.contains(&k))
+        })
+        .cloned()
+        .collect();
+    // The key as written and its slug can both match one document, so each
+    // document keeps one slug.
+    found.sort();
+    found.dedup_by(|a, b| a.0 == b.0);
+    found
+}
+
+/// `stores_of` returns the stores that a reference searches: each store of
+/// the name it gives, or every store when it gives none.
+fn stores_of(model: &Model, store: Option<&str>) -> Vec<usize> {
+    match store {
+        None => (0..model.knowledges.len()).collect(),
+        Some(s) => model.stores_named(s),
+    }
+}
+
+/// `note` returns the note that `graph` prints for `arg`, when `arg` is a
+/// reference to a key alone that one document captures at document scope
+/// only. The note gives the reference that names the key in a link
+/// (CLI-7_AC-98).
+pub(super) fn note(model: &Model, keys: Option<&KeyIndex>, arg: &str) -> Option<String> {
+    let [(path, slug)] = document_scoped(model, keys?, arg).try_into().ok()?;
+    let reference = key_reference(model, &path, &slug)?;
+    let id = reference.split_once('#')?.0;
+    Some(format!(
+        "`{arg}` is unique only within `{id}`, so link it as `{reference}`"
+    ))
+}
+
+/// `key_reference` returns the reference `<id>#<slug>` to the key `slug` of
+/// the document at `path`. The id has its store before it when another
+/// store has a document with the same id. `key_reference` returns `None`
+/// when another document of the same store has the id, because no reference
+/// then names the document.
+fn key_reference(model: &Model, path: &RepoPath, slug: &str) -> Option<String> {
+    let (k, id) = id_of(model, path)?;
+    let mut elsewhere = false;
+    for o in 0..model.knowledges.len() {
+        if model.ids(o, &id).into_iter().any(|p| &p != path) {
+            if o == k {
+                return None;
+            }
+            elsewhere = true;
+        }
+    }
+    Some(if elsewhere {
+        format!("{}:{id}#{slug}", model.store_name(k)?)
+    } else {
+        format!("{id}#{slug}")
+    })
+}
+
+/// `id_of` returns the store and the id of the document at `path`.
+fn id_of(model: &Model, path: &RepoPath) -> Option<(usize, String)> {
+    match model.id_at(path) {
+        Some(found) => Some(found),
+        None => {
+            // The run does not hold this document, so the id comes from the
+            // store's row.
+            let k = model.knowledge_of(path)?;
+            let id = model.fallback.as_ref()?.fields(path)?.id?;
+            Some((k, id))
+        }
+    }
 }
 
 /// `paths_of_reference` returns the paths of every document and schema that
@@ -85,10 +184,7 @@ fn paths_of_reference(model: &Model, keys: Option<&KeyIndex>, arg: &str) -> Vec<
         None => (reference, None),
     };
     let (store, id) = split_store(head);
-    let stores: Vec<usize> = match store {
-        None => (0..model.knowledges.len()).collect(),
-        Some(s) => model.stores_named(s),
-    };
+    let stores = stores_of(model, store);
     let mut paths: Vec<RepoPath> =
         if id.is_empty() {
             let (Some(keys), Some(key)) = (keys, fragment.filter(|f| !f.is_empty())) else {
@@ -134,16 +230,7 @@ fn qualified(model: &Model, arg: &str, paths: &[RepoPath]) -> String {
     let forms: Vec<String> = paths
         .iter()
         .filter_map(|p| {
-            let (k, id) = match model.id_at(p) {
-                Some(found) => found,
-                None => {
-                    // The run does not hold this document, so the id comes
-                    // from the store's row.
-                    let k = model.knowledge_of(p)?;
-                    let id = model.fallback.as_ref()?.fields(p)?.id?;
-                    (k, id)
-                }
-            };
+            let (k, id) = id_of(model, p)?;
             let store = model.store_name(k)?;
             Some(match key {
                 Some(key) => format!("`{store}:#{key}`"),
@@ -227,20 +314,74 @@ pub fn resolve_start(
             join(&ids),
             qualified(model, arg, &ids)
         ))),
-        // For a reference to a key alone, the start is the key's node when
-        // the graph has one.
+        // For a reference to a key alone, and for `<id>#<key>` when the
+        // document captures the key, the start is the key's node when the
+        // graph has one.
         // sokf-implements: CLI-7_AC-32
-        ([one], None) => Ok(Start::Node(
-            keys.and_then(|k| key_entry(model, k, arg))
-                .map(|(_, slug)| NodeKey::Key(format!("{one}#{slug}")))
-                .filter(|k| graph.node(k).is_some())
-                .unwrap_or_else(|| NodeKey::Path(one.clone())),
-        )),
+        // sokf-implements: CLI-7_AC-97
+        ([one], None) => Ok(key_start(graph, model, keys, arg, one)),
         ([], Some(p)) => Ok(path_start(graph, model, p)),
-        ([], None) => Err(Error::Start(format!(
-            "`{arg}` is neither an id nor a path in the repository"
-        ))),
+        ([], None) => {
+            // A key that no document captures at repository or knowledge
+            // scope can still be a key of document scope.
+            let scoped = keys.map_or_else(Vec::new, |k| document_scoped(model, k, arg));
+            match scoped.as_slice() {
+                // sokf-implements: CLI-7_AC-98
+                [(one, _)] => Ok(key_start(graph, model, keys, arg, one)),
+                // sokf-implements: CLI-7_AC-100
+                [] => Err(Error::Start(format!(
+                    "`{arg}` is neither an id nor a path in the repository"
+                ))),
+                // sokf-implements: CLI-7_AC-99
+                many => {
+                    let forms: Vec<String> = many
+                        .iter()
+                        .map(|(p, slug)| match key_reference(model, p, slug) {
+                            Some(r) => format!("`{r}`"),
+                            None => p.to_string(),
+                        })
+                        .collect();
+                    Err(Error::Start(format!(
+                        "`{arg}` is a key of document scope that more than one document captures. Write {}",
+                        capped(&forms)
+                    )))
+                }
+            }
+        }
     }
+}
+
+/// `LISTED` is the number of references that the error for a key of
+/// document scope lists before it counts the rest (CLI-7_AC-99).
+const LISTED: usize = 10;
+
+/// `capped` joins the first `LISTED` of `forms` with "or", in their order,
+/// and follows them with "and N more" when `forms` holds more.
+// sokf-implements: CLI-7_AC-99
+fn capped(forms: &[String]) -> String {
+    let listed = forms[..forms.len().min(LISTED)].join(" or ");
+    match forms.len().saturating_sub(LISTED) {
+        0 => listed,
+        more => format!("{listed}, and {more} more"),
+    }
+}
+
+/// `key_start` returns the start of `arg` in the document at `path`: the
+/// node of the key that `arg` names, when the graph has one, and the
+/// document otherwise.
+fn key_start(
+    graph: &Graph,
+    model: &Model,
+    keys: Option<&KeyIndex>,
+    arg: &str,
+    path: &RepoPath,
+) -> Start {
+    Start::Node(
+        keys.and_then(|k| key_entry(model, k, arg))
+            .map(|(_, slug)| NodeKey::Key(format!("{path}#{slug}")))
+            .filter(|k| graph.node(k).is_some())
+            .unwrap_or_else(|| NodeKey::Path(path.clone())),
+    )
 }
 
 /// `path_start` reads a path as a start. It tries each reading in order: a
@@ -410,7 +551,6 @@ mod tests {
     // sokf-tests: CLI-8_AC-9
     // sokf-tests: CLI-8_AC-11
     // sokf-tests: CLI-7_AC-30
-    // sokf-tests: CLI-7_AC-31
     #[test]
     fn references_resolve_across_roots_or_refuse() {
         let dir = temp("ids");
@@ -446,6 +586,114 @@ mod tests {
         let err = resolve_start(&mut g, &m, None, &dir, "a").unwrap_err();
         assert!(err.to_string().contains("/other/n.md"), "{err}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // sokf-tests: CLI-7_AC-31
+    // sokf-tests: CLI-7_AC-97
+    // sokf-tests: CLI-7_AC-98
+    // sokf-tests: CLI-7_AC-99
+    // sokf-tests: CLI-7_AC-100
+    #[test]
+    fn a_key_of_document_scope_starts_when_one_document_captures_it() {
+        use crate::grammar::KeyScope;
+        let dir = temp("document-scope");
+        let m = model_at(&dir, &["/knowledge", "/other"]);
+        let mut keys = KeyIndex::default();
+        for (key, path, scope) in [
+            ("X-1", "/knowledge/core/a.md", KeyScope::Document),
+            ("Y-1", "/knowledge/core.md", KeyScope::Document),
+            ("Y-1", "/knowledge/core/a.md", KeyScope::Document),
+            (
+                "R-1",
+                "/knowledge/core/a.md",
+                KeyScope::Host("knowledge".into()),
+            ),
+            ("R-1", "/knowledge/core.md", KeyScope::Document),
+        ] {
+            keys.add(KeyEntry {
+                key: key.into(),
+                path: p(path),
+                line: 3,
+                heading_slug: None,
+                scope,
+                knowledge: m.knowledge_of(&p(path)).unwrap(),
+                rule_id: None,
+            });
+        }
+        let mut g = build(&m);
+        for (path, slug) in [
+            ("/knowledge/core/a.md", "x-1"),
+            ("/knowledge/core/a.md", "y-1"),
+            ("/knowledge/core.md", "y-1"),
+        ] {
+            g.add_key(&p(path), slug, &slug.to_uppercase(), 3, &[]);
+        }
+        let key = |s: &str| Start::Node(NodeKey::Key(s.into()));
+        let mut start = |arg: &str| resolve_start(&mut g, &m, Some(&keys), &dir, arg);
+        // One document captures `X-1`, so `#x-1` starts at the key, in each
+        // spelling, and the note names the document. The id `a` is also an
+        // id of the store `o`, so the reference gives the store.
+        for arg in ["#x-1", "#X-1", "k:#x-1", "sokf:#x-1"] {
+            assert_eq!(
+                start(arg).unwrap(),
+                key("/knowledge/core/a.md#x-1"),
+                "{arg}"
+            );
+        }
+        assert_eq!(
+            note(&m, Some(&keys), "#x-1").as_deref(),
+            Some("`#x-1` is unique only within `k:a`, so link it as `k:a#x-1`")
+        );
+        // `<id>#<key>` starts at the key that the document captures, and at
+        // the document when the fragment names no key of it.
+        assert_eq!(start("core#y-1").unwrap(), key("/knowledge/core.md#y-1"));
+        assert_eq!(
+            start("core#nothing").unwrap(),
+            Start::Node(NodeKey::Path(p("/knowledge/core.md")))
+        );
+        // A key of knowledge scope keeps its start, with no note.
+        assert_eq!(
+            start("#r-1").unwrap(),
+            Start::Node(NodeKey::Path(p("/knowledge/core/a.md")))
+        );
+        assert_eq!(note(&m, Some(&keys), "#r-1"), None);
+        assert_eq!(note(&m, Some(&keys), "core#y-1"), None);
+        // Two documents capture `Y-1`, so the error lists the reference of
+        // each, in the order of their paths. No document of the store `o`
+        // captures it, and no document captures `#none`.
+        for (arg, message) in [
+            (
+                "#y-1",
+                "graph: `#y-1` is a key of document scope that more than one document captures. Write `core#y-1` or `k:a#y-1`",
+            ),
+            (
+                "o:#y-1",
+                "graph: `o:#y-1` is neither an id nor a path in the repository",
+            ),
+            (
+                "#none",
+                "graph: `#none` is neither an id nor a path in the repository",
+            ),
+        ] {
+            let err = start(arg).unwrap_err();
+            assert!(matches!(err, Error::Start(_)), "{arg}: {err}");
+            assert_eq!(err.to_string(), message);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // sokf-tests: CLI-7_AC-99
+    #[test]
+    fn the_error_lists_ten_references_and_counts_the_rest() {
+        let forms = |n: usize| (1..=n).map(|i| format!("`n{i}#y-1`")).collect::<Vec<_>>();
+        let ten = (1..=10)
+            .map(|i| format!("`n{i}#y-1`"))
+            .collect::<Vec<_>>()
+            .join(" or ");
+        assert_eq!(capped(&forms(2)), "`n1#y-1` or `n2#y-1`");
+        assert_eq!(capped(&forms(10)), ten);
+        assert_eq!(capped(&forms(11)), format!("{ten}, and 1 more"));
+        assert_eq!(capped(&forms(103)), format!("{ten}, and 93 more"));
     }
 
     // sokf-tests: CLI-7_AC-28

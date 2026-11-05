@@ -53,9 +53,11 @@ cited-by:
     severity: warn
   # Code implements each criterion of a part, and a test checks each quality criterion
   # and each property. The issue that builds a part holds the part's criteria until the
-  # code exists.
+  # code exists. A data file can't carry a marker, so its message names where a
+  # declaration in a data file belongs.
   - from-marker: implements
     keys: criteria
+    message: A criterion states only behaviour that code implements, and a declaration in a data file belongs in the part's Inputs as an include.
   - from-marker: tests
     keys: quality-criteria
   - from-marker: tests
@@ -133,6 +135,8 @@ sections:
       Each subsection describes one element of the interface. Its heading names the element
       as users see it. A name that is code is in backticks, such as `/mnt/plumb/send` or
       `plumb -j`, and any other name is a noun phrase, such as the title of a screen. A
+      name can join code and words, such as `plumb` and `plumb -j` for the two forms of
+      one command, because each piece of code in it reads as the text that a user types. A
       sentence on what the element does comes first, and Inputs, Outputs, and Criteria
       follow it, in that order.
     examples:
@@ -318,7 +322,11 @@ sections:
       name for the system and says what the system does rather than how. A criterion uses
       _it_ only where the word has one possible referent. A criterion's tag matches the
       meaning of its condition, not its keyword: "WHEN the file is absent" is a state, and
-      "WHEN the file does not parse" is an error.
+      "WHEN the file does not parse" is an error. A declaration in a data file, such as a
+      rule set in the default rules file `/sys/lib/plumb/basic`, is part of the interface:
+      the element includes the file in its Inputs with `sokf:include`, and its criteria
+      state only behaviour that code implements. A criterion needs code that a marker can
+      cite, and the include already shows the reader what the file declares.
     blocks:
       - kind: bullet-list
         guidance: >
@@ -401,9 +409,16 @@ sections:
   - heading: Properties
     level: 2
     guidance: >
-      This section states the properties that hold for every valid input. The words after
-      FOR ANY name the inputs exactly, because the property-based test generates those
-      inputs. The properties have the keys PLUMB_P-1, PLUMB_P-2, and so on.
+      This section states the properties that hold for every valid input. A property holds
+      for every input of a kind, so it can't restate a criterion, which describes the
+      response to one trigger, and a check on fixed inputs is a criterion's test, not a
+      property's. A property is usually found in one of these families: determinism,
+      idempotence, a round trip, an invariant, and monotonicity or independence of order.
+      Every contract has at least one property,
+      because a block with no property is probably too small for a contract of its own, and
+      its criteria then belong in the contract of a larger block. The words after FOR ANY
+      name the inputs exactly, because the property-based test generates those inputs. The
+      properties have the keys PLUMB_P-1, PLUMB_P-2, and so on.
     blocks:
       - kind: prose
         max: 1

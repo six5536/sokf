@@ -343,6 +343,7 @@ mod tests {
             folded: Default::default(),
             summary: Default::default(),
             projection: None,
+            notes: Vec::new(),
         };
         let mut buf = Vec::new();
         text(

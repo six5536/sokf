@@ -54,7 +54,40 @@ pub struct Tree {
     pub files: Vec<WalkedFile>,
     /// Every directory under a root, including the roots, ordered by path.
     pub dirs: Vec<WalkedDir>,
-    exists: RefCell<HashMap<RepoPath, bool>>,
+    on_disk: RefCell<HashMap<RepoPath, OnDisk>>,
+}
+
+/// `OnDisk` is what a path names on disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnDisk {
+    /// No file or directory exists at the path.
+    Nothing,
+    /// A file, or anything else that is not a directory, exists at the path.
+    File,
+    /// A directory exists at the path.
+    Dir,
+}
+
+impl OnDisk {
+    /// `at` asks the filesystem what `path` names, following a symbolic
+    /// link.
+    pub fn at(path: &std::path::Path) -> OnDisk {
+        match std::fs::metadata(path) {
+            Ok(m) if m.is_dir() => OnDisk::Dir,
+            Ok(_) => OnDisk::File,
+            Err(_) => OnDisk::Nothing,
+        }
+    }
+
+    /// `code` returns the number by which the store keeps the answer: 0 for
+    /// nothing, 1 for a file, and 2 for a directory.
+    pub fn code(self) -> i64 {
+        match self {
+            OnDisk::Nothing => 0,
+            OnDisk::File => 1,
+            OnDisk::Dir => 2,
+        }
+    }
 }
 
 impl Tree {
@@ -73,7 +106,7 @@ impl Tree {
             roots,
             files,
             dirs,
-            exists: RefCell::new(HashMap::new()),
+            on_disk: RefCell::new(HashMap::new()),
         }
     }
 
@@ -83,11 +116,23 @@ impl Tree {
     // sokf-implements: CONF-3_AC-3
     // sokf-implements: CONF-3_AC-4
     pub fn exists(&self, path: &RepoPath) -> bool {
-        if let Some(&known) = self.exists.borrow().get(path) {
+        self.on_disk(path) != OnDisk::Nothing
+    }
+
+    /// `is_dir` returns whether `path` is a directory on disk, from the
+    /// same cache as `exists`.
+    pub fn is_dir(&self, path: &RepoPath) -> bool {
+        self.on_disk(path) == OnDisk::Dir
+    }
+
+    /// `on_disk` returns what `path` names on disk, and caches the answer
+    /// for the rest of the run.
+    pub fn on_disk(&self, path: &RepoPath) -> OnDisk {
+        if let Some(&known) = self.on_disk.borrow().get(path) {
             return known;
         }
-        let known = path.to_fs(&self.root).exists();
-        self.exists.borrow_mut().insert(path.clone(), known);
+        let known = OnDisk::at(&path.to_fs(&self.root));
+        self.on_disk.borrow_mut().insert(path.clone(), known);
         known
     }
 
@@ -202,6 +247,8 @@ mod tests {
             vec![],
         );
         assert!(tree.exists(&p("/here.md")));
+        assert!(!tree.is_dir(&p("/here.md")));
+        assert!(tree.is_dir(&p("/")));
         assert!(!tree.exists(&p("/gone.md")));
         std::fs::write(dir.join("gone.md"), "").unwrap();
         // `exists` caches its first answer for the rest of the run.

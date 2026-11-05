@@ -30,7 +30,7 @@ pub const STORE_FILE: &str = "sokf.sqlite";
 /// table changes. A change to what a check finds needs no raise, because the
 /// fingerprint of the build in the version changes with the code
 /// (CACHE-1_AC-7).
-pub const STORE_FORMAT: u32 = 20;
+pub const STORE_FORMAT: u32 = 22;
 
 // sokf:begin cache
 /// `CacheMode` sets whether a run reads and writes the cache.
@@ -275,7 +275,8 @@ const TABLES: &[(&str, &str)] = &[
     (
         "citations",
         "CREATE TABLE citations (target TEXT NOT NULL, slug TEXT, source TEXT NOT NULL, \
-         source_type TEXT NOT NULL, rel TEXT, line INTEGER NOT NULL)",
+         source_type TEXT NOT NULL, rel TEXT, line INTEGER NOT NULL, include INTEGER NOT NULL, \
+         supersedes INTEGER NOT NULL, retired INTEGER NOT NULL, declared INTEGER NOT NULL)",
     ),
     (
         "probes",

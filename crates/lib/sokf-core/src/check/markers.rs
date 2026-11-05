@@ -59,11 +59,15 @@ pub fn check(
                     Ok(r) => citations.add(
                         r.path,
                         Citation {
+                            declared: false,
                             slug: r.slug,
                             source: path.clone(),
                             source_type: String::new(),
                             rel: Some(rel.clone()),
                             line,
+                            include: false,
+                            supersedes: false,
+                            retired: false,
                         },
                     ),
                     Err(u) => push(

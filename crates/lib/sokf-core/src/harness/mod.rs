@@ -14,6 +14,7 @@ pub const DEFAULT_HOOK_PROGRAM: &str = "sokf";
 
 pub use hook::{Answer, Decision, HookAnswer, HookCall, guard_key, hook, hook_call};
 pub use integration::{
-    ALLOWED_COMMAND, HOOK_COMMAND_MARK, HOOK_EVENTS, hook_command, integration, skill,
+    ALLOWED_COMMAND, HOOK_COMMAND_MARK, HOOK_EVENTS, hook_command, instructions, instructions_only,
+    integration, skill,
 };
 pub use tool::{HEADER, SokfTool, record_path};

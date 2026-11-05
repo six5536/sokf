@@ -4,8 +4,11 @@
 //! about the repository.
 
 mod assets;
+mod config;
+mod conflicts;
 mod coverage;
 mod current_links;
+mod deprecated;
 mod frontmatter;
 mod generated;
 mod host;
@@ -17,10 +20,13 @@ mod manifest;
 mod markers;
 mod plans;
 mod schema_document;
+mod unit_types;
 mod warnings;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use config::check_config;
+pub use conflicts::conflict_lines;
 pub use coverage::{Citation, Citations};
 pub use generated::asset_include;
 pub use host::{SchemaHost, SokfHost, check_against};
@@ -319,11 +325,12 @@ pub fn run_units(
                     .filter(|p| p.path == schema.doc.path)
                     .cloned()
                     .collect();
+                findings.extend(conflicts::check(&schema.doc));
                 findings.extend(schema_document::check_schema(knowledge, i, &ctx));
                 findings.extend(frontmatter::check_core(&schema.doc));
                 findings.extend(frontmatter::check_ids(model, k, &schema.doc));
                 findings.extend(links::check_document(doc_view(&schema.doc), &ctx, c));
-                findings.extend(generated::check(doc_view(&schema.doc), &ctx));
+                findings.extend(generated::check(doc_view(&schema.doc), &ctx, c));
                 findings
             });
         }
@@ -372,8 +379,9 @@ pub fn run_units(
         citations.add(target, citation);
     }
     // After the run checks every document, it checks what other documents
-    // say about each document: whether its keys are unique, and
-    // whether it has the citations it needs.
+    // say about each document: whether its keys are unique, whether it has
+    // the citations it needs, and, for a deprecated document, which
+    // citations still point to it.
     for (k, doc) in model.documents() {
         if !checked(&doc.path) {
             continue;
@@ -383,6 +391,7 @@ pub fn run_units(
         findings.extend(coverage::check_document(
             model, compiled, keys, &citations, k, doc,
         ));
+        findings.extend(deprecated::check_document(model, &citations, doc));
         model.unwatch();
         out.documents
             .entry(doc.path.clone())
@@ -429,10 +438,11 @@ pub fn check_document(
     citations: &mut Citations,
 ) -> Vec<Finding> {
     let mut findings = frontmatter::check(k, doc, ctx);
+    findings.extend(conflicts::check(doc));
     findings.extend(schema_document::check_typed(knowledge, doc, ctx));
     findings.extend(assets::check_document(knowledge, doc, ctx));
     findings.extend(links::check_document(doc_view(doc), ctx, citations));
-    findings.extend(generated::check(doc_view(doc), ctx));
+    findings.extend(generated::check(doc_view(doc), ctx, citations));
     findings.extend(warnings::check(doc));
     findings
 }
@@ -446,7 +456,7 @@ pub fn check_additional(
 ) -> Vec<Finding> {
     let view = additional_view(file);
     let mut findings = links::check_document(view, ctx, citations);
-    findings.extend(generated::check(view, ctx));
+    findings.extend(generated::check(view, ctx, citations));
     if let Some(r) = file.schema {
         findings.extend(schema_document::check_additional(view, r, ctx));
     }

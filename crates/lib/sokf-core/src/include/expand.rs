@@ -412,7 +412,8 @@ fn definition_entries(
 /// fragment is the text of a key, the label uses the key's slug instead. It
 /// also returns whether `--fix` writes the label. `--fix` writes the label of
 /// an inline link when the label resolves (SOKF_VALIDATION_24). It returns `None` for a
-/// link to any other file, and for an image link whose target is not an
+/// link to any other file, for a link that ends with `/`, which names only a
+/// directory (SOKF_FORMAT_157), and for an image link whose target is not an
 /// asset.
 pub fn path_link_label(
     model: &Model,
@@ -422,7 +423,11 @@ pub fn path_link_label(
     link: &Link,
 ) -> Option<(String, bool)> {
     let (target, fragment) = match &link.target {
-        markdown::LinkTarget::Repo { path, fragment } => (path.clone(), fragment.as_deref()),
+        markdown::LinkTarget::Repo {
+            path,
+            fragment,
+            dir: false,
+        } => (path.clone(), fragment.as_deref()),
         markdown::LinkTarget::Relative { target, fragment } => {
             (path.resolve_relative(target)?, fragment.as_deref())
         }

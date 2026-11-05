@@ -13,7 +13,8 @@ use crate::{
 /// `graph` parses the format template and compiles the selector, edge, target, and query
 /// expressions, then runs the graph query on the knowledge root. It prints the query's
 /// projection when the query has one, and otherwise prints the graph as JSON, as Mermaid,
-/// or as a tree whose lines follow the format template. If the format template doesn't
+/// or as a tree whose lines follow the format template, and then prints each note of the
+/// result to standard error. If the format template doesn't
 /// parse, `graph` prints the error and returns the failure exit code.
 // sokf-implements: CLI-7_AC-27
 // sokf-implements: CLI-7_AC-12
@@ -55,5 +56,9 @@ pub fn graph(repo_root: Option<&Path>, cache: CacheMode, args: GraphArgs) -> sok
         tree::text(&mut buf, &graph, &result, &template).map_err(output::stdout_err)?;
     }
     output::write_stdout(&buf)?;
+    // sokf-implements: CLI-7_AC-98
+    for note in &result.notes {
+        eprintln!("note: graph: {note}");
+    }
     Ok(output::EXIT_OK)
 }

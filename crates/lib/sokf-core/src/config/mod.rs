@@ -6,6 +6,5 @@ mod formats;
 mod root;
 
 pub use file::{Config, ConfigText, MarkerCheck, config_path, load_config, read_lenient};
-pub(crate) use formats::formats_path;
-pub use formats::load_repo_formats;
+pub use formats::{RepoFormats, load_repo_formats};
 pub use root::{PathArg, Scope, discover_root, resolve_paths};

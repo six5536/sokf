@@ -16,9 +16,12 @@ pub enum InfoLayer {
     /// `Repo` selects the formats of `/.sokf/formats.yaml`, without those of
     /// the tool.
     Repo,
-    /// `Effective` selects the formats of the tool merged with those of the
-    /// repository, where a format of the repository replaces the tool's
-    /// format of the same name.
+    /// `Pack` selects the formats of the packs in the lock, without those of
+    /// the tool and of the repository.
+    Pack,
+    /// `Effective` selects the formats of the tool, with the pack layer and
+    /// then the repository's formats merged on top, where a nearer layer's
+    /// format replaces a farther layer's format of the same name.
     Effective,
 }
 
@@ -50,6 +53,7 @@ pub fn info_grammar() -> String {
 // sokf-implements: CLI-5_AC-11
 // sokf-implements: CLI-5_AC-13
 // sokf-implements: CLI-5_AC-14
+// sokf-implements: CLI-5_AC-16
 pub fn info_formats(
     root: Option<&RepoRoot>,
     layer: InfoLayer,
@@ -65,7 +69,7 @@ pub fn info_formats(
         let cache = Cache::open(root, cache);
         let mut model = super::load_for_lookup(root, &config, &cache)?;
         super::admit_schema_by_id(&mut model, root, &cache, id)?;
-        let compiled = grammar::compile_all(&model, grammar, repo);
+        let compiled = grammar::compile_all(&model, grammar, &repo);
         let found: Vec<SchemaRef> = model
             .knowledges
             .iter()
@@ -109,20 +113,27 @@ pub fn info_formats(
         InfoLayer::Embedded => Ok(embedded.to_yaml(true)),
         InfoLayer::Repo => {
             let root = root.ok_or(Error::NoRepository)?;
-            match config::load_repo_formats(root, &grammar, &regexes)? {
+            match config::load_repo_formats(root, &grammar, &regexes)?.repo {
                 Some(repo) => Ok(repo.to_yaml(false)),
                 None => Err(Error::Info(
                     "the repository has no /.sokf/formats.yaml".into(),
                 )),
             }
         }
+        // sokf-implements: CLI-5_AC-17
+        InfoLayer::Pack => {
+            let root = root.ok_or(Error::NoRepository)?;
+            match config::load_repo_formats(root, &grammar, &regexes)?.pack_layer() {
+                Some(packs) => Ok(packs.to_yaml(false)),
+                None => Err(Error::Info(
+                    "no pack in /.sokf/packs.lock has a formats.yaml".into(),
+                )),
+            }
+        }
         InfoLayer::Effective => {
             let root = root.ok_or(Error::NoRepository)?;
-            let repo = config::load_repo_formats(root, &grammar, &regexes)?;
-            Ok(match repo {
-                Some(repo) => embedded.layered(&repo).to_yaml(true),
-                None => embedded.to_yaml(true),
-            })
+            let formats = config::load_repo_formats(root, &grammar, &regexes)?;
+            Ok(formats.effective(&embedded).to_yaml(true))
         }
     }
 }

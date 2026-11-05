@@ -10,7 +10,7 @@ use agent_harness_adapter_core::{
 
 use crate::RepoPath;
 
-use super::integration;
+use super::{instructions_only, integration};
 
 /// `HEADER` is the first line of the record file.
 // sokf-implements: CLI-3_AC-58
@@ -28,11 +28,13 @@ const LOCAL_RECORD: &str = ".sokf/harness.local.toml";
 const LOCAL_CONFIG: &str = ".sokf/config.local.toml";
 
 /// `SokfTool` is sokf in a repository, in the home directory, or both, with the program
-/// that the hook line of each harness runs.
+/// that the hook line of each harness runs and the instructions fragment of each pack.
 pub struct SokfTool {
     repo: Option<PathBuf>,
     home: Option<PathBuf>,
     programs: BTreeMap<String, String>,
+    fragments: Vec<(String, String)>,
+    only_instructions: bool,
 }
 
 impl SokfTool {
@@ -48,7 +50,25 @@ impl SokfTool {
             repo,
             home,
             programs,
+            fragments: Vec::new(),
+            only_instructions: false,
         }
+    }
+
+    /// `fragments` adds the instructions fragment of each pack, by the pack's name, in the
+    /// order of the lock, to the instructions block.
+    #[must_use]
+    pub fn fragments(mut self, fragments: Vec<(String, String)>) -> Self {
+        self.fragments = fragments;
+        self
+    }
+
+    /// `instructions_only` makes the integration hold the instructions block alone, so
+    /// that an install writes no other part.
+    #[must_use]
+    pub fn instructions_only(mut self) -> Self {
+        self.only_instructions = true;
+        self
     }
 
     fn repo(&self) -> agent_harness_adapter_core::Result<&PathBuf> {
@@ -75,9 +95,13 @@ impl Tool for SokfTool {
     }
 
     /// The integration, whose hook runs the program that the configuration sets for each
-    /// harness.
+    /// harness, and whose instructions block holds the fragments of the packs.
     fn integration(&self, _scope: Scope) -> Integration {
-        integration(&self.programs)
+        if self.only_instructions {
+            instructions_only(&self.fragments)
+        } else {
+            integration(&self.programs, &self.fragments)
+        }
     }
 
     fn root(&self, scope: Scope) -> agent_harness_adapter_core::Result<PathBuf> {

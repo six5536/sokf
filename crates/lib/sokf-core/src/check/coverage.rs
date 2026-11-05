@@ -1,6 +1,8 @@
-//! This module checks coverage across documents. The link check and the marker check record
-//! each citation they resolve, and the `cited-by` pass reads them after
-//! every document is checked (SOKF_SCHEMA_17, SOKF_SCHEMA_49).
+//! This module checks coverage across documents. The link check, the
+//! include check, and the marker check record each citation they resolve,
+//! and the `cited-by` pass reads them after every document is checked
+//! (SOKF_SCHEMA_17, SOKF_SCHEMA_49). The pass of a deprecated document reads
+//! them too.
 
 use std::collections::HashMap;
 
@@ -12,8 +14,8 @@ use crate::{
     model::{KeyEntry, KeyIndex, Query},
 };
 
-/// A `Citation` is one resolved `sokf:` body link or marker, seen from
-/// its target.
+/// A `Citation` is one resolved `sokf:` body link, marker, or include
+/// block, seen from its target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Citation {
     /// The slug of the fragment, which is a key or a heading, or `None`
@@ -21,21 +23,38 @@ pub struct Citation {
     pub slug: Option<String>,
     /// The citing document, or the file of the marker.
     pub source: RepoPath,
-    /// The citing document's type, or empty for a marker.
+    /// The citing document's type, or empty for a marker or an additional
+    /// file.
     pub source_type: String,
-    /// The relationship of a marker, or `None` for a body link.
+    /// The relationship of a marker, or `None` for a body link or an
+    /// include block.
     pub rel: Option<String>,
-    /// The line of the link or the marker.
+    /// The line of the link, the marker, or the include block's opening
+    /// comment.
     pub line: usize,
+    /// Whether the citation is an include block.
+    pub include: bool,
+    /// Whether the citing document declares a `supersedes` link to the
+    /// target.
+    pub supersedes: bool,
+    /// Whether the citing document is archived or deprecated.
+    pub retired: bool,
+    /// Whether the citation is a `supersedes` entry of the citing
+    /// document's `links`, which names a replacement and cites nothing.
+    pub declared: bool,
 }
 
 impl Citation {
     /// `counts_for` returns whether this citation counts toward coverage
     /// for an entry with the given `from`. A body link counts when its
     /// document has one of the entry's types, and a marker counts when it
-    /// has the entry's relationship.
+    /// has the entry's relationship. An include block and a declared
+    /// `supersedes` entry never count.
     // sokf-implements: EXT-9_AC-6
     pub fn counts_for(&self, from: &CitedFrom) -> bool {
+        if self.include || self.declared {
+            return false;
+        }
         match (from, &self.rel) {
             (CitedFrom::Types(types), None) => types.contains(&self.source_type),
             (CitedFrom::Marker(rel), Some(r)) => r == rel,
@@ -98,6 +117,16 @@ impl Citations {
             .filter(move |c| slug.is_none_or(|s| c.slug.as_deref() == Some(s)))
     }
 
+    /// `all_of` returns every citation of `target`, of any kind, except the
+    /// citations from `target` itself.
+    pub fn all_of<'a>(&'a self, target: &'a RepoPath) -> impl Iterator<Item = &'a Citation> + 'a {
+        self.by_target
+            .get(target)
+            .into_iter()
+            .flatten()
+            .filter(move |c| &c.source != target)
+    }
+
     /// `markers_of` returns the markers that cite `target` or one of its
     /// keys.
     pub fn markers_of<'a>(&'a self, target: &'a RepoPath) -> impl Iterator<Item = &'a Citation> {
@@ -115,12 +144,15 @@ impl Citations {
 /// once, with the entry's severity, on the document without the citation
 /// (SOKF_SCHEMA_17). The pass also reports each marker that cites the
 /// document with a relationship outside the schema's `markers`. It
-/// reports the marker at the marker's own line (SOKF_SCHEMA_49).
+/// reports the marker at the marker's own line (SOKF_SCHEMA_49). An entry's
+/// `message` follows the text of each finding that the entry raises.
 // sokf-implements: EXT-9_AC-1
 // sokf-implements: EXT-9_AC-2
 // sokf-implements: EXT-9_AC-3
 // sokf-implements: EXT-9_AC-4
 // sokf-implements: EXT-9_AC-8
+// sokf-implements: EXT-9_AC-9
+// sokf-implements: EXT-9_AC-10
 pub fn check_document(
     model: &Model,
     compiled: &Compiled,
@@ -159,7 +191,13 @@ pub fn check_document(
         };
         let locator = Locator::schema(schema_id.clone()).at(locator);
         let cited = |slug: Option<&str>| citations.of(&doc.path, slug, &rule.from).next().is_some();
-        let uncited = |line: Option<usize>, message: String| {
+        // The entry's own message follows the finding's text, so the finding
+        // still says first what is missing.
+        let uncited = |line: Option<usize>, text: String| {
+            let message = match &rule.message {
+                Some(advice) => format!("{text}. {advice}"),
+                None => text,
+            };
             Finding::new(
                 doc.path.clone(),
                 line,

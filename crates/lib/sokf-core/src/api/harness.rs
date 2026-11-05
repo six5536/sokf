@@ -9,7 +9,7 @@ use agent_harness_adapter_core::{Action, InstallOptions, Item, Scope, State, har
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::{Error, RepoRoot, Result, config, harness::SokfTool};
+use crate::{Error, RepoRoot, Result, config, harness::SokfTool, pack};
 
 /// `ALL_HARNESSES` is the harness name that stands for every harness that sokf supports.
 pub const ALL_HARNESSES: &str = "all";
@@ -228,9 +228,13 @@ fn shown(scope: Scope, path: &str) -> String {
 
 /// `tool` reads the configuration of the scope and returns sokf as the adapter's `Tool`, with
 /// the program that the repository, or at the user scope the home directory, configures
-/// for the hook line of each harness (CONF-4_AC-2, CONF-4_AC-3).
+/// for the hook line of each harness (CONF-4_AC-2, CONF-4_AC-3). At the project and local
+/// scopes, the instructions block holds the fragment of each pack in the lock, which it
+/// reads from the working tree.
 // sokf-implements: CONF-4_AC-2
 // sokf-implements: CONF-4_AC-3
+// sokf-implements: CLI-3_AC-73
+// sokf-implements: CLI-3_AC-74
 fn tool(dirs: &HarnessDirs, scope: Scope) -> Result<SokfTool> {
     let (config_root, prefix) =
         match scope {
@@ -251,11 +255,18 @@ fn tool(dirs: &HarnessDirs, scope: Scope) -> Result<SokfTool> {
         Error::Init(m) => Error::Harness(format!("{prefix}{m}")),
         other => other,
     })?;
+    // The fragments of the packs belong to the repository, so the block of the user scope
+    // holds none.
+    let fragments = match (scope, &dirs.repo) {
+        (Scope::User, _) | (_, None) => Vec::new(),
+        (_, Some(repo)) => pack::fragments(repo, &pack::read_lock(repo)?)?,
+    };
     Ok(SokfTool::new(
         dirs.repo.as_ref().map(|r| r.as_path().to_path_buf()),
         dirs.home.clone(),
         config.hook_commands,
-    ))
+    )
+    .fragments(fragments))
 }
 
 /// `refusal` turns an error of the adapter into a sokf error, naming a file by its path from the
@@ -364,6 +375,101 @@ pub fn status(dirs: &HarnessDirs, harnesses: &[String], scope: Scope) -> Result<
         agent_harness_adapter_core::status(&tool, harness_ids(harnesses), scope)
             .map_err(refusal(scope))?,
     ))
+}
+
+/// `refresh_instructions` rewrites the `instructions` part of each harness installed at the
+/// project and local scopes of `dirs` whose part is stale, so that the block follows the
+/// packs in the lock. It leaves every other part, and an instructions part that is edited,
+/// skipped, shared, or absent, unchanged, and writes nothing where no harness is installed.
+/// It returns a line for each part that it rewrote.
+///
+/// While the copy of a pack's fragment holds a conflict that a merge left,
+/// it rewrites no part, because the block would hold the conflict markers,
+/// and it returns a line for each stale part that it kept, which names the
+/// conflicted copy.
+// sokf-implements: CLI-13_AC-38
+// sokf-implements: CLI-13_AC-39
+// sokf-implements: CLI-13_AC-40
+pub(crate) fn refresh_instructions(dirs: &HarnessDirs) -> Result<Vec<String>> {
+    let mut lines = Vec::new();
+    let conflicted: Vec<String> = match &dirs.repo {
+        Some(repo) => pack::fragments(repo, &pack::read_lock(repo)?)?
+            .into_iter()
+            .map(|(name, text)| (pack::instructions_of(&name), text))
+            .filter(|(path, text)| !crate::check::conflict_lines(path, text).is_empty())
+            .map(|(path, _)| path.as_str().to_string())
+            .collect(),
+        None => Vec::new(),
+    };
+    for scope in [Scope::Project, Scope::Local] {
+        let tool = tool(dirs, scope)?.instructions_only();
+        let installed =
+            agent_harness_adapter_core::installed(&tool, scope).map_err(refusal(scope))?;
+        if installed.is_empty() {
+            continue;
+        }
+        let found =
+            agent_harness_adapter_core::status(&tool, &installed, scope).map_err(refusal(scope))?;
+        let state = |h: &agent_harness_adapter_core::HarnessResult| {
+            h.parts
+                .iter()
+                .find(|p| p.part == Item::Instructions.as_str())
+                .map(|p| p.state)
+        };
+        if !found
+            .harnesses
+            .iter()
+            .any(|h| state(h) == Some(State::Stale))
+        {
+            continue;
+        }
+        // sokf-implements: CLI-13_AC-42
+        if !conflicted.is_empty() {
+            for h in found
+                .harnesses
+                .iter()
+                .filter(|h| state(h) == Some(State::Stale))
+            {
+                for p in h
+                    .parts
+                    .iter()
+                    .filter(|p| p.part == Item::Instructions.as_str())
+                {
+                    lines.push(format!(
+                        "kept {} ({} {}): {} holds a conflict; resolve it, and the next `sokf pack sync` rewrites the part",
+                        shown(scope, &p.path),
+                        h.harness,
+                        p.part,
+                        conflicted.join(", ")
+                    ));
+                }
+            }
+            continue;
+        }
+        // An install creates an absent part, so a harness whose block is absent stays out.
+        let named: Vec<String> = found
+            .harnesses
+            .iter()
+            .filter(|h| state(h).is_some_and(|s| s != State::Absent))
+            .map(|h| h.harness.clone())
+            .collect();
+        let written = report(
+            agent_harness_adapter_core::install(&tool, &InstallOptions::new(named, scope))
+                .map_err(refusal(scope))?,
+        );
+        for h in &written.harnesses {
+            for p in h.parts.iter().filter(|p| p.action.is_some()) {
+                lines.push(format!(
+                    "{} {} ({} {})",
+                    p.verb(),
+                    p.path,
+                    h.harness,
+                    p.part
+                ));
+            }
+        }
+    }
+    Ok(lines)
 }
 
 #[cfg(test)]

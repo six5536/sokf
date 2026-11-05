@@ -150,7 +150,7 @@ pub(super) fn changed_queries(
             q.insert(key_query(&scope, &slug, k));
         }
         for target in cache.old_plans_of(&path) {
-            q.insert(Query::Planned(target).key());
+            q.insert(Query::Planned(target.path).key());
         }
     }
     for path in &changed {

@@ -7,4 +7,4 @@ mod expected;
 mod render;
 
 pub use expected::{Indexes, expected, expected_for, touched};
-pub use render::{IndexEntry, render};
+pub use render::{IndexEntry, is_generated, render};

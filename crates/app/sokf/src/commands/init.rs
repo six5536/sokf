@@ -9,7 +9,8 @@ use crate::{cli::InitArgs, output};
 /// `init` creates a knowledge store and prints the path of each file it wrote.
 /// It prints one `created <path>` line for each new file, then one
 /// `updated <path>` line for each file it edited. With `--json`, it prints the
-/// result as one JSON object instead.
+/// result as one JSON object instead. It then prints a warning to stderr for
+/// each `index.md` under the store's directory that is not a generated index.
 // sokf-implements: CLI-2_AC-11
 // sokf-implements: CLI-2_AC-12
 pub fn init(repo_root: Option<&Path>, args: InitArgs) -> sokf_core::Result<u8> {
@@ -34,6 +35,12 @@ pub fn init(repo_root: Option<&Path>, args: InitArgs) -> sokf_core::Result<u8> {
         }
     }
     output::write_stdout(&buf)?;
+    // sokf-implements: CLI-2_AC-32
+    for path in &result.hand_written_indexes {
+        eprintln!(
+            "warning: init: {path} is not a generated index, so `sokf validate --fix` doesn't overwrite it: move its content into a document"
+        );
+    }
     // sokf-implements: CLI-2_AC-27
     Ok(output::EXIT_OK)
 }

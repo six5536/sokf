@@ -1,11 +1,12 @@
 //! The index check: every directory of a knowledge has its generated
 //! `index.md` (SOKF_FORMAT_96 to SOKF_FORMAT_110).
 
-use crate::{Finding, Indexes, Located, Model};
+use crate::{Finding, Indexes, Located, Model, index};
 
 /// `check_indexes` reports one finding, at the index's path and with no line,
 /// for each directory that has no index and for each index whose text differs
-/// from its expected text.
+/// from its expected text. An index that is not in the generated form gets a
+/// message of its own, because `--fix` leaves it as it is.
 // sokf-implements: SOKF_FORMAT_96
 // sokf-implements: SOKF_FORMAT_97
 // sokf-implements: CLI-4_AC-27
@@ -13,6 +14,15 @@ pub fn check_indexes(model: &Model, indexes: &Indexes) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (path, text) in &indexes.expected {
         match model.by_path(path) {
+            // sokf-implements: CLI-4_AC-35
+            Some(Located::Index(_, file)) if !index::is_generated(&file.source.text) => {
+                findings.push(Finding::error(
+                    path.clone(),
+                    None,
+                    "SOKF_FORMAT_97",
+                    "the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix`",
+                ));
+            }
             Some(Located::Index(_, file)) => {
                 if file.source.text != *text {
                     findings.push(Finding::error(
@@ -96,6 +106,34 @@ mod tests {
                     "the index is stale: it differs from the generated content (SOKF_FORMAT_97)"
                         .to_string()
                 ),
+            ]
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // sokf-tests: CLI-4_AC-35
+    #[test]
+    fn a_hand_written_index_says_where_its_content_belongs() {
+        let dir = temp("hand-written");
+        fs::write(
+            dir.join("knowledge/schemas/index.md"),
+            "# Schemas\n\nThe schemas of the store.\n",
+        )
+        .unwrap();
+        let root = RepoRoot::new(dir.clone());
+        let tree = collect(&root, &Config::default()).unwrap();
+        let model = build(tree, &mut FsLoader::new(&root)).unwrap();
+        let findings = check_indexes(&model, &index::expected(&model, &[]));
+        let on_schemas: Vec<String> = findings
+            .iter()
+            .filter(|f| f.path.as_str() == "/knowledge/schemas/index.md")
+            .map(crate::report::message)
+            .collect();
+        assert_eq!(
+            on_schemas,
+            vec![
+                "the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix` (SOKF_FORMAT_97)"
+                    .to_string()
             ]
         );
         fs::remove_dir_all(&dir).unwrap();

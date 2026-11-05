@@ -360,6 +360,7 @@ mod tests {
             folded: Default::default(),
             summary: Default::default(),
             projection: None,
+            notes: Vec::new(),
         };
         let mut buf = Vec::new();
         text(&mut buf, &g, &result).unwrap();
@@ -393,6 +394,7 @@ mod tests {
             folded: Default::default(),
             summary: Default::default(),
             projection: None,
+            notes: Vec::new(),
         };
         let mut buf = Vec::new();
         text(&mut buf, &g, &started).unwrap();
@@ -426,7 +428,7 @@ mod tests {
                     nodes.push(all[i].clone());
                 }
             }
-            let result = GraphResult { start: vec![], rows: printed(0..6), nodes: nodes.clone(), edges: (0..6).collect(), folded: Default::default(), summary: Default::default(), projection: None };
+            let result = GraphResult { start: vec![], rows: printed(0..6), nodes: nodes.clone(), edges: (0..6).collect(), folded: Default::default(), summary: Default::default(), projection: None, notes: Vec::new() };
             let mut buf = Vec::new();
             text(&mut buf, &g, &result).unwrap();
             let out = String::from_utf8(buf).unwrap();

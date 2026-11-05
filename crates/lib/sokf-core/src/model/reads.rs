@@ -26,7 +26,8 @@ pub enum Query {
     /// The query reads what is at a path: a document and its facts, a
     /// schema, an index, an asset, or a file.
     Path(RepoPath),
-    /// The query reads whether a file or a directory exists at a path.
+    /// The query reads whether a file or a directory exists at a path, and
+    /// which of the two it is.
     Exists(RepoPath),
     /// The query reads the documents of a type in a store.
     Type {
@@ -73,7 +74,9 @@ pub enum Query {
         key: String,
     },
     /// The query reads whether a document plans a file at a path: whether an
-    /// open issue, for example, links the path in its Files section.
+    /// open issue, for example, links the path in its Files section. A check
+    /// of a planned path reads the query of the path and of each directory
+    /// above it, because a plan of a directory plans every path under it.
     Planned(RepoPath),
     /// The query reads the identities of every store, current and former.
     /// A qualified id, a link to another store, or an include from another

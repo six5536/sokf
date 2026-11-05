@@ -13,8 +13,10 @@ use std::{
 use crate::{
     Cache, CacheMode, Config, Error, Expr, Finding, RepoPath, RepoRoot, Report, Result,
     cache::CitedFact,
-    check, config, fix,
-    grammar::{FormatRegistry, Grammar},
+    check,
+    config::{self, RepoFormats},
+    fix,
+    grammar::Grammar,
     include, index,
     model::{KeyIndex, Query},
 };
@@ -73,7 +75,7 @@ pub fn check_repository(
     root: &RepoRoot,
     config: &Config,
     grammar: &Grammar,
-    repo_formats: Option<&FormatRegistry>,
+    repo_formats: &RepoFormats,
     cache: &Cache,
     want_full: bool,
 ) -> Result<(Loaded, Vec<Finding>)> {
@@ -91,7 +93,7 @@ pub(crate) fn check_and_keep(
     root: &RepoRoot,
     config: &Config,
     grammar: &Grammar,
-    repo_formats: Option<&FormatRegistry>,
+    repo_formats: &RepoFormats,
     cache: &Cache,
     want_full: bool,
     report: bool,
@@ -141,7 +143,7 @@ fn check_once(
     root: &RepoRoot,
     config: &Config,
     grammar: &Grammar,
-    repo_formats: Option<&FormatRegistry>,
+    repo_formats: &RepoFormats,
     cache: &Cache,
     want_full: bool,
     report: bool,
@@ -298,6 +300,10 @@ fn check_once(
                 source_type: c.source_type.clone(),
                 rel: c.rel.clone(),
                 line: c.line,
+                include: c.include,
+                supersedes: c.supersedes,
+                retired: c.retired,
+                declared: c.declared,
             })
             .collect();
         cache.record_citations(source, rows);
@@ -309,7 +315,7 @@ fn check_once(
             if let Query::Exists(p) = q
                 && !cache.is_walked(p)
             {
-                cache.record_probe(p, loaded.model.tree.exists(p));
+                cache.record_probe(p, loaded.model.tree.on_disk(p));
             }
         }
     }
@@ -491,16 +497,7 @@ pub fn validate(
         }
         cache.set_hint(changed_paths(root, &opts.cwd, &opts.changed)?);
     }
-    let check = || {
-        check_repository(
-            root,
-            &config,
-            &grammar,
-            repo_formats.as_ref(),
-            &cache,
-            false,
-        )
-    };
+    let check = || check_repository(root, &config, &grammar, &repo_formats, &cache, false);
     let mut report = Report::default();
     // With `--fix`, the fix plan covers the documents with findings, which
     // `prepare_fix` loads in full after the first check. After the fix,
@@ -561,6 +558,9 @@ pub fn validate(
         }
     }
     report.extend(findings);
+    // The check of the configuration runs once in each run, outside the
+    // cache, because the configuration is no unit of the cache.
+    report.extend(check::check_config(&config));
     let report = report.finish().filter(&scope);
     let projection = opts.query.as_ref().map(|q| report.project(q)).transpose()?;
     Ok((report, projection))

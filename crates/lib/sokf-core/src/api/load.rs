@@ -9,8 +9,9 @@ use crate::{
     Cache, Compiled, Config, Document, Error, Expected, Model, RepoPath, RepoRoot, Result, Source,
     Tree,
     cache::DocRow,
-    check, config,
-    grammar::{self, FormatRegistry, Grammar, RegexCache},
+    check,
+    config::{self, RepoFormats},
+    grammar::{self, Grammar, RegexCache},
     include,
     model::{self, KeyIndex, Loader, ParseMode, Query},
     source, walk,
@@ -221,13 +222,13 @@ pub fn load_with_keys(
 ) -> Result<(Model, KeyIndex)> {
     let (grammar, repo_formats) = load_formats(root)?;
     let model = load_model(root, config, cache)?;
-    let compiled = grammar::compile_all(&model, grammar, repo_formats);
+    let compiled = grammar::compile_all(&model, grammar, &repo_formats);
     let keys = check::capture_keys_of(&model, &compiled, None);
     Ok((model, keys))
 }
 
 /// `load_formats` loads the grammar and the repository's formats file.
-pub(super) fn load_formats(root: &RepoRoot) -> Result<(Grammar, Option<FormatRegistry>)> {
+pub(super) fn load_formats(root: &RepoRoot) -> Result<(Grammar, RepoFormats)> {
     let grammar = grammar::load_grammar()?;
     let repo_formats = config::load_repo_formats(root, &grammar, &RegexCache::new())?;
     Ok((grammar, repo_formats))
@@ -251,7 +252,7 @@ pub fn load_checked(root: &RepoRoot, config: &Config, cache: &Cache) -> Result<O
         root,
         config,
         &grammar,
-        repo_formats.as_ref(),
+        &repo_formats,
         cache,
         false,
         false,
@@ -298,18 +299,10 @@ pub fn load_repository(
     root: &RepoRoot,
     config: &Config,
     grammar: &Grammar,
-    repo_formats: Option<&FormatRegistry>,
+    repo_formats: &RepoFormats,
     cache: &Cache,
 ) -> Result<Loaded> {
     load_for_check(root, config, grammar, repo_formats, cache, true)
-}
-
-/// `file_hash` returns the FNV-1a hash of a repository file's bytes, or 0
-/// when the file is absent.
-fn file_hash(root: &RepoRoot, path: &RepoPath) -> u64 {
-    std::fs::read(path.to_fs(root))
-        .map(|bytes| source::fnv1a64(&bytes))
-        .unwrap_or(0)
 }
 
 /// `load_for_check` walks the repository, syncs the cache, builds the
@@ -335,7 +328,7 @@ pub(super) fn load_for_check(
     root: &RepoRoot,
     config: &Config,
     grammar: &Grammar,
-    repo_formats: Option<&FormatRegistry>,
+    repo_formats: &RepoFormats,
     cache: &Cache,
     want_full: bool,
 ) -> Result<Loaded> {
@@ -349,8 +342,8 @@ pub(super) fn load_for_check(
     let full = want_full || cache.is_fresh();
     model.marker_check = config.markers;
     let scanned = scan_outside(&mut model, cache, root, full);
-    let mut compiled = grammar::compile_all(&model, grammar.clone(), repo_formats.cloned());
-    let formats_changed = cache.formats_changed(file_hash(root, &config::formats_path()), || {
+    let mut compiled = grammar::compile_all(&model, grammar.clone(), repo_formats);
+    let formats_changed = cache.formats_changed(repo_formats.hash, || {
         grammar::fingerprint(&compiled.registry)
     });
     let schemas_changed = cache.schemas_changed(schema_rows(&model, cache));
@@ -482,7 +475,7 @@ pub(super) fn load_for_check(
             for path in &wave {
                 let new = plans.of(path);
                 for target in cache.old_plans_of(path).symmetric_difference(&new) {
-                    moved.insert(Query::Planned(target.clone()).key());
+                    moved.insert(Query::Planned(target.path.clone()).key());
                 }
                 for target in &new {
                     planned.add(path, target);

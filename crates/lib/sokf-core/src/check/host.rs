@@ -7,7 +7,9 @@ use tramlines_md::{
     markdown::Dialect,
 };
 
-use super::{CheckOutput, Ctx, DocView, current_links, frontmatter as fm_check, link_rules};
+use super::{
+    CheckOutput, Ctx, DocView, current_links, frontmatter as fm_check, link_rules, unit_types,
+};
 use crate::{
     Locator, RepoPath, Severity,
     grammar::{Dispatch, SokfSchema, States},
@@ -107,11 +109,20 @@ impl Host for SokfHost<'_> {
         }
     }
 
+    /// `records_accepted` asks the engine for the units that each unit rule
+    /// accepts only where a unit rule of the schema declares `to-type`, so
+    /// that the check of any other schema matches no unit twice.
+    // sokf-implements: EXT-5_AC-2
+    fn records_accepted(&self) -> bool {
+        !self.ctx.scaffold && !self.schema.unit_types.is_empty()
+    }
+
     /// `check` runs the rules of the schema's `links` on the document, after
     /// the engine's rules. A gated `links` rule, one whose `only` limits it
     /// to some lifecycle states, records each entry that it matches. The
     /// engine's check of a scaffold's markers reads those records
-    /// (TLMD_174).
+    /// (TLMD_174). It then checks the targets of the links in each unit that
+    /// a rule with `to-type` accepts.
     fn check(
         &self,
         doc: &engine::DocView<'_>,
@@ -124,6 +135,7 @@ impl Host for SokfHost<'_> {
             link_rules::check(doc.path, core, self.schema, states, self.ctx, locator, out);
         }
         current_links::check(doc, self.schema, self.ctx, out);
+        unit_types::check(doc, self.schema, self.ctx, locator, out);
     }
 }
 

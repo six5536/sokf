@@ -1,6 +1,6 @@
 extension: sokf
 extends: tramlines-md
-version: "0.6"
+version: "0.7"
 doc: >
   This file holds what SOKF adds to the tramlines-md grammar, which lays the Markdown
   format on the tramlines core grammar (tramlines specifications). Together they are
@@ -195,6 +195,13 @@ schema:
         enum:
           - knowledge
           - repository
+      to-type:
+        type: string-or-list
+        doc: >
+          `to-type` gives the document type or types that the target of each `sokf:`
+          link in a unit that the rule accepts must have. A link with a fragment counts
+          by the type of the document that the fragment lies in. When it is absent, a
+          link can reach a document of any type.
   # sokf:end unit
   # sokf:begin frontmatter-constraint
   frontmatter-constraint:
@@ -284,6 +291,12 @@ schema:
           captures must have a citation. A citation gives the key's slug, or, when the key
           belongs to a heading, the slug of that heading. When `keys` is absent, the
           document itself must be cited, and a link counts with or without a fragment.
+      message:
+        type: string
+        doc: >
+          `message` is one sentence in the voice of the document that says what the
+          rule asks of the writer. A validator appends it to each finding that the
+          entry raises, after the finding's own text and before its locator.
       only:
         type: map
         of: string-or-list

@@ -1,21 +1,28 @@
 //! This module finds the files that a document plans. A schema's
 //! `plans-paths` names its planning sections, and while the document is in
 //! the states of an entry's `only`, each `/`-rooted path that such a section
-//! links is planned (SOKF_SCHEMA_53).
+//! links is planned (SOKF_SCHEMA_53). A link that ends with `/` plans a
+//! directory and every path under it (SOKF_SCHEMA_55).
 
 use std::collections::BTreeSet;
 
 use tramlines_md::markdown::LinkTarget;
 
 use super::states_of;
-use crate::{Compiled, Document, Model, RepoPath, grammar::SokfSchema, model::PlanIndex};
+use crate::{
+    Compiled, Document, Model, RepoPath,
+    grammar::SokfSchema,
+    model::{PlanIndex, Planned},
+};
 
 /// `planned_by` returns the paths that `doc` plans under `schema`: the
 /// `/`-rooted path links inside each planning section that the document's
 /// states admit. A planning section runs from its heading to the next
-/// heading of the same or a higher level.
+/// heading of the same or a higher level. A link that ends with `/` plans a
+/// directory.
 // sokf-implements: SOKF_SCHEMA_53
-pub fn planned_by(doc: &Document, schema: &SokfSchema) -> BTreeSet<RepoPath> {
+// sokf-implements: SOKF_SCHEMA_55
+pub fn planned_by(doc: &Document, schema: &SokfSchema) -> BTreeSet<Planned> {
     let mut out = BTreeSet::new();
     if schema.plans_paths.is_empty() {
         return out;
@@ -52,9 +59,12 @@ pub fn planned_by(doc: &Document, schema: &SokfSchema) -> BTreeSet<RepoPath> {
             for link in &doc.body.links {
                 if link.line > h.line
                     && link.line < end
-                    && let LinkTarget::Repo { path, .. } = &link.target
+                    && let LinkTarget::Repo { path, dir, .. } = &link.target
                 {
-                    out.insert(path.clone());
+                    out.insert(Planned {
+                        path: path.clone(),
+                        dir: *dir,
+                    });
                 }
             }
         }

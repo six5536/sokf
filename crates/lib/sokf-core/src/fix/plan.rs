@@ -371,7 +371,8 @@ fn value_end(text: &str, line: usize) -> usize {
 /// `plan_indexes` checks each index in `scope` and each index in a directory
 /// that a move touches. When the text of such an index differs from its
 /// expected text, `plan_indexes` adds the index to `out`. The plan rewrites
-/// the index when it exists and creates it when it doesn't.
+/// the index when it exists in the generated form, leaves it when it exists
+/// in another form, and creates it when it doesn't exist.
 /// When `only` is given, it plans only the directories of the index paths in
 /// `only` and the directories that the moves touch. When the run hasn't
 /// loaded an index, it reads the index from disk (CACHE-1_AC-18).
@@ -406,8 +407,12 @@ fn plan_indexes(
                 .map(|s| (Cow::Owned(s.text), s.eol)),
         };
         match held {
+            // An index that is not in the generated form holds text that
+            // the fix would destroy, so the fix leaves it, and the check
+            // reports it (SOKF_VALIDATION_56).
+            // sokf-implements: SOKF_VALIDATION_56
             Some((current, eol)) => {
-                if current != text.as_str() {
+                if current != text.as_str() && index::is_generated(&current) {
                     out.rewrites.push(Rewrite { path, text, eol });
                 }
             }
@@ -569,7 +574,8 @@ mod tests {
         let config = config::load_config(&root).unwrap();
         let grammar = grammar::load_grammar().unwrap();
         let cache = Cache::open(&root, CacheMode::Off);
-        let loaded = load_repository(&root, &config, &grammar, None, &cache).unwrap();
+        let loaded =
+            load_repository(&root, &config, &grammar, &Default::default(), &cache).unwrap();
         plan(
             &loaded.model,
             &loaded.compiled,

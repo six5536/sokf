@@ -8,11 +8,13 @@ use crate::{cli::NewArgs, output};
 
 /// `new` derives a document from a schema and prints it. With `--write`, it
 /// prints the `created` line instead. With `--id-only`, it prints only the id.
-/// With `--json`, it prints one JSON object.
+/// With `--json`, it prints one JSON object, and with `--write` too, the
+/// object takes the place of the `created` line.
 // sokf-implements: CLI-6_AC-10
 // sokf-implements: CLI-6_AC-11
 // sokf-implements: CLI-6_AC-12
 // sokf-implements: CLI-6_AC-13
+// sokf-implements: CLI-6_AC-72
 pub fn new(repo_root: Option<&Path>, cache: CacheMode, args: NewArgs) -> sokf_core::Result<u8> {
     let (cwd, root) = output::root(repo_root)?;
     let opts = NewOptions {
@@ -20,6 +22,7 @@ pub fn new(repo_root: Option<&Path>, cache: CacheMode, args: NewArgs) -> sokf_co
         slug: args.slug,
         id: args.id,
         title: args.title,
+        seq: args.seq,
         states: args.state,
         dir: args.dir,
         for_asset: args.for_asset,

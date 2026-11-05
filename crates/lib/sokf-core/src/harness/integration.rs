@@ -12,7 +12,10 @@ use agent_harness_adapter_core::{
 };
 
 const SKILL: &str = include_str!(concat!(env!("OUT_DIR"), "/harness/skills/sokf/SKILL.md"));
+// One block, in words that hold whether or not a hook runs, so every harness
+// writes the same block, whatever parts it installs.
 // sokf-implements: CLI-3_AC-35
+// sokf-implements: CLI-3_AC-70
 const INSTRUCTIONS: &str = include_str!(concat!(env!("OUT_DIR"), "/harness/instructions.md"));
 
 /// `EMBEDDED` lists every embedded file, relative to `harness/` at the
@@ -79,7 +82,37 @@ pub fn hook_command(program: &str) -> String {
     format!("{program}{HOOK_COMMAND_MARK}{{harness}} {{event}}")
 }
 
-/// `integration` returns sokf's integration, whose hook command runs `sokf`, or for a
+/// `instructions` returns the instructions block: sokf's own instructions,
+/// then each fragment of `fragments`, a pack's name with its text, in the
+/// order given. The line `<!-- pack: <NAME> -->`, with a blank line before
+/// and after it, precedes each fragment. With no fragment, the block is
+/// sokf's own instructions, unchanged.
+// sokf-implements: CLI-3_AC-71
+// sokf-implements: CLI-3_AC-72
+pub fn instructions(fragments: &[(String, String)]) -> String {
+    let mut out = INSTRUCTIONS.to_string();
+    for (name, text) in fragments {
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&format!("\n<!-- pack: {name} -->\n\n"));
+        out.push_str(text.trim_start_matches('\n'));
+    }
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// `instructions_only` returns an integration with the instructions block of
+/// `fragments` and no other item, so that an install of it writes no other
+/// part.
+pub fn instructions_only(fragments: &[(String, String)]) -> Integration {
+    Integration::new().instructions(instructions(fragments))
+}
+
+/// `integration` returns sokf's integration, with the instructions block of
+/// `fragments`, whose hook command runs `sokf`, or for a
 /// harness that `programs` names, the program that it gives (CONF-4_AC-2). Each hook entry whose command contains `HOOK_COMMAND_MARK` is sokf's, so the
 /// hooks part replaces it, whatever program it runs, and leaves the user's
 /// entries alone.
@@ -93,9 +126,12 @@ pub fn hook_command(program: &str) -> String {
 // sokf-implements: CLI-3_AC-37
 // sokf-implements: CLI-3_AC-42
 // sokf-implements: CONF-4_AC-2
-pub fn integration(programs: &BTreeMap<String, String>) -> Integration {
+pub fn integration(
+    programs: &BTreeMap<String, String>,
+    fragments: &[(String, String)],
+) -> Integration {
     let mut i = Integration::new()
-        .instructions(INSTRUCTIONS)
+        .instructions(instructions(fragments))
         .skill(skill())
         .hook_match(EntryMatch::Contains(HOOK_COMMAND_MARK.into()))
         .allow_command(ALLOWED_COMMAND);
@@ -122,7 +158,7 @@ mod tests {
     // sokf-tests: CLI-3_AC-37
     #[test]
     fn the_integration_has_four_items_and_the_stop_hook() {
-        let i = integration(&BTreeMap::new());
+        let i = integration(&BTreeMap::new(), &[]);
         assert_eq!(
             i.items(),
             [
@@ -145,7 +181,10 @@ mod tests {
         );
         // A harness's own program replaces `sokf` at the start of its command only, and a
         // brace in it stays as written.
-        let i = integration(&[("codex".to_string(), "./target/debug/sokf".to_string())].into());
+        let i = integration(
+            &[("codex".to_string(), "./target/debug/sokf".to_string())].into(),
+            &[],
+        );
         assert_eq!(
             i.hooks()[0].command("codex"),
             "./target/debug/sokf harness hook codex stop"
@@ -158,6 +197,24 @@ mod tests {
             Hook::new(Event::Stop, hook_command("${DIR}/sokf")).command("pi"),
             "${DIR}/sokf harness hook pi stop"
         );
+    }
+
+    // sokf-tests: CLI-3_AC-71
+    // sokf-tests: CLI-3_AC-72
+    #[test]
+    fn each_fragment_follows_the_comment_that_names_its_pack() {
+        assert_eq!(instructions(&[]), INSTRUCTIONS);
+        let block = instructions(&[
+            ("method".into(), "Write the issue first.\n".into()),
+            ("style".into(), "Write short sentences.".into()),
+        ]);
+        assert_eq!(
+            block,
+            format!(
+                "{INSTRUCTIONS}\n<!-- pack: method -->\n\nWrite the issue first.\n\n<!-- pack: style -->\n\nWrite short sentences.\n"
+            )
+        );
+        assert_eq!(instructions_only(&[]).items(), [Item::Instructions]);
     }
 
     // sokf-tests: CLI-3_AC-38

@@ -33,7 +33,7 @@ sections:
       copies the guide's words. The frontmatter lists the guide in `sources`.
     blocks:
       - kind: prose
-        example: 'This standard sets the rules for the manual pages of the plumber, `plumber(4)`, `plumb(1)`, `plumb(2)`, and `plumb(6)`, and for the comments in the default rules file `/sys/lib/plumb/basic`. A writer, a person or an agent, reads it before changing a page or a comment. Its four sections state the order of precedence, then the rules for files, rules, and messages, for diagnostics, and for bugs.'
+        example: 'This standard sets the rules for the manual pages of the plumber, `plumber(4)`, `plumb(1)`, `plumb(2)`, and `plumb(6)`, and for the comments in the default rules file `/sys/lib/plumb/basic`. A writer, a person or an agent, reads it before changing a page or a comment. Its sections state the order of precedence, then the rules for files, rules, and messages, for diagnostics, and for bugs.'
       - kind: bullet-list
         guidance: >
           A contents list follows the opening, with one item for each level-2 section, in

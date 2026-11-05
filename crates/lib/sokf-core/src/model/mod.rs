@@ -30,6 +30,6 @@ pub use keys::{KeyEntry, KeyIndex};
 pub use knowledge::{Knowledge, Located, Model};
 pub use loader::{FsLoader, Loader};
 pub use manifest::{Manifest, manifest};
-pub use plans::PlanIndex;
+pub use plans::{PlanIndex, Planned};
 pub use reads::{Query, Reads, Recorder, SCHEMA_PREFIX};
 pub use stores::{Identity, IdentityRow, StoreHit};

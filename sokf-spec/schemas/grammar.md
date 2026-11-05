@@ -145,7 +145,16 @@ sections:
         optional: true
         repeat: true
         example: 'When no rule set matches and the message names no port, the write to `/mnt/plumb/send` fails with the error `no matching plumb rule`.'
-      - { kind: table, optional: true, repeat: true, columns: [], columns-open: true }
+      - kind: table
+        optional: true
+        repeat: true
+        columns: []
+        columns-open: true
+        example-columns: [Verb, Objects, Meaning]
+        each:
+          example:
+            - '`is` | any but `plumb` | The object equals the argument.'
+            - '`to` | `plumb` | The message goes to the port.'
       - kind: code
         optional: true
         repeat: true

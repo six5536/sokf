@@ -464,6 +464,7 @@ mod tests {
                 archived: crate::graph::Count { shown: 0, total: 3 },
             },
             projection: None,
+            notes: Vec::new(),
         };
         assert_eq!(
             bounded(&graph, &result),

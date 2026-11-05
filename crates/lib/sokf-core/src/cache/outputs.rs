@@ -33,17 +33,28 @@ pub struct CitationRow {
     pub source: RepoPath,
     /// The type of the citing document, or empty for a marker.
     pub source_type: String,
-    /// The relationship of a marker, or `None` for a body link.
+    /// The relationship of a marker, or `None` for a body link or an
+    /// include block.
     pub rel: Option<String>,
     /// The line of the citation.
     pub line: usize,
+    /// Whether the citation is an include block.
+    pub include: bool,
+    /// Whether the citing document declares a `supersedes` link to the
+    /// target.
+    pub supersedes: bool,
+    /// Whether the citing document is archived or deprecated.
+    pub retired: bool,
+    /// Whether the citation is a declared `supersedes` entry.
+    pub declared: bool,
 }
 
-/// `CitedFact` holds the parts of one citation that the coverage of its
-/// target depends on: when a fact changes, the run checks the target again.
+/// `CitedFact` holds the parts of one citation that the checks of its
+/// target depend on: when a fact changes, the run checks the target again.
 /// The fact leaves out the line of a body link, because no coverage finding
 /// reads it, but keeps the line of a marker, because the run reports a
-/// refused marker at its line.
+/// refused marker at its line. The pass of a deprecated document reads the
+/// body of each citing file, so a moved line checks it again.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CitedFact {
     /// The cited document.
@@ -56,6 +67,15 @@ pub struct CitedFact {
     pub rel: Option<String>,
     /// The line of a marker, or `None` for a body link.
     pub line: Option<usize>,
+    /// Whether the citation is an include block.
+    pub include: bool,
+    /// Whether the citing document declares a `supersedes` link to the
+    /// target.
+    pub supersedes: bool,
+    /// Whether the citing document is archived or deprecated.
+    pub retired: bool,
+    /// Whether the citation is a declared `supersedes` entry.
+    pub declared: bool,
 }
 
 impl CitedFact {
@@ -68,6 +88,10 @@ impl CitedFact {
             source_type: c.source_type.clone(),
             rel: c.rel.clone(),
             line: c.rel.as_ref().map(|_| c.line),
+            include: c.include,
+            supersedes: c.supersedes,
+            retired: c.retired,
+            declared: c.declared,
         }
     }
 }
@@ -319,11 +343,11 @@ impl Cache {
         self.state.borrow_mut().keys_of.extend(rows);
     }
 
-    /// `record_probe` records whether a path outside the walk exists, so
-    /// that the commit can write it. The next sync checks the path with
-    /// stat again.
-    pub fn record_probe(&self, path: &RepoPath, exists: bool) {
-        self.state.borrow_mut().probes.insert(path.clone(), exists);
+    /// `record_probe` records what a path outside the walk names on disk,
+    /// nothing, a file, or a directory, so that the commit can write it. The
+    /// next sync checks the path with stat again.
+    pub fn record_probe(&self, path: &RepoPath, on_disk: crate::walk::OnDisk) {
+        self.state.borrow_mut().probes.insert(path.clone(), on_disk);
     }
 
     /// `record_assets` keeps the asset pairings of this run for the commit
@@ -363,8 +387,8 @@ impl Cache {
         changed
     }
 
-    /// `probes_changed` returns the probed paths whose existence changed
-    /// after the cache recorded it.
+    /// `probes_changed` returns the probed paths whose existence, or whose
+    /// kind, a file or a directory, changed after the cache recorded it.
     pub fn probes_changed(&self, root: &crate::RepoRoot) -> BTreeSet<RepoPath> {
         self.conn()
             .rows("SELECT path, exists_ FROM probes", [], |r| {
@@ -372,7 +396,8 @@ impl Cache {
             })
             .into_iter()
             .filter_map(|(path, answered)| {
-                RepoPath::parse(&path).filter(|p| p.to_fs(root).exists() != (answered != 0))
+                RepoPath::parse(&path)
+                    .filter(|p| crate::walk::OnDisk::at(&p.to_fs(root)).code() != answered)
             })
             .collect()
     }
@@ -388,7 +413,8 @@ impl Cache {
         let removed = self.removed_set();
         self.conn()
             .rows(
-                "SELECT slug, source, source_type, rel, line FROM citations WHERE target = ?1",
+                "SELECT slug, source, source_type, rel, line, include, supersedes, retired, \
+                 declared FROM citations WHERE target = ?1",
                 [target.as_str()],
                 |r| {
                     let Some(source) = RepoPath::parse(&r.get::<_, String>(1)?) else {
@@ -400,6 +426,10 @@ impl Cache {
                         source_type: r.get(2)?,
                         rel: r.get(3)?,
                         line: r.get::<_, i64>(4)? as usize,
+                        include: r.get::<_, i64>(5)? != 0,
+                        supersedes: r.get::<_, i64>(6)? != 0,
+                        retired: r.get::<_, i64>(7)? != 0,
+                        declared: r.get::<_, i64>(8)? != 0,
                     }))
                 },
             )
@@ -423,7 +453,8 @@ impl Cache {
     pub fn old_citations(&self, source: &RepoPath) -> BTreeSet<CitedFact> {
         self.conn()
             .rows(
-                "SELECT target, slug, source_type, rel, line FROM citations WHERE source = ?1",
+                "SELECT target, slug, source_type, rel, line, include, supersedes, retired, \
+                 declared FROM citations WHERE source = ?1",
                 [source.as_str()],
                 |r| {
                     let Some(target) = RepoPath::parse(&r.get::<_, String>(0)?) else {
@@ -437,6 +468,10 @@ impl Cache {
                         source_type: r.get(2)?,
                         line: rel.as_ref().map(|_| line),
                         rel,
+                        include: r.get::<_, i64>(5)? != 0,
+                        supersedes: r.get::<_, i64>(6)? != 0,
+                        retired: r.get::<_, i64>(7)? != 0,
+                        declared: r.get::<_, i64>(8)? != 0,
                     }))
                 },
             )
@@ -540,8 +575,8 @@ impl Cache {
         }
         let mut del_cit = conn.prepare("DELETE FROM citations WHERE source = ?1")?;
         let mut put_cit = conn.prepare(
-            "INSERT INTO citations (target, slug, source, source_type, rel, line) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO citations (target, slug, source, source_type, rel, line, include, \
+             supersedes, retired, declared) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )?;
         for (source, rows) in &state.citations {
             del_cit.execute([source.as_str()])?;
@@ -552,7 +587,11 @@ impl Cache {
                     c.source.as_str(),
                     c.source_type,
                     c.rel,
-                    c.line as i64
+                    c.line as i64,
+                    c.include as i64,
+                    c.supersedes as i64,
+                    c.retired as i64,
+                    c.declared as i64
                 ])?;
             }
         }
@@ -582,8 +621,8 @@ impl Cache {
         }
         let mut put_probe =
             conn.prepare("INSERT OR REPLACE INTO probes (path, exists_) VALUES (?1, ?2)")?;
-        for (path, exists) in &state.probes {
-            put_probe.execute(params![path.as_str(), i64::from(*exists)])?;
+        for (path, on_disk) in &state.probes {
+            put_probe.execute(params![path.as_str(), on_disk.code()])?;
         }
         if let Some(assets) = &state.assets {
             conn.execute_batch("DELETE FROM assets")?;

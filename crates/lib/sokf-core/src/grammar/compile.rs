@@ -5,16 +5,16 @@
 //! Check, Fix, and Scaffold share the compiled schemas.
 
 use super::{FormatRegistry, Grammar, RegexCache, SokfSchema, compile, embedded_formats};
-use crate::{Finding, Model, RepoPath, model::SchemaRef};
+use crate::{Finding, Model, RepoPath, config::RepoFormats, model::SchemaRef};
 
 /// `Compiled` holds the grammar and the compiled schemas of one run.
 #[derive(Debug)]
 pub struct Compiled {
     /// `grammar` holds the grammar that each schema is checked against.
     pub grammar: Grammar,
-    /// `registry` holds the formats that schemas can use. It holds the embedded
-    /// formats and the repository's formats, and when two formats share a
-    /// name, the repository's format replaces the embedded one.
+    /// `registry` holds the formats that schemas can use: the embedded
+    /// formats, then the pack layer, then the repository's formats, each
+    /// layer replacing a format of the same name in the layers under it.
     pub registry: FormatRegistry,
     /// `regexes` holds each regular expression that the schemas use, so that
     /// each one is compiled only once.
@@ -115,18 +115,13 @@ impl Compiled {
 /// schema that the model has read.
 // sokf-implements: SOKF_SCHEMA_15
 // sokf-implements: SOKF_SCHEMA_43
-pub fn compile_all(
-    model: &Model,
-    grammar: Grammar,
-    repo_formats: Option<FormatRegistry>,
-) -> Compiled {
+// sokf-implements: CLI-13_AC-33
+// sokf-implements: CLI-13_AC-34
+pub fn compile_all(model: &Model, grammar: Grammar, formats: &RepoFormats) -> Compiled {
     let regexes = RegexCache::new();
-    let mut problems = Vec::new();
+    let mut problems = formats.clashes();
     let embedded = embedded_formats(&grammar, &regexes).unwrap_or_default();
-    let registry = match &repo_formats {
-        Some(repo) => embedded.layered(repo),
-        None => embedded,
-    };
+    let registry = formats.effective(&embedded);
     // The schema extension is embedded, and a test checks that it has a
     // `schema-document` section.
     let written = grammar
@@ -259,7 +254,7 @@ mod tests {
         let root = RepoRoot::new(dir.clone());
         let tree = collect(&root, &Config::default()).unwrap();
         let model = build(tree, &mut FsLoader::new(&root)).unwrap();
-        let compiled = compile_all(&model, load_grammar().unwrap(), None);
+        let compiled = compile_all(&model, load_grammar().unwrap(), &RepoFormats::default());
         assert_eq!(
             compiled.schema_document.dispatch,
             Dispatch::Type("Schema".into())

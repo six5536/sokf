@@ -75,6 +75,8 @@ fn run() -> sokf_core::Result<u8> {
         // `init` reads no knowledge, so the cache mode does not apply to it.
         Command::Init(args) => commands::init(repo_root, args),
         Command::Harness(args) => commands::harness(repo_root, cache, args),
+        // `pack` reads no knowledge, so the cache mode does not apply to it.
+        Command::Pack(args) => commands::pack(repo_root, args),
         Command::Validate(args) => commands::validate(repo_root, cache, args),
         Command::Info(args) => commands::info(repo_root, cache, args),
         Command::New(args) => commands::new(repo_root, cache, args),

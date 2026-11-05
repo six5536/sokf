@@ -28,16 +28,19 @@ compatibility. The SOKF knowledge declares the version that it targets
 with the manifest's `sokf` key (§2).
 
 The grammar and the shared formats carry versions of their own. Both
-versions are earlier than 1.0, and neither has been released. Nothing
-reads either number, so a change to either one bumps its minor version
-whether it breaks a schema or not, and the git history records what
-changed.
+versions are earlier than 1.0. Nothing reads either number, so a change
+to either one bumps its minor version whether it breaks a schema or not,
+and the git history records what changed. The grammar is at 0.7. It rose
+from 0.6, the grammar of sokf 0.1.3, when it gained a `cited-by` entry's
+`message` and a unit rule's `to-type`.
 
 ## 0.6
 
-Amendments on 18 to 23 September, 27 September, 1 October, and 2 October 2026 changed this version. The
-changes are additive for documents: a 0.5 document conforms unchanged.
-Schema authors must rewrite their schemas for the new grammar.
+Amendments on 18 to 23 September, 27 September, 1 to 4 October, and 5 November 2026 changed this version. A 0.5
+document conforms unchanged unless a `/`-rooted body link in it ends
+with `/` and names a file (SOKF_FORMAT_158), or has an empty, `.`, or
+`..` segment (SOKF_FORMAT_159). Schema authors must rewrite their
+schemas for the new grammar.
 
 - Split: the SOKF specification becomes the format, schema, and
   validation specifications. Each rule is a criterion with a key, and
@@ -52,6 +55,14 @@ Schema authors must rewrite their schemas for the new grammar.
 - Current links (§4): a schema can declare `current-links`, patterns of the paragraphs that make a promise, and such a paragraph links no archived document (SOKF_SCHEMA_54).
 - Roots (§6): a schema without a path-enforced dimension can declare a `root`, and its documents lie under it (SOKF_SCHEMA_51), so SOKF_SCHEMA_27 requires a `root` only where a dimension is path-enforced. The fix moves a document that lies outside such a root into it (SOKF_VALIDATION_54).
 - Repeated headings (§8.5): each heading has the slug that GitHub gives it, so a later heading with a taken slug takes a suffix, such as `foo-1`, and a fragment with that suffix resolves to it (SOKF_FORMAT_155). A fragment no longer matches more than one heading.
+- Hand-written indexes (validation specification §3): the fix leaves unchanged an index that holds anything other than a heading, a list of entries, and a definition block, and the document check reports it (SOKF_VALIDATION_56). A directory that a store adopts can hold an `index.md` written as a page, and the fix would otherwise destroy its text.
+- Citation messages (schema extension): a `cited-by` entry can declare `message`, one sentence that a validator appends to each finding that the entry raises, after the finding's own text and before its locator. A schema that declares it needs a validator that knows the key.
+- Body link types (schema specification §4, schema extension): a unit rule can declare `to-type`, and each `sokf:` link in a unit that the rule accepts must reach a document of one of its types, counted by the document of a link with a fragment (SOKF_SCHEMA_56). A schema that declares it needs a validator that knows the key.
+- Schema packs (§2): a schema pack is a directory with a manifest, `pack.sokf.yaml`, that holds schemas, documents, and a formats file for a tool to copy into a store (SOKF_FORMAT_160 to SOKF_FORMAT_162).
+- Status (§3): the status serves readers and the filters of a tool. `draft` and `stable` change no check.
+- Deprecated documents (§3, validation specification §2): the validator warns at each `sokf:` body link, marker, and include block that cites a document with `status: deprecated`, and names each document that declares a `supersedes` link to it (SOKF_VALIDATION_57 to SOKF_VALIDATION_64). A citation from a document that supersedes it, from an archived document, or from a deprecated document gets no warning. The warning changes no error, so a store that cites a deprecated document still conforms.
+- Directory links (§9, schema specification §4): a `/`-rooted path that ends with `/` resolves only to a directory, as it does under POSIX, and a link of that form to a file fails (SOKF_FORMAT_157, SOKF_FORMAT_158). A `/`-rooted path with an empty, `.`, or `..` segment is reported as an invalid repository path (SOKF_FORMAT_159). A planning section that links a directory with the trailing `/` plans every path under it (SOKF_SCHEMA_55).
+- Assets and markers (schema specification §3, format specification §9.5): the schema specification gives the reason that an asset and its sidecar lie within a knowledge store (SOKF_SCHEMA_8), and says that a file outside every store is the `resource` of an ordinary document. A marker fits the comment syntax of a file that has comments, and a file without comments holds no marker.
 - Lifecycle (§10): a type schema can declare ordered state dimensions,
   each a required frontmatter key. A path-enforced dimension sets the
   document's directory under the schema's `root`, and `--fix` moves a

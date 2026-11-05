@@ -3,7 +3,7 @@
 //! unresolved (SOKF_FORMAT_77 to SOKF_FORMAT_81, SOKF_FORMAT_85 to
 //! SOKF_FORMAT_91, SOKF_FORMAT_95, SOKF_FORMAT_112).
 
-use super::{Ctx, DocView};
+use super::{Citations, Ctx, DocView, deprecated::Citer};
 use crate::{
     Finding, RepoPath,
     include::{self, RegionError, extract, render_definitions},
@@ -13,6 +13,8 @@ use crate::{
 
 /// `check` reports each include block of a document that is not current or
 /// not well-formed, and does the same for the document's definition block.
+/// It records each include block that resolves to a document in
+/// `citations`, for the pass of a deprecated document (SOKF_VALIDATION_59).
 // sokf-implements: SOKF_FORMAT_65
 // sokf-implements: SOKF_FORMAT_77
 // sokf-implements: SOKF_FORMAT_78
@@ -28,8 +30,9 @@ use crate::{
 // sokf-implements: SOKF_FORMAT_95
 // sokf-implements: SOKF_FORMAT_112
 // sokf-implements: FORMAT-2_AC-6
-pub fn check(doc: DocView<'_>, ctx: &Ctx<'_>) -> Vec<Finding> {
+pub fn check(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations) -> Vec<Finding> {
     let mut findings = Vec::new();
+    let citer = Citer::of(doc, ctx);
     let path = doc.path;
     let fail =
         |findings: &mut Vec<Finding>, line: Option<usize>, msg: String, key: &'static str| {
@@ -73,6 +76,12 @@ pub fn check(doc: DocView<'_>, ctx: &Ctx<'_>) -> Vec<Finding> {
                     );
                     continue;
                 };
+                if let Some(citer) = &citer {
+                    citations.add(
+                        target.path.clone(),
+                        citer.cite(&target.path, None, block.open_line, true),
+                    );
+                }
                 // Each target has one written form: the shortest form that
                 // identifies it from this store.
                 if let Some(canonical) =

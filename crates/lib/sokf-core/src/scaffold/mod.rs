@@ -16,11 +16,11 @@ mod store;
 mod write;
 
 pub use config::{ConfigChange, register};
-pub use fill::{Identity, bind, fill, identity};
+pub use fill::{Identity, bind, fill, identity, title};
 pub use gate::gate;
 pub use place::{Site, asset, place, slugify};
 pub use seed::{seed, states};
-pub use seq::{next_seq, render_id, schema_for};
+pub use seq::{given_seq, next_seq, render_id, schema_for};
 pub use store::{StoreFiles, store};
 pub use tramlines_md::derive::{Refusal, derived_title, no_template};
 pub use tramlines_md::grammar::IdTemplate;

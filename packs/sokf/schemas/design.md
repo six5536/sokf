@@ -78,14 +78,15 @@ sections:
   - heading: { from: title }
     level: 1
     guidance: >
-      The opening says what the design helps its reader do and what it contains. It then says
+      The opening says what the design describes and what it contains, because a design
+      describes how one block is built, and its reader studies that structure. It then says
       what the block does, who uses it, and what its contract promises. Last, it says what the
       block doesn't do and which block does that instead.
     blocks:
       - kind: prose
         sequence:
           - pattern: '^[A-Z].*\.$'
-            example: 'This design helps a developer change the plumber without breaking it. It describes the ideas that the plumber rests on, its modules, how they handle a message, their interfaces, its data, its limits, and the decisions behind it.'
+            example: 'This design describes how the plumber is built. It covers the ideas that the plumber rests on, its modules, how they handle a message, their interfaces, its data, its limits, and the decisions behind it.'
           - pattern: '^[A-Z].*\[[^\]]+\]\[sokf:([a-z0-9-]+:)?architecture#[a-z0-9_-]+\].*\.$'
             example: 'The [plumber][sokf:architecture#plumber] passes messages between interactive programs. A program writes a message to `/mnt/plumb/send`, and the plumber delivers it to the port that the first matching rule set names, such as `edit` for the text editor. The plumber implements the [Plumbing][sokf:contract-plumbing] contract. The contract promises each program that has opened a port one copy of each message sent to that port. It also promises that a write to `send` fails when no rule set matches and the message names no port.'
           - pattern: '^[A-Z`].*\.$'
@@ -118,7 +119,7 @@ sections:
         max: 1
         each:
           pattern: '^[A-Z`].*[.:]$'
-          example: 'The plumber rests on three ideas:'
+          example: 'The plumber rests on these ideas:'
       - kind: bullet-list
         optional: true
         max: 3
@@ -152,7 +153,7 @@ sections:
             min: 1
             max: 1
             prohibited-patterns: [{pattern: '^`', message: 'The opening paragraph begins with a word, not with code.'}, {pattern: ' Code: \[', message: 'The opening paragraph links no module''s code, because each module''s paragraph links its own.'}]
-            example: 'The plumber has four modules, in [`/sys/src/cmd/plumb`](/sys/src/cmd/plumb). Programs reach the plumber only through the files that the file server serves in `/mnt/plumb`, never by calling its functions.'
+            example: 'The modules of the plumber are in [`/sys/src/cmd/plumb`](/sys/src/cmd/plumb). Programs reach the plumber only through the files that the file server serves in `/mnt/plumb`, never by calling its functions.'
           - template: '**${name:module-name}**: ${:labelled-text} Code: [${}](/${}).'
             key: name
             min: 1
@@ -278,7 +279,7 @@ sections:
 
         A user changes the rules by writing to `/mnt/plumb/rules`, for example with `cp /usr/$user/lib/plumbing /mnt/plumb/rules`, and the plumber matches the next message against the new rules.
 
-        A write to the rules file passes through the plumber in three steps:
+        A write to the rules file passes through the plumber in these steps:
 
         1. The file server clears the rules in use when a program opens the rules file with truncation.
         2. The file server passes the text of each write to the rules reader, which parses every complete rule set in the text written so far. The rules reader returns a syntax error, such as `malformed rule`, as the error of the write.
@@ -381,7 +382,9 @@ sections:
     rule-id: interface-parts
     guidance: >
       Each subsection describes one interface. Its heading is the interface's name in the
-      code, in backticks, or a noun phrase that describes the interface.
+      code, in backticks, or a noun phrase that describes the interface. A name can join
+      code and words, such as `Ruleset` and `Rule` for two types that one module hands
+      another, because each piece of code in it reads as the name in the code.
     examples:
       - |
         ### PLMB-2 `readrules`
@@ -392,6 +395,15 @@ sections:
         <!-- /sokf:include -->
 
         - PLMB-2_AC-1 [unwanted]: IF the text has a syntax error, THEN the rules reader SHALL return the error, such as `malformed rule`, as the error of the write.
+      - |
+        ### PLMB-3 `Ruleset` and `Rule`
+
+        `Ruleset` and `Rule` carry the rules from the rules reader to the matcher, as one `Ruleset` for each rule set and one `Rule` for each pattern and each action.
+
+        <!-- sokf:include /sys/src/cmd/plumb/plumber.h#ruleset -->
+        <!-- /sokf:include -->
+
+        - PLMB-3_AC-1 [ubiquitous]: the rules reader SHALL keep the rule sets in the order in which the text gives them.
     blocks:
       - kind: prose
         max: 1
@@ -588,7 +600,7 @@ sections:
       - |
         ### Order of the rule sets
 
-        The order of the rule sets in the rules file decides where a message goes. The first set whose patterns all succeed decides the destination, so a rule set takes a message from every set after it. Two modules keep the rule sets in that order:
+        The order of the rule sets in the rules file decides where a message goes. The first set whose patterns all succeed decides the destination, so a rule set takes a message from every set after it. The modules that handle the rule sets keep them in that order:
 
         - The rules reader keeps the rule sets in the order of the rules file.
         - The file server passes the rule sets to the matcher in the same order.

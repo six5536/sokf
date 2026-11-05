@@ -1,7 +1,9 @@
 //! This module runs `sokf init`. It resolves `DIR`, reads the config
 //! without requiring its roots to exist, and refuses bad input in the order
 //! that CLI-2 sets out. After the checks pass, it builds the files of the
-//! store, works out the change to the config, and writes both.
+//! store, works out the change to the config, and writes both. In a
+//! directory that already holds files, it writes only the manifest, and
+//! lists each `index.md` there that is not a generated index.
 
 use std::path::PathBuf;
 
@@ -47,6 +49,11 @@ pub struct InitResult {
     /// The list holds `/.sokf/config.toml` when the command added the store
     /// to `knowledge.roots`, and is empty otherwise.
     pub updated: Vec<RepoPath>,
+    /// `hand_written_indexes` holds each `index.md` under the directory that
+    /// is not in the generated form of an index, ordered by path. `validate
+    /// --fix` doesn't overwrite such a file, and `validate` reports it until
+    /// its content moves into a document (CLI-2_AC-32).
+    pub hand_written_indexes: Vec<RepoPath>,
 }
 
 /// `init` creates a knowledge store and registers it as a root in
@@ -69,17 +76,28 @@ pub fn init(root: &RepoRoot, opts: &InitOptions) -> Result<InitResult> {
                 .ok_or_else(|| Error::Init(format!("{shown} lies outside the repository")))?
         }
     };
+    // sokf-implements: CLI-2_AC-33
+    if dir.as_str() == "/" {
+        return Err(Error::Init(
+            "/ is the repository root, and a store there would hold every file of the repository. Pass a directory under the root.".into(),
+        ));
+    }
     let fs_dir = dir.to_fs(root);
     // sokf-implements: CLI-2_AC-14
     if fs_dir.is_file() {
         return Err(Error::Init(format!("{dir} is a file, not a directory")));
     }
-    if fs_dir.is_dir() {
-        let mut entries = std::fs::read_dir(&fs_dir).map_err(|e| Error::io(&fs_dir, e))?;
-        if entries.next().is_some() {
-            return Err(Error::Init(format!("{dir} is not empty")));
-        }
+    // sokf-implements: CLI-2_AC-30
+    if fs_dir.join("manifest.sokf.yaml").exists() {
+        return Err(Error::Init(format!(
+            "{dir} is already a knowledge store: it holds manifest.sokf.yaml"
+        )));
     }
+    let empty = !fs_dir.is_dir()
+        || std::fs::read_dir(&fs_dir)
+            .map_err(|e| Error::io(&fs_dir, e))?
+            .next()
+            .is_none();
     // sokf-implements: CLI-2_AC-3
     let name = opts
         .name
@@ -156,14 +174,59 @@ pub fn init(root: &RepoRoot, opts: &InitOptions) -> Result<InitResult> {
             )));
         }
     }
-    let files = scaffold::store(&dir, &name, &scope, opts.description.as_deref());
+    let mut files = scaffold::store(&dir, &name, &scope, opts.description.as_deref());
+    // In a directory that holds files, `init` writes the manifest alone:
+    // listing the files in the indexes is the work of `--fix`.
+    // sokf-implements: CLI-2_AC-6
+    // sokf-implements: CLI-2_AC-31
+    let hand_written = if empty {
+        Vec::new()
+    } else {
+        files
+            .files
+            .retain(|(path, _)| path.file_name() == "manifest.sokf.yaml");
+        hand_written_indexes(root, &dir)?
+    };
     let change = scaffold::register(&config, &existing, &dir)?;
     let (created, updated) = scaffold::write(root, &files, &change)?;
     Ok(InitResult {
         root: dir,
         created,
         updated,
+        hand_written_indexes: hand_written,
     })
+}
+
+/// `hand_written_indexes` returns each `index.md` under `dir` that is not in
+/// the generated form of an index, ordered by path. `--fix` leaves such a
+/// file as it is (SOKF_VALIDATION_56). The walk follows no symbolic link.
+// sokf-implements: CLI-2_AC-32
+fn hand_written_indexes(root: &RepoRoot, dir: &RepoPath) -> Result<Vec<RepoPath>> {
+    let mut found = Vec::new();
+    let mut pending = vec![dir.clone()];
+    while let Some(next) = pending.pop() {
+        let fs_dir = next.to_fs(root);
+        let entries = std::fs::read_dir(&fs_dir).map_err(|e| Error::io(&fs_dir, e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| Error::io(&fs_dir, e))?;
+            let kind = entry.file_type().map_err(|e| Error::io(entry.path(), e))?;
+            let Some(path) = entry.file_name().to_str().and_then(|n| next.join(n)) else {
+                continue;
+            };
+            if kind.is_dir() {
+                pending.push(path);
+            } else if kind.is_file() && path.file_name() == "index.md" {
+                // A file that isn't UTF-8 text is no generated index either.
+                let generated = crate::source::load(root, &path)
+                    .is_ok_and(|source| crate::index::is_generated(&source.text));
+                if !generated {
+                    found.push(path);
+                }
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
 }
 
 /// `remote_owner` returns the owner in the URL of the git remote `origin`,
@@ -227,6 +290,8 @@ mod tests {
     // sokf-tests: CLI-2_AC-14
     // sokf-tests: CLI-2_AC-15
     // sokf-tests: CLI-2_AC-18
+    // sokf-tests: CLI-2_AC-30
+    // sokf-tests: CLI-2_AC-33
     // sokf-tests: CONF-1_AC-3
     // sokf-tests: CLI-9_AC-1
     #[test]
@@ -247,8 +312,12 @@ mod tests {
             "/file.md is a file, not a directory"
         );
         assert_eq!(
+            message(init(&root, &opts(&dir, Some("."), None))),
+            "/ is the repository root, and a store there would hold every file of the repository. Pass a directory under the root."
+        );
+        assert_eq!(
             message(init(&root, &opts(&dir, Some("full"), None))),
-            "/full is not empty"
+            "/full is already a knowledge store: it holds manifest.sokf.yaml"
         );
         assert_eq!(
             message(init(&root, &opts(&dir, Some("empty"), Some("")))),

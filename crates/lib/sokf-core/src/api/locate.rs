@@ -25,7 +25,7 @@ pub fn locate(
     // key reference, so it loads them only when one of the ids is a key
     // reference.
     if ids.iter().any(|id| graph::is_key_reference(id)) {
-        let slugs = key_slugs(ids);
+        let slugs = key_slugs(ids, graph::is_key_reference);
         let (model, keys) = super::load_keys_for(root, &config, &cache, &slugs)?;
         return graph::locate(&model, Some(&keys), ids, asset);
     }
@@ -33,11 +33,11 @@ pub fn locate(
     graph::locate(&model, None, ids, asset)
 }
 
-/// `key_slugs` returns the key of each key reference in `ids`, both as
-/// written and as its slug.
-pub fn key_slugs(ids: &[String]) -> BTreeSet<String> {
+/// `key_slugs` returns the fragment of each reference in `ids` that `wanted`
+/// selects, both as written and as its slug.
+pub fn key_slugs(ids: &[String], wanted: fn(&str) -> bool) -> BTreeSet<String> {
     let mut slugs = BTreeSet::new();
-    for id in ids.iter().filter(|id| graph::is_key_reference(id)) {
+    for id in ids.iter().filter(|id| wanted(id)) {
         if let Some((_, key)) = id.split_once('#')
             && !key.is_empty()
         {

@@ -58,6 +58,11 @@ pub enum Error {
     #[error("info: {0}")]
     Info(String),
 
+    /// `pack` refuses to run (contract-cli CLI-13), and the message names
+    /// the pack, the source, or the file at fault.
+    #[error("pack: {0}")]
+    Pack(String),
+
     /// `graph` refuses a `START` argument, and the message lists each way the
     /// tool can read the argument (CLI-7_AC-19).
     #[error("graph: {0}")]
@@ -197,6 +202,7 @@ mod tests {
         assert_eq!(Error::Info("x".into()).to_string(), "info: x");
         assert_eq!(Error::Init("x".into()).to_string(), "init: x");
         assert_eq!(Error::Harness("x".into()).to_string(), "harness: x");
+        assert_eq!(Error::Pack("x".into()).to_string(), "pack: x");
         assert_eq!(Error::Start("x".into()).to_string(), "graph: x");
         assert_eq!(Error::Locate("x".into()).to_string(), "locate: x");
         assert_eq!(Error::Query("x".into()).to_string(), "query: x");

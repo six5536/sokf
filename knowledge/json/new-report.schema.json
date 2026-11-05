@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "sokf new report",
-  "description": "`NewResult` is the report of `sokf new --json`: it holds the document that the command builds. The command prints the document but does not write it (CLI-6_AC-12).",
+  "description": "`NewResult` is the report of `sokf new --json`: it holds the document that the command builds. Without `--write`, the command prints the document but does not write it (CLI-6_AC-12). With `--write`, it also writes the document at `path` (CLI-6_AC-72).",
   "type": "object",
   "properties": {
     "id": {

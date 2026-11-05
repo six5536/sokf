@@ -11,6 +11,8 @@ mod load;
 mod locate;
 mod markers;
 mod new;
+mod pack;
+mod pack_info;
 mod validate;
 
 pub use admit::{admit_schema_by_id, admit_schemas_of_type};
@@ -27,4 +29,9 @@ pub use load::{
 };
 pub use locate::locate;
 pub use new::{NewOptions, NewResult, new};
+pub use pack::{PackSyncOptions, PackSyncReport, SyncedPack, pack_sync, pack_sync_with};
+pub use pack_info::{
+    ListedPack, PackFileState, PackRemoved, PackState, PackStatus, list_text as pack_list_text,
+    pack_diff, pack_export, pack_export_with, pack_list, pack_list_with, pack_remove, pack_status,
+};
 pub use validate::{ValidateOptions, check_repository, validate};

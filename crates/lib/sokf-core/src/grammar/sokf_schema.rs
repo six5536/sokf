@@ -1,11 +1,13 @@
 //! A SOKF schema is the engine's schema plus what SOKF's extension of the
 //! grammar adds to it (sokf-schema-spec, contract-schema-extension): the
 //! dispatch, the asset globs, the lifecycle root and paths, the link rules,
-//! and the citation rules.
+//! the citation rules, and the target types of the unit rules.
+
+use std::collections::BTreeMap;
 
 use tramlines_md::grammar::lower_common;
 
-use super::{RuleCommon, Schema};
+use super::{Block, RuleCommon, Schema, Unit};
 use crate::{Finding, RepoPath, Spanned};
 
 /// `Dispatch` says which files a schema governs (SOKF_SCHEMA_3).
@@ -59,6 +61,9 @@ pub struct CitationRule {
     /// `keys` names the rule whose keys must each be cited. `None` means that
     /// the document itself must be cited.
     pub keys: Option<String>,
+    /// `message` is the sentence that the entry appends to each finding it
+    /// raises, if the entry declares one.
+    pub message: Option<String>,
 }
 
 /// `PathPlan` is one `plans-paths` entry, the grammar's `path-plan` rule: a
@@ -102,6 +107,10 @@ pub struct SokfSchema {
     /// `current_links` holds the patterns of the paragraphs that link no
     /// archived document.
     pub current_links: Vec<regex::Regex>,
+    /// `unit_types` holds the `to-type` of each unit rule that declares
+    /// one, by the rule's `Unit::index`, which names the rule in the
+    /// engine's record of an accepted unit.
+    pub unit_types: BTreeMap<usize, Vec<String>>,
 }
 
 fn fail(
@@ -159,6 +168,7 @@ impl SokfSchema {
             markers: None,
             plans_paths: vec![],
             current_links: vec![],
+            unit_types: BTreeMap::new(),
         }
     }
 
@@ -365,7 +375,17 @@ impl SokfSchema {
                 (None, Some(m)) => CitedFrom::Marker(m.as_str().unwrap_or_default().to_string()),
                 (t, _) => CitedFrom::Types(t.map(list).unwrap_or_default()),
             };
-            cited_by.push(CitationRule { common, from, keys });
+            // sokf-implements: EXT-9_AC-9
+            let message = node
+                .get("message")
+                .and_then(|m| m.as_str())
+                .map(str::to_string);
+            cited_by.push(CitationRule {
+                common,
+                from,
+                keys,
+                message,
+            });
         }
         let markers = ext("markers").map(list);
         // A path plan's `section` is the `rule-id` of a section of this
@@ -401,6 +421,7 @@ impl SokfSchema {
             .iter()
             .filter_map(|p| regex::Regex::new(p).ok())
             .collect();
+        let unit_types = unit_types(&core);
         let schema = SokfSchema {
             core,
             dispatch,
@@ -413,6 +434,7 @@ impl SokfSchema {
             markers,
             plans_paths,
             current_links,
+            unit_types,
         };
         (schema, findings)
     }
@@ -427,6 +449,34 @@ impl SokfSchema {
     pub fn is_path(&self, key: &str) -> bool {
         self.paths.iter().any(|p| p == key)
     }
+}
+
+/// `unit_types` returns the `to-type` of each unit rule of `schema` that
+/// declares one, by the rule's `Unit::index`: the rules of each block of a
+/// section or of the preamble, of the blocks nested in a block or an item,
+/// and of a fence's `lines`.
+// sokf-implements: EXT-5_AC-2
+fn unit_types(schema: &Schema) -> BTreeMap<usize, Vec<String>> {
+    let mut out = BTreeMap::new();
+    let mut blocks: Vec<&Block> = schema
+        .sections
+        .iter()
+        .filter_map(|s| s.blocks.as_deref())
+        .chain(schema.preamble.iter().filter_map(|p| p.blocks.as_deref()))
+        .flatten()
+        .collect();
+    while let Some(b) = blocks.pop() {
+        blocks.extend(b.blocks.iter().flatten());
+        let mut units: Vec<&Unit> = b.units().collect();
+        while let Some(u) = units.pop() {
+            units.extend(u.lines.iter().flatten());
+            blocks.extend(u.blocks.iter().flatten());
+            if let Some(types) = u.extensions.get("to-type") {
+                out.insert(u.index, list(types));
+            }
+        }
+    }
+    out
 }
 
 /// `asset_globs` checks the glob rules for `asset-files` (SOKF_SCHEMA_8,

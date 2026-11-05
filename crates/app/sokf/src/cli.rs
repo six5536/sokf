@@ -64,6 +64,9 @@ pub enum Command {
     Init(InitArgs),
     /// Install the integration of an agent harness, or show its state.
     Harness(HarnessArgs),
+    /// Copy a schema pack into a knowledge store, keep it current, and show
+    /// its state.
+    Pack(PackArgs),
     /// Check the knowledge stores and the other files that their schemas govern, and repair them with --fix.
     Validate(ValidateArgs),
     /// Print the schema language or the format registry that the validator uses.
@@ -99,7 +102,7 @@ impl Command {
             Command::New(a) => a.json_schema.then_some(Output::New),
             Command::Graph(a) => a.json_schema.then_some(Output::Graph),
             Command::Locate(a) => a.json_schema.then_some(Output::Locate),
-            Command::Info(_) | Command::Completions(_) | Command::Man => None,
+            Command::Info(_) | Command::Pack(_) | Command::Completions(_) | Command::Man => None,
         }
     }
 }
@@ -112,7 +115,10 @@ impl Command {
 #[derive(Debug, Args)]
 pub struct InitArgs {
     /// The store's directory, as a filesystem path or a path from the
-    /// repository root. It must be absent or empty. Default: `/knowledge`.
+    /// repository root. It can hold documents, but not a
+    /// `manifest.sokf.yaml`. In a directory that holds files, `init` writes
+    /// only the manifest, and `validate --fix` writes the indexes. Default:
+    /// `/knowledge`.
     #[arg(value_name = "DIR")]
     pub dir: Option<PathBuf>,
 
@@ -393,6 +399,91 @@ pub struct LocateArgs {
 }
 // sokf:end locate
 
+// sokf:begin pack
+/// `PackArgs` holds the arguments of `pack` (CLI-13).
+#[derive(Debug, Args)]
+pub struct PackArgs {
+    /// What to do.
+    #[command(subcommand)]
+    pub what: PackCommand,
+}
+
+/// `PackCommand` lists the subcommands of `pack`.
+#[derive(Debug, Subcommand)]
+pub enum PackCommand {
+    /// Copy a pack into a store, or merge each later upstream change of
+    /// every pack in `/.sokf/packs.lock` with the store's edits.
+    Sync(PackSyncArgs),
+    /// Print each pack in the lock that is stale, and each of its files that
+    /// is edited or conflicted. It writes nothing and uses no network.
+    Status,
+    /// Print the packs that the binary embeds, and mark those in the lock.
+    List,
+    /// Delete the files of a pack that you haven't edited, keep the edited
+    /// ones, and drop the pack from the lock.
+    Remove(PackNameArgs),
+    /// Print your edits of a pack's files as a patch against the recorded
+    /// bases, which `git apply` applies in the pack's repository.
+    Diff(PackNameArgs),
+    /// Write an embedded pack to a new directory, in the layout of a pack.
+    Export(PackExportArgs),
+}
+
+/// `PackSyncArgs` holds the arguments of `pack sync`.
+#[derive(Debug, Args)]
+pub struct PackSyncArgs {
+    /// The pack's source: a git URL or path, `builtin:NAME`, or the NAME of
+    /// an embedded pack alone. Default: each pack in `/.sokf/packs.lock`,
+    /// from its recorded source, at the head of its recorded ref.
+    #[arg(value_name = "SOURCE")]
+    pub source: Option<String>,
+
+    /// The branch, tag, or commit of a git source. Default: the source's
+    /// default branch, which the lock then records.
+    #[arg(long = "ref", value_name = "REF", requires = "source")]
+    pub git_ref: Option<String>,
+
+    /// The pack's directory in a git source. Default: the repository's root.
+    #[arg(long, value_name = "DIR", requires = "source")]
+    pub path: Option<String>,
+
+    /// The knowledge root that receives the pack's schemas and documents.
+    /// Default: the store that the lock records, or `/knowledge`.
+    #[arg(long, value_name = "ROOT", requires = "source")]
+    pub store: Option<PathBuf>,
+
+    /// Keep each existing file that a file of the pack lands on, and record
+    /// it as your edit of the pack's version.
+    #[arg(long)]
+    pub adopt: bool,
+
+    /// Move the locked pack of the source's name to this source, and keep
+    /// its recorded bases.
+    #[arg(long, requires = "source")]
+    pub replace: bool,
+}
+
+/// `PackNameArgs` holds the name of a pack in the lock.
+#[derive(Debug, Args)]
+pub struct PackNameArgs {
+    /// The pack's name, as `pack status` prints it.
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `PackExportArgs` holds the arguments of `pack export`.
+#[derive(Debug, Args)]
+pub struct PackExportArgs {
+    /// The name of an embedded pack, as `pack list` prints it.
+    #[arg(value_name = "NAME")]
+    pub name: String,
+
+    /// The directory to write the pack to. It must be absent or empty.
+    #[arg(value_name = "DIR")]
+    pub dir: PathBuf,
+}
+// sokf:end pack
+
 // `--layer` conflicts with `--schema`: clap refuses the two together, and the
 // tool exits with code 2.
 // sokf-implements: CLI-5_AC-9
@@ -441,14 +532,19 @@ pub enum Layer {
     Embedded,
     /// Only the formats in `/.sokf/formats.yaml`.
     Repo,
-    /// The two layers merged, with the repository's entries taking
-    /// precedence.
+    /// Only the formats in the `formats.yaml` of each pack in
+    /// `/.sokf/packs.lock`.
+    Pack,
+    /// The layers merged, with the entries of `/.sokf/formats.yaml` taking
+    /// precedence over those of the packs, and those of the packs over the
+    /// embedded ones.
     Effective,
 }
 // sokf:end info
 
 // sokf-implements: CLI-6_AC-51
 // sokf-implements: CLI-6_AC-57
+// sokf-implements: CLI-6_AC-68
 // sokf:begin new
 /// `NewArgs` holds the arguments of `new` (CLI-6).
 #[derive(Debug, Args)]
@@ -465,9 +561,13 @@ pub struct NewArgs {
     #[arg(long, value_name = "ID")]
     pub id: Option<String>,
 
-    /// The title. Default: the words of the slug, or of the id.
+    /// The title. A type whose schema sets a rule for `title`, such as a template, needs it. Default: the `const` that the schema sets for `title`, or else the words of the slug, or of the id.
     #[arg(long, value_name = "TEXT")]
     pub title: Option<String>,
+
+    /// The sequence number of the id, for a type whose id template has a `seq` placeholder, such as the number that a plan had before it moved into the store. It must be a number that no document of the type has. Default: one more than the highest number among the documents of the type.
+    #[arg(long, value_name = "N")]
+    pub seq: Option<u64>,
 
     /// Set a lifecycle key to a state, as KEY=STATE. Default: the first state of each lifecycle key.
     #[arg(long, value_name = "KEY=STATE", action = ArgAction::Append, value_parser = parse_state)]
@@ -481,11 +581,11 @@ pub struct NewArgs {
     #[arg(long = "for", value_name = "PATH")]
     pub for_asset: Option<PathBuf>,
 
-    /// Write the file at its derived path and report `created PATH`, where PATH is that path.
-    #[arg(long, conflicts_with_all = ["json", "id_only"])]
+    /// Write the file at its derived path and report `created PATH`, where PATH is that path. With `--json`, print the JSON object instead of that line.
+    #[arg(long, conflicts_with = "id_only")]
     pub write: bool,
 
-    /// Print one JSON object with the id, the path, and the document, instead of the document alone. `--json-schema` prints its schema.
+    /// Print one JSON object with the id, the path, and the document, instead of the document alone, or, with `--write`, instead of the `created` line. `--json-schema` prints its schema.
     #[arg(long, conflicts_with = "id_only")]
     pub json: bool,
 

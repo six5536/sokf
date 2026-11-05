@@ -4,7 +4,7 @@ id: sokf-extension
 title: 'SOKF schema extension: usage guide'
 description: What SOKF adds to the tramlines-md grammar, section by section, with a reference at the end.
 resource: /sokf-spec/sokf.tramlines.yaml
-version: "0.6"
+version: "0.7"
 ---
 
 # SOKF schema extension: usage guide
@@ -215,7 +215,9 @@ built-in types of tramlines:
 To match a reference, use the reference types, as in `[${}][sokf:${:ref}]`,
 or `sokf:${:store}contract-${:slug}` for a link to a contract, instead of a
 regular expression of the label. Then no schema has to change when the form
-of a reference changes.
+of a reference changes. A pattern such as `contract-${:slug}` checks only how
+an id is spelled. The `to-type` of a unit rule checks the type of the
+document that the link reaches (§6).
 
 ## <a id="5"></a>5. Include blocks and images
 
@@ -262,6 +264,24 @@ including those with `min: 0`, so that the author sees every edge they can add. 
 placeholder id, which the validator reports until the author replaces it
 with the id of a real document.
 
+A unit rule can declare `to-type`, with the same values, for the links in
+the body. Each `sokf:` link in a paragraph, an item, or a row that the
+rule accepts must then resolve to a document of one of those types, and
+the validator reports each link that doesn't as an error at its line:
+
+```yaml
+- pattern: '^Contracts: \[[A-Z]+\]\[sokf:[^\]]+\](, \[[A-Z]+\]\[sokf:[^\]]+\])*\.$'
+  to-type: Contract
+  example: 'Contracts: [CLI][sokf:contract-cli].'
+```
+
+A link with a fragment, such as `[CLI-6][sokf:contract-cli#cli-6]` or
+`[CLI-6][sokf:#cli-6]`, counts by the type of the document that the
+fragment lies in. A link that resolves to nothing has its own finding, and
+a path link or a URL has no type, so the rule leaves both alone. The key
+applies to every `sokf:` link in the unit, so a unit whose links reach
+documents of different types needs a list of those types.
+
 ### 6.1 Cited by
 
 `cited-by` is the inverse of `links`: it declares what has to cite a
@@ -292,6 +312,25 @@ citation on the uncited key at its line, or on the uncited document with no
 line, with the `severity` of the entry. The check runs after the validator
 checks every document, so a validator that reports on only some paths still
 counts every citation.
+
+An entry can declare `message`, one sentence in the voice of the document
+that says what the rule asks of the writer. The validator appends the
+message to each finding that the entry raises, with or without `keys`,
+after the finding's own text and before its locator. The finding still
+says first what is missing, and the message adds what the schema's author
+knows about it:
+
+```yaml
+cited-by:
+  - from-marker: implements
+    keys: criteria
+    message: A criterion states only behaviour that code implements.
+```
+
+With this entry, the finding on an uncited criterion reads ``no
+`sokf-implements:` marker cites key `LNCH-2_AC-1`. A criterion states only
+behaviour that code implements.``, followed by its locator and its key. An
+entry without `message` raises the finding without one.
 
 An entry that declares `from-marker` in place of `from-type` counts markers
 ([format specification][sokf:sokf-format-spec] §9.5) instead of body links.
@@ -440,6 +479,8 @@ print.
 ### Values SOKF adds
 
 - `unique` (heading, unit): `knowledge`, `repository` (§4).
+- `to-type` (unit): the document type or types that each `sokf:` link in
+  an accepted unit must reach (§6).
 - `kind` (block): `include`, which takes `source-pattern` (§5).
 - `format` (frontmatter constraint): `repo-path`, `document-id` (§3).
 - `path` (lifecycle dimension): `true` adds a directory level under `root`

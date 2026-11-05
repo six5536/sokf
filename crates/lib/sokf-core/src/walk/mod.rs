@@ -7,4 +7,4 @@ mod tree;
 
 pub use collect::collect;
 pub(crate) use collect::{Keep, list_under_root, repo_glob, walk_outside};
-pub use tree::{FileKind, Tree, WalkedDir, WalkedFile, innermost};
+pub use tree::{FileKind, OnDisk, Tree, WalkedDir, WalkedFile, innermost};

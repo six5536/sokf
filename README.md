@@ -17,6 +17,7 @@ and locates a document by id.
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Agent harness](#agent-harness)
+- [Schema packs](#schema-packs)
 - [Output and exit codes](#output-and-exit-codes)
 - [Specifications](#specifications)
 - [Project layout](#project-layout)
@@ -35,8 +36,7 @@ cargo install sokf             # from source, needs a Rust toolchain
 
 Prebuilt binaries cover Linux and macOS on `x64` and `arm64`, and Windows on
 `x64`. The Linux builds are statically linked against musl, so they need no
-particular glibc version and run on Alpine too. The crates aren't on crates.io
-while the repository is private, so the source install builds from git.
+particular glibc version and run on Alpine too.
 
 ## Usage
 
@@ -45,9 +45,14 @@ A store is a directory with a manifest, and `sokf init` creates one.
 ```sh
 sokf init                           # a store at /knowledge, registered as a root
 sokf init docs/kb --name project-kb # a store elsewhere, added to /.sokf/config.toml
+sokf init docs                      # a store of a directory that holds documents: the manifest only, and --fix writes the indexes
 sokf harness install claude         # the sokf skill, instructions, stop hook, and permission for Claude Code
 sokf harness install codex cursor   # the parts that OpenAI Codex and Cursor support; `all` names every harness
 sokf harness status all             # each part of each harness: current, shared, stale, edited, absent
+sokf pack sync sokf                 # copy the built-in sokf pack into /knowledge, with its lock
+sokf pack sync https://example.com/method.git   # copy a schema pack from a git repository
+sokf pack sync                      # merge each later change of every locked pack with your edits
+sokf pack status                    # each pack, and each of its files that you edited or that conflicts
 sokf validate                       # check every knowledge store and additional file
 sokf validate --fix                 # regenerate blocks and indexes, move lifecycle documents, and rewrite headings
 sokf validate knowledge/core --json # report on a directory, as one JSON object
@@ -68,7 +73,13 @@ sokf locate --asset flowers         # the file a sidecar describes; --json gives
 
 sokf info grammar                   # the schema language, verbatim: the tramlines core grammar, the tramlines-md grammar, then SOKF's schema extension
 sokf info formats --schema readme   # the line formats a schema sees
-sokf new Issue --slug retry --write # a document from its schema's template, at its derived path
+sokf info formats --layer pack      # only the formats of the packs in /.sokf/packs.lock
+sokf new Issue --slug retry --title "Add a retry" --write
+                                    # a document from its schema's template, at its derived path
+sokf new Issue --slug retry --title "Add a retry" --seq 42 --write
+                                    # keep the sequence number 42 that the work already has
+sokf new Issue --slug retry --title "Add a retry" --write --json
+                                    # write the document, and print its id, path, and text as JSON
 
 sokf completions zsh                # a completion script for your shell
 sokf --help
@@ -85,13 +96,19 @@ unchanged. Both `--repo-root` and `--no-cache` are global options.
 
 ## Configuration
 
-Three files under `/.sokf/` configure the tool:
+Three files under `/.sokf/` configure the tool, and `sokf pack` keeps two
+more:
 
 - `/.sokf/config.toml` lists the knowledge roots (default `/knowledge`), the
   paths that sokf skips in its walk of the repository, and the declined
-  harness parts.
+  harness parts. sokf skips a path only outside the knowledge roots, so
+  `sokf validate` warns at each glob of `repository.exclude` that lies under a
+  root.
 - `/.sokf/formats.yaml` adds line formats for the whole repository.
 - `/.sokf/harness.toml` records the harness parts that the tool wrote.
+- `/.sokf/packs.lock` records each schema pack that `sokf pack sync` copied,
+  and `/.sokf/packs/` holds each pack's formats and the base copies of its
+  files.
 
 Every path that the tool prints is relative to the repository root and starts
 with `/`, as paths in documents do. Only `locate` prints filesystem paths.
@@ -102,7 +119,11 @@ sokf accepts a path argument in either form.
 `sokf harness install claude` makes a repository ready for Claude Code. It
 writes the `sokf` skill, an instructions block, a stop hook, and the
 permission to run `sokf`. The hook runs `sokf validate --fix` when the agent
-ends its turn, and hands the remaining errors back to the agent. The command
+ends its turn, and hands the remaining errors back to the agent. At the
+project and the local scopes, the instructions block also carries the
+`instructions.md` of each pack in `/.sokf/packs.lock`. `sokf pack sync` and
+`sokf pack remove` rewrite each installed block that you haven't edited, so
+that it holds the instructions of each pack. The command
 touches only the parts that it writes. It keeps a part that you edited unless
 you pass `--force`. To refresh the stale parts after an upgrade, run the
 command again.
@@ -132,6 +153,23 @@ the report shows it as `shared` for the others. `--scope user` installs into
 your home directory, for every repository, and `--scope local` into the
 repository's files that stay out of git (Claude Code and GitHub Copilot). Keep
 `/.sokf/harness.local.toml` and `/.sokf/config.local.toml` out of git too.
+
+## Schema packs
+
+A schema pack is a directory, with the manifest `pack.sokf.yaml`, that holds a
+method for a store: schemas, documents such as documentation standards, and
+line formats. `sokf pack sync <SOURCE>` fetches the pack with your own `git`,
+copies it into the store, and records it in `/.sokf/packs.lock`. The store
+owns the copy, so you edit it as any other document, and a later
+`sokf pack sync` merges each upstream change into your edit with
+`git merge-file`. A merge that conflicts leaves git's markers in the file, and
+the command exits with code 1. Run `sokf validate --fix` after a sync.
+
+`builtin:<NAME>`, or `NAME` alone, names a pack that the binary embeds, and
+`sokf pack list` shows them. `sokf pack diff <NAME>` prints your edits as a
+patch that `git apply` applies in the pack's repository, `sokf pack remove
+<NAME>` deletes the pack's files that you haven't edited, and
+`sokf pack export <NAME> <DIR>` writes an embedded pack to a new directory.
 
 ## Output and exit codes
 
@@ -208,8 +246,14 @@ Three core specifications define the format:
 [`sokf-spec/sokf-schema-spec.md`](sokf-spec/sokf-schema-spec.md), and
 [`sokf-spec/sokf-validation-spec.md`](sokf-spec/sokf-validation-spec.md).
 They are documents of `sokf-spec`, the knowledge store of SOKF itself. The
-schemas in `knowledge/schemas/` show SOKF in use: they are the schemas of the
-knowledge store in which sokf's own development is recorded.
+sokf pack, in [`packs/sokf/`](packs/sokf/), shows SOKF in use. It is an optional
+method for a project's knowledge. It holds schemas for the architecture, the
+stories, the contracts, the designs, the issues, and other documents, the
+formats that they share, documentation standards, and recipes for rewriting a
+document and for planning a building block. It also holds instructions for the
+agent, which the harness's instructions block carries. sokf's own development
+records its knowledge with the pack. The binary embeds it, so a repository
+syncs it with `sokf pack sync sokf`.
 
 The schema language comes from [tramlines](https://github.com/six5536/tramlines),
 a Markdown schema engine with its own
@@ -230,6 +274,7 @@ writes the skill into a repository.
 ```
 sokf-spec/               the knowledge store of SOKF itself: its specifications, its grammar, and its formats, which sokf validates
 harness/                 the embedded harness integration: the sokf skill and the instructions block
+packs/sokf/              the sokf pack, the method of a project's knowledge that the binary embeds
 crates/lib/sokf-core     the library: it walks the repository, builds the model, hosts SOKF's schema extension in the tramlines engine, checks and fixes the knowledge, reports the findings, builds the graph, runs queries, and installs the harness
 crates/app/sokf          the binary: it parses the command line, calls the library, and renders the results as text, JSON, or Mermaid
 packages/sokf            the npm launcher (a JS shim that spawns the binary)

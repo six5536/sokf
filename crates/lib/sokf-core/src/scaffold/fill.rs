@@ -10,7 +10,7 @@ use crate::{
     Compiled, Error, Locator, Model, RepoPath, Result, Source,
     check::{Ctx, check_against, doc_view},
     fix::{AnchorEdit, rewrite},
-    grammar::{Dispatch, SokfSchema, States},
+    grammar::{Dispatch, Segment, Shape, SokfSchema, States},
     include::Expected,
     model::{Document, KeyIndex, ParseMode, parse_source},
     source::split,
@@ -30,10 +30,61 @@ pub struct Identity {
     pub resource: Option<RepoPath>,
 }
 
+/// `title` returns the title that `new` passes to `identity`: the one given
+/// with `--title`, or else the `const` that the schema sets for `title`, or
+/// else none, so that `identity` derives it. Without `--title`, it refuses a
+/// type whose schema sets a rule for `title` that the author must satisfy,
+/// whether or not the derived title would pass, so that the first word of
+/// the slug can't decide whether `new` asks for a title. The error gives the
+/// schema's example of the title.
+// sokf-implements: CLI-6_AC-66
+// sokf-implements: CLI-6_AC-67
+pub fn title(
+    type_name: &str,
+    schema: &SokfSchema,
+    states: &States,
+    given: Option<&str>,
+) -> Result<Option<String>> {
+    if let Some(given) = given {
+        return Ok(Some(given.to_string()));
+    }
+    let Some(rule) = schema
+        .core
+        .core
+        .constraint("title")
+        .filter(|c| c.common.only.admits(states))
+    else {
+        return Ok(None);
+    };
+    if let Some(fixed) = &rule.const_ {
+        return Ok(Some(fixed.clone()));
+    }
+    let example = match (&rule.enum_, &rule.shape) {
+        (Some(choices), _) => rule.example.as_ref().or(choices.first()),
+        (None, Some(Shape::Template(t))) if !sets_a_rule(&t.segments) => return Ok(None),
+        (None, Some(_)) => rule.example.as_ref(),
+        (None, None) => return Ok(None),
+    };
+    let such_as = example.map_or(String::new(), |e| format!(", such as `--title \"{e}\"`"));
+    Err(Error::New(format!(
+        "the schema of `{type_name}` sets a rule for `title`, so give the title with `--title`{such_as}"
+    )))
+}
+
+/// `sets_a_rule` is true when a template holds literal text or a typed
+/// placeholder. A template of untyped placeholders alone, such as `${}`,
+/// matches any text.
+fn sets_a_rule(segments: &[Segment]) -> bool {
+    segments.iter().any(|s| match s {
+        Segment::Literal(_) => true,
+        Segment::Hole { ty, .. } => ty != "text",
+    })
+}
+
 /// `identity` returns the identity of a new document. The id is the `id`
-/// argument, unchanged. The title is the one given with `--title`. Without
-/// `--title`, `identity` derives the title from the words of the slug, or
-/// from the words of the id when there is no slug.
+/// argument, unchanged. The title is the `title` argument, which `title`
+/// returns. Without one, `identity` derives the title from the words of the
+/// slug, or from the words of the id when there is no slug.
 // sokf-implements: CLI-6_AC-6
 // sokf-implements: CLI-6_AC-28
 pub fn identity(

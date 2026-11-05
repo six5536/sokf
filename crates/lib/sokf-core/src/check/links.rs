@@ -1,8 +1,9 @@
 //! This module checks links: labels, fragments, paths, images, footnotes,
 //! and mirroring (SOKF_FORMAT_30, SOKF_FORMAT_37, SOKF_FORMAT_41,
-//! SOKF_FORMAT_53, and SOKF_FORMAT_60 to SOKF_FORMAT_76).
+//! SOKF_FORMAT_53, SOKF_FORMAT_60 to SOKF_FORMAT_76, and SOKF_FORMAT_157 to
+//! SOKF_FORMAT_159).
 
-use super::{Citation, Citations, Ctx, DocView};
+use super::{Citations, Ctx, DocView, deprecated::Citer};
 use crate::{
     Finding, RepoPath,
     graph::{Target, resolve_to},
@@ -13,7 +14,8 @@ use crate::{
 /// `check_document` checks every body link, image, and footnote of a
 /// document or additional file, and the `resource`, `sources`, and `links`
 /// of its frontmatter. It records each `sokf:` label that resolves in a typed
-/// document in `citations`. The coverage pass reads `citations`.
+/// document or an additional file in `citations`. The coverage pass and the
+/// pass of a deprecated document read `citations`.
 // sokf-implements: SOKF_FORMAT_30
 // sokf-implements: SOKF_FORMAT_37
 // sokf-implements: SOKF_FORMAT_41
@@ -31,6 +33,9 @@ use crate::{
 // sokf-implements: SOKF_FORMAT_74
 // sokf-implements: SOKF_FORMAT_75
 // sokf-implements: SOKF_FORMAT_76
+// sokf-implements: SOKF_FORMAT_157
+// sokf-implements: SOKF_FORMAT_158
+// sokf-implements: SOKF_FORMAT_159
 // sokf-implements: FORMAT-2_AC-7
 // sokf-implements: FORMAT-2_AC-8
 pub fn check_document(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations) -> Vec<Finding> {
@@ -41,8 +46,9 @@ pub fn check_document(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations
             findings.push(Finding::error(path.clone(), line, key, msg));
         };
     let knowledge = ctx.knowledge;
+    let citer = Citer::of(doc, ctx);
     for link in &doc.body.links {
-        check_link(link, doc, ctx, &mut findings, citations);
+        check_link(link, doc, ctx, &mut findings, citations, citer.as_ref());
     }
     suffix_clashes(doc, ctx, &mut findings);
     let Some(core) = doc.core else {
@@ -128,6 +134,19 @@ pub fn check_document(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations
             fail(&mut findings, Some(entry.line), message, key);
             continue;
         };
+        // A `supersedes` entry names a replacement of its target, which the
+        // pass of a deprecated target reads (SOKF_VALIDATION_64).
+        // sokf-implements: SOKF_VALIDATION_64
+        if entry.rel == "supersedes"
+            && let (
+                Target::Document {
+                    path: target_path, ..
+                },
+                Some(citer),
+            ) = (&target, &citer)
+        {
+            citations.add(target_path.clone(), citer.declare(entry.line));
+        }
         // An entry must refer to a document by its canonical id, not by a path or
         // by an id with a longer store prefix.
         if let Some(canonical) = canonical_to(ctx, k, &target)
@@ -189,6 +208,7 @@ fn check_link(
     ctx: &Ctx<'_>,
     findings: &mut Vec<Finding>,
     citations: &mut Citations,
+    citer: Option<&Citer>,
 ) {
     let path = doc.path;
     let what = if link.is_image { "image" } else { "link" };
@@ -209,21 +229,16 @@ fn check_link(
                 ),
                 Some(k) => {
                     let resolved = keys::resolve(ctx.model, ctx.keys, k, parts);
-                    // A resolved label from a typed document is a citation
-                    // of its target (SOKF_SCHEMA_17).
+                    // A resolved label from a typed document or an additional
+                    // file is a citation of its target (SOKF_SCHEMA_17,
+                    // SOKF_VALIDATION_57).
                     // sokf-implements: EXT-9_AC-2
                     if let Ok(r) = &resolved
-                        && let Some(source_type) = doc.core.and_then(|c| c.type_.as_deref())
+                        && let Some(citer) = citer
                     {
                         citations.add(
                             r.path.clone(),
-                            Citation {
-                                slug: r.slug.clone(),
-                                source: path.clone(),
-                                source_type: source_type.to_string(),
-                                rel: None,
-                                line: link.line,
-                            },
+                            citer.cite(&r.path, r.slug.clone(), link.line, false),
                         );
                     }
                     // Each target has one spelling: the label with the
@@ -270,7 +285,23 @@ fn check_link(
                 "SOKF_FORMAT_74",
             );
         }
-        LinkTarget::Repo { path: target, .. } => check_path(target, link, doc, ctx, findings),
+        LinkTarget::Repo {
+            path: target, dir, ..
+        } => {
+            // A path that ends with `/` names only a directory, as it does
+            // under POSIX (SOKF_FORMAT_157, SOKF_FORMAT_158).
+            // sokf-implements: SOKF_FORMAT_157
+            // sokf-implements: SOKF_FORMAT_158
+            if *dir && !ctx.model.is_dir(target) && ctx.model.exists(target) {
+                fail(
+                    findings,
+                    format!("{what} `{target}/` names a file, not a directory"),
+                    "SOKF_FORMAT_76",
+                );
+            } else {
+                check_path(target, link, doc, ctx, findings);
+            }
+        }
         LinkTarget::Relative { target, .. } => match doc.path.resolve_relative(target) {
             Some(resolved) => check_path(&resolved, link, doc, ctx, findings),
             None => fail(
@@ -279,9 +310,10 @@ fn check_link(
                 "SOKF_FORMAT_76",
             ),
         },
+        // sokf-implements: SOKF_FORMAT_159
         LinkTarget::Invalid(url) => fail(
             findings,
-            format!("{what} `{url}` points outside the repository"),
+            format!("{what} `{url}` is not a valid repository path"),
             "SOKF_FORMAT_76",
         ),
         // A fragment alone refers to an anchor of this document by its slug.
@@ -358,7 +390,7 @@ fn canonical_to(ctx: &Ctx<'_>, citing: usize, target: &Target) -> Option<String>
 /// `check_path` checks a path link or image. A link to a document or an asset
 /// of any store must use its canonical `sokf:` label instead, which `--fix`
 /// writes when it can (SOKF_FORMAT_60). A link to any other file must point to
-/// a file that exists.
+/// a file or a directory that exists, or that a document plans.
 fn check_path(
     target: &RepoPath,
     link: &Link,

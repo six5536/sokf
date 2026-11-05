@@ -4,9 +4,10 @@
 (SOKF). A knowledge store is a set of Markdown documents with YAML frontmatter
 in a git repository. `sokf` checks each document against its schema, resolves
 its links, keeps its generated content current, and allocates its ids. It
-ships as prebuilt binaries for Linux, macOS, and Windows. The release workflow
-of the sokf repository publishes each release to GitHub Packages from a single
-git tag.
+ships as prebuilt binaries for Linux, macOS, and Windows. The
+[sokf repository on GitHub](https://github.com/six5536/sokf) builds each
+release from one git tag, and publishes the packages to npm and the crates to
+crates.io.
 
 This README helps you install and run `sokf`. It covers installation, usage,
 the documentation, and the licence:
@@ -48,6 +49,9 @@ sokf locate ID...                 # print the absolute path of each document
 sokf info grammar                 # describe the schema language that the validator uses
 sokf info formats --schema ID     # list the line formats that a schema can match
 sokf new TYPE --slug SLUG --write # create a document from its schema's template
+sokf pack sync sokf               # copy the built-in sokf pack, a method for a project's knowledge, into /knowledge
+sokf pack sync SOURCE             # copy a schema pack from a git URL or path; with no SOURCE, sync each locked pack again
+sokf pack status                  # list each pack, and each of its files that you edited or that conflicts
 sokf completions zsh              # print a completion script for your shell
 ```
 
@@ -61,15 +65,19 @@ optional:
 - `EXPR`: a JMESPath expression.
 - `TYPE`: a document type, such as `Issue`.
 - `SLUG`: the slug that `sokf new` puts in the id of the new document.
+- `SOURCE`: a git URL or path of a schema pack, or the name of a pack that the
+  binary embeds.
 
 `sokf` exits with `0` when it finds no error, `1` when it finds errors, and
 `2` on a usage error or an internal error.
 
 ## Documentation
 
-The core specifications of the format, the contracts of the tool, the
-grammar guide, and the development notes are in the
-[sokf repository on GitHub](https://github.com/six5536/sokf#readme).
+The [sokf repository on GitHub](https://github.com/six5536/sokf#readme) holds
+the documentation. Its `sokf-spec/` store holds the core specifications of the
+format and the guide to the schema grammar, and its `packs/sokf/` holds the
+sokf pack. Its README describes every command, and the `sokf` skill in
+`harness/skills/sokf/` is the reference for an AI agent.
 
 ## Licence
 
