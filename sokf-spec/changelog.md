@@ -36,7 +36,7 @@ from 0.6, the grammar of sokf 0.1.3, when it gained a `cited-by` entry's
 
 ## 0.6
 
-Amendments on 18 to 23 September, 27 September, 1 to 4 October, and 5 November 2026 changed this version. A 0.5
+Amendments on 18 to 23 September, 27 September, 1 to 4 October, and 5 and 6 November 2026 changed this version. A 0.5
 document conforms unchanged unless a `/`-rooted body link in it ends
 with `/` and names a file (SOKF_FORMAT_158), or has an empty, `.`, or
 `..` segment (SOKF_FORMAT_159). Schema authors must rewrite their
@@ -59,6 +59,8 @@ schemas for the new grammar.
 - Citation messages (schema extension): a `cited-by` entry can declare `message`, one sentence that a validator appends to each finding that the entry raises, after the finding's own text and before its locator. A schema that declares it needs a validator that knows the key.
 - Body link types (schema specification §4, schema extension): a unit rule can declare `to-type`, and each `sokf:` link in a unit that the rule accepts must reach a document of one of its types, counted by the document of a link with a fragment (SOKF_SCHEMA_56). A schema that declares it needs a validator that knows the key.
 - Schema packs (§2): a schema pack is a directory with a manifest, `pack.sokf.yaml`, that holds schemas, documents, and a formats file for a tool to copy into a store (SOKF_FORMAT_160 to SOKF_FORMAT_162).
+- Files outside a store (§2): a schema pack can hold `files/`, text files that a copy places at the same path relative to the root of the repository, outside every store (SOKF_FORMAT_163). The change is additive: a pack without `files/` conforms unchanged.
+- Dependencies between packs (§2): a manifest can declare `depends`, the packs that the pack builds on, each with its oldest version (SOKF_FORMAT_161), and a pack overrides each file and each schema type of those packs. The change is additive: a manifest without `depends` conforms unchanged.
 - Status (§3): the status serves readers and the filters of a tool. `draft` and `stable` change no check.
 - Deprecated documents (§3, validation specification §2): the validator warns at each `sokf:` body link, marker, and include block that cites a document with `status: deprecated`, and names each document that declares a `supersedes` link to it (SOKF_VALIDATION_57 to SOKF_VALIDATION_64). A citation from a document that supersedes it, from an archived document, or from a deprecated document gets no warning. The warning changes no error, so a store that cites a deprecated document still conforms.
 - Directory links (§9, schema specification §4): a `/`-rooted path that ends with `/` resolves only to a directory, as it does under POSIX, and a link of that form to a file fails (SOKF_FORMAT_157, SOKF_FORMAT_158). A `/`-rooted path with an empty, `.`, or `..` segment is reported as an invalid repository path (SOKF_FORMAT_159). A planning section that links a directory with the trailing `/` plans every path under it (SOKF_SCHEMA_55).

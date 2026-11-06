@@ -2,16 +2,18 @@
 //! `export` (CLI-13). None of them uses the network.
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
 
 use serde::Serialize;
 
-use super::pack::{edited_files, harness_dirs, remove, write};
+use super::pack::{SyncedPack, edited_files, remove};
 use crate::{
-    Error, RepoPath, RepoRoot, Result, check,
+    Error, RepoPath, RepoRoot, Result, check, config,
     pack::{self, EMBEDDED, EmbeddedPack},
+    source::read_optional,
 };
 
 /// A `PackFileState` is the state of one file of a locked pack that differs
@@ -53,6 +55,20 @@ pub struct PackState {
     pub stale: Option<String>,
     /// Each file that differs from its base, with its state.
     pub files: Vec<(String, PackFileState)>,
+    /// Each file that a higher pack owns, with that pack, and whether the
+    /// last sync changed this pack's version of it.
+    pub shadowed: Vec<ShadowedFile>,
+}
+
+/// A `ShadowedFile` is a file of a pack that a higher pack owns.
+#[derive(Debug, Clone, Serialize)]
+pub struct ShadowedFile {
+    /// The file's destination.
+    pub path: String,
+    /// The pack that owns it.
+    pub owner: String,
+    /// Whether the last sync changed this pack's version of it.
+    pub changed: bool,
 }
 
 /// A `PackStatus` is the report of `pack status`.
@@ -63,6 +79,12 @@ pub struct PackStatus {
 }
 
 impl PackStatus {
+    /// `drifted` returns whether a file of a pack is edited, conflicted, or
+    /// deleted.
+    pub fn drifted(&self) -> bool {
+        self.packs.iter().any(|p| !p.files.is_empty())
+    }
+
     /// `to_text` returns a line for each pack and a line for each of its
     /// files that differs from its base.
     pub fn to_text(&self) -> String {
@@ -82,6 +104,17 @@ impl PackStatus {
             }
             for (path, state) in &p.files {
                 out.push_str(&format!("{} {path}\n", state.label()));
+            }
+            for f in &p.shadowed {
+                let changed = if f.changed {
+                    ", changed in this pack at the last sync"
+                } else {
+                    ""
+                };
+                out.push_str(&format!(
+                    "shadowed {} by the pack {}{changed}\n",
+                    f.path, f.owner
+                ));
             }
         }
         out
@@ -123,6 +156,20 @@ pub fn pack_status(root: &RepoRoot) -> Result<PackStatus> {
                     "this is sokf {tool}; run `sokf pack sync` to sync the pack of this release"
                 )
             });
+            // sokf-implements: CLI-13_AC-79
+            let shadowed = p
+                .files
+                .values()
+                .filter_map(|f| {
+                    let owner = f.shadowed_by.clone()?;
+                    Some((f, owner))
+                })
+                .map(|(f, owner)| ShadowedFile {
+                    owner,
+                    path: f.path.clone(),
+                    changed: f.changed,
+                })
+                .collect();
             PackState {
                 name: name.clone(),
                 version: p.version.clone(),
@@ -130,6 +177,7 @@ pub fn pack_status(root: &RepoRoot) -> Result<PackStatus> {
                 git_ref: p.git_ref.clone(),
                 stale,
                 files,
+                shadowed,
             }
         })
         .collect();
@@ -198,16 +246,34 @@ pub fn pack_list_with(
 pub struct PackRemoved {
     /// The pack's name.
     pub name: String,
+    /// Whether the command deleted the pack's `[[pack]]` entry.
+    pub undeclared: bool,
+    /// Whether the lock held the pack.
+    pub locked: bool,
     /// Each file that the command deleted.
     pub removed: Vec<String>,
     /// Each edited file that the command kept.
     pub kept: Vec<String>,
+    /// Each pack that took over a file of the removed pack, with what the
+    /// command did to each file.
+    pub handed: Vec<SyncedPack>,
     /// A line for each `instructions` part of a harness that the command rewrote.
     pub instructions: Vec<String>,
 }
 
 impl PackRemoved {
-    /// `to_text` returns a line for each file and one for the lock.
+    /// `conflicted` returns whether the merge of a file that the command
+    /// handed to another pack conflicts.
+    pub fn conflicted(&self) -> bool {
+        self.handed.iter().any(|p| {
+            p.files
+                .iter()
+                .any(|(_, a)| *a == pack::FileAction::Conflicted)
+        })
+    }
+
+    /// `to_text` returns a line for each file, one for the configuration,
+    /// and one for the lock.
     pub fn to_text(&self) -> String {
         let mut out = String::new();
         for p in &self.removed {
@@ -216,7 +282,24 @@ impl PackRemoved {
         for p in &self.kept {
             out.push_str(&format!("kept {p}: edited\n"));
         }
-        out.push_str(&format!("removed the pack {} from the lock\n", self.name));
+        if self.undeclared {
+            out.push_str(&format!(
+                "removed the pack {} from /.sokf/config.toml\n",
+                self.name
+            ));
+        }
+        if self.locked {
+            out.push_str(&format!("removed the pack {} from the lock\n", self.name));
+        }
+        for p in &self.handed {
+            for (path, action) in &p.files {
+                out.push_str(&format!(
+                    "{} {path}: from the pack {}\n",
+                    action.label(),
+                    p.name
+                ));
+            }
+        }
         for line in &self.instructions {
             out.push_str(&format!("{line}\n"));
         }
@@ -243,48 +326,129 @@ fn locked(root: &RepoRoot, name: &str) -> Result<(pack::Lock, pack::LockedPack)>
     Ok((lock, entry))
 }
 
-/// `pack_remove` deletes each file of the pack `name` whose hash equals its
-/// base hash, keeps each other file, deletes the pack's base copies, and
-/// removes the pack from the lock. It deletes the lock when no pack remains.
-/// The copy of the pack's instructions fragment goes whatever its hash, and
-/// the `instructions` part of each installed harness then follows the lock.
-/// `home` is the home directory, where a harness can read a setting.
+/// A `Removal` is what the removal of one locked pack deletes and keeps.
+#[derive(Debug, Clone, Default)]
+pub(super) struct Removal {
+    /// The files and the base copies to delete.
+    pub deletes: Vec<RepoPath>,
+    /// Each file of the pack that the removal deletes and that exists.
+    pub removed: Vec<String>,
+    /// Each edited file that the removal keeps.
+    pub kept: Vec<String>,
+}
+
+/// `plan_removal` plans the removal of the locked pack `name`: it deletes
+/// each file whose hash equals its base hash, keeps each other file, and
+/// deletes the base copies. The copy of the pack's instructions fragment
+/// goes whatever its hash. A file that another pack owns, or that a pack of
+/// `supplied` takes over, stays for that pack. It writes nothing.
 // sokf-implements: CLI-13_AC-25
 // sokf-implements: CLI-13_AC-37
-pub fn pack_remove(root: &RepoRoot, name: &str, home: Option<PathBuf>) -> Result<PackRemoved> {
-    let (mut lock, entry) = locked(root, name)?;
-    let edited = edited_files(root, &entry);
-    let mut report = PackRemoved {
-        name: name.to_string(),
-        removed: Vec::new(),
-        kept: Vec::new(),
-        instructions: Vec::new(),
-    };
+pub(super) fn plan_removal(
+    root: &RepoRoot,
+    name: &str,
+    entry: &pack::LockedPack,
+    supplied: &BTreeSet<RepoPath>,
+) -> Removal {
+    let edited = edited_files(root, entry);
     let fragment = pack::instructions_of(name);
+    let mut out = Removal::default();
     for (rel, f) in &entry.files {
-        if edited.contains(&f.path) && f.path != fragment.as_str() {
-            if RepoPath::parse(&f.path).is_some_and(|p| p.to_fs(root).exists()) {
-                report.kept.push(f.path.clone());
-            }
-        } else if let Some(p) = RepoPath::parse(&f.path) {
-            let existed = p.to_fs(root).exists();
-            remove(root, &p)?;
-            if existed {
-                report.removed.push(f.path.clone());
-            }
+        let Some(p) = RepoPath::parse(&f.path) else {
+            continue;
+        };
+        if f.shadowed_by.is_some() || supplied.contains(&p) {
+            out.deletes.push(pack::base_path(name, rel));
+            continue;
         }
-        remove(root, &pack::base_path(name, rel))?;
+        let exists = p.to_fs(root).exists();
+        if edited.contains(&f.path) && f.path != fragment.as_str() {
+            if exists {
+                out.kept.push(f.path.clone());
+            }
+        } else {
+            if exists {
+                out.removed.push(f.path.clone());
+            }
+            out.deletes.push(p);
+        }
+        out.deletes.push(pack::base_path(name, rel));
     }
-    lock.packs.remove(name);
-    if lock.packs.is_empty() {
-        remove(root, &pack::lock_path())?;
-        // The directory of the packs goes too, when nothing is left in it.
-        let _ = fs::remove_dir(root.as_path().join(pack::PACKS_DIR));
-    } else {
-        write(root, &pack::lock_path(), pack::lock_text(&lock)?.as_bytes())?;
+    out
+}
+
+/// `apply_removal` deletes the files of `removal`, with each directory that
+/// a deletion leaves empty.
+pub(super) fn apply_removal(root: &RepoRoot, removal: &Removal) -> Result<()> {
+    for p in &removal.deletes {
+        remove(root, p)?;
     }
-    report.instructions = super::harness::refresh_instructions(&harness_dirs(root, &home))?;
-    Ok(report)
+    Ok(())
+}
+
+/// `pack_remove` deletes the `[[pack]]` entry of the pack `name` from
+/// `/.sokf/config.toml`, removes the pack as `plan_removal` says when the
+/// lock holds it, hands each of its files that another declared pack
+/// supplies to that pack by a merge, and drops it from the lock. It deletes
+/// the lock when no pack remains. The `instructions` part of each installed
+/// harness then follows the lock. It refuses a name that neither the
+/// configuration nor the lock holds, and a pack that another pack of the
+/// lock depends on. It uses no network. `home` is the home directory,
+/// where a harness can read a setting.
+// sokf-implements: CLI-13_AC-66
+// sokf-implements: CLI-13_AC-72
+pub fn pack_remove(root: &RepoRoot, name: &str, home: Option<PathBuf>) -> Result<PackRemoved> {
+    let config_path = config::config_path();
+    let text = read_optional(&config_path.to_fs(root))?;
+    let config = match &text {
+        Some(t) => config::remove_entry(t, name)?,
+        None => None,
+    };
+    let lock = pack::read_lock(root)?;
+    let locked = lock.packs.contains_key(name);
+    if config.is_none() && !locked {
+        // `locked` gives the error that lists the packs of the lock.
+        self::locked(root, name)?;
+    }
+    let dependents = super::pack_run::dependents(&lock, name);
+    if !dependents.is_empty() {
+        return Err(Error::Pack(format!(
+            "{name}: the pack {} depends on it; remove that pack first",
+            dependents.join(", ")
+        )));
+    }
+    let entries: Vec<config::PackEntry> = config::read_packs(root)?
+        .into_iter()
+        .filter(|e| e.name != name)
+        .collect();
+    let report = super::pack_run::run(
+        root,
+        &super::pack_run::Run {
+            entries: &entries,
+            fetching: super::pack_run::Fetching::Nothing,
+            remove_only: Some(name),
+            keep_existing: false,
+            home: &home,
+            config: config.clone(),
+        },
+        None,
+        &[],
+    )?;
+    let (removed, kept) = report
+        .undeclared
+        .into_iter()
+        .find(|u| u.name == name)
+        .map(|u| (u.removed, u.kept))
+        .unwrap_or_default();
+    Ok(PackRemoved {
+        name: name.to_string(),
+        undeclared: config.is_some(),
+        locked,
+        removed,
+        kept,
+        handed: report.packs,
+        instructions: report.instructions,
+    })
 }
 
 /// `pack_diff` returns the edits of the pack `name` as one unified diff: for

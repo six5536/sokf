@@ -8,9 +8,10 @@
 use std::ops::RangeInclusive;
 
 use crate::{
-    Finding, RepoPath, Source,
+    Finding, RepoPath, RepoRoot, Source,
     markdown::{Block, BlockDetail, BlockKind, Body},
     model::{Document, ParseMode, parse_source},
+    pack::{FILES, Lock},
 };
 
 /// `MARKER` is the start of the first line of a conflict that git writes.
@@ -88,6 +89,39 @@ pub fn check(doc: &Document) -> Vec<Finding> {
             )
         })
         .collect()
+}
+
+/// `pack_files` reports an error at each line that begins a conflict in
+/// each file of a pack's `files/` that `lock` records. Such a file lies
+/// outside every store, so no other check reads it.
+// sokf-implements: CLI-4_AC-39
+pub fn pack_files(root: &RepoRoot, lock: &Lock) -> Vec<Finding> {
+    let mut out = Vec::new();
+    for pack in lock.packs.values() {
+        for (rel, f) in &pack.files {
+            // A shadowed record names a file that its owner's record also
+            // names, so only the owner's record reports it.
+            if !rel.starts_with(FILES) || f.shadowed_by.is_some() {
+                continue;
+            }
+            let Some(path) = RepoPath::parse(&f.path) else {
+                continue;
+            };
+            let Ok(bytes) = std::fs::read(path.to_fs(root)) else {
+                continue;
+            };
+            let text = String::from_utf8_lossy(&bytes);
+            for line in conflict_lines(&path, &text) {
+                out.push(Finding::error(
+                    path.clone(),
+                    Some(line),
+                    "CLI-4_AC-39",
+                    "the line begins a conflict that a merge of `sokf pack sync` left; keep the lines that the file needs, and delete the markers `<<<<<<<`, `=======`, and `>>>>>>>`",
+                ));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

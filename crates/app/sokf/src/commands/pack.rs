@@ -1,46 +1,64 @@
-//! `sokf pack` runs its subcommands: `sync`, `status`, `list`, `remove`,
-//! `diff`, and `export` (CLI-13).
+//! `sokf pack` runs its subcommands: `sync`, `add`, `status`, `list`,
+//! `remove`, `diff`, and `export` (CLI-13).
 
 use std::path::Path;
 
-use sokf_core::{PackSyncOptions, discover_root};
+use sokf_core::{PackAddOptions, PackSyncOptions, PackSyncReport, discover_root};
 
 use crate::{
     cli::{PackArgs, PackCommand},
     output,
 };
 
-/// `pack` runs the `pack` subcommand that `args` selects. Only `sync` uses
-/// the network. `sync` exits with code 1 when a merge conflicts, and every
-/// subcommand exits with code 2 when it refuses to run.
+/// `pack` runs the `pack` subcommand that `args` selects. Only `sync` and
+/// `add` use the network. `sync`, `add`, and `remove` exit with code 1 when
+/// a merge conflicts, `status --check` exits with code 1 when a file of a
+/// pack differs from its base, and every subcommand exits with code 2 when
+/// it refuses to run.
 // sokf-implements: CLI-13_AC-10
 pub fn pack(repo_root: Option<&Path>, args: PackArgs) -> sokf_core::Result<u8> {
     let (text, code) = match args.what {
         PackCommand::Sync(a) => {
-            let (cwd, root) = output::root(repo_root)?;
+            let (_, root) = output::root(repo_root)?;
             let report = sokf_core::pack_sync(
                 &root,
                 &PackSyncOptions {
+                    name: a.name,
+                    keep_existing: a.keep_existing,
+                    home: std::env::home_dir(),
+                },
+            )?;
+            synced(&report)
+        }
+        PackCommand::Add(a) => {
+            let (cwd, root) = output::root(repo_root)?;
+            let report = sokf_core::pack_add(
+                &root,
+                &PackAddOptions {
                     source: a.source,
                     git_ref: a.git_ref,
                     path: a.path,
                     store: a.store,
-                    adopt: a.adopt,
-                    replace: a.replace,
+                    keep_existing: a.keep_existing,
                     cwd,
                     home: std::env::home_dir(),
                 },
             )?;
-            let code = if report.conflicted() {
+            synced(&report)
+        }
+        PackCommand::Status(a) => {
+            let (_, root) = output::root(repo_root)?;
+            let status = sokf_core::pack_status(&root)?;
+            // A stale pack doesn't fail the check, because an upgrade of
+            // sokf alone shouldn't fail a project's checks.
+            // sokf-implements: CLI-13_AC-49
+            // sokf-implements: CLI-13_AC-50
+            let code = if a.check && status.drifted() {
                 output::EXIT_ERRORS
             } else {
                 output::EXIT_OK
             };
-            (report.to_text(), code)
-        }
-        PackCommand::Status => {
-            let (_, root) = output::root(repo_root)?;
-            (sokf_core::pack_status(&root)?.to_text(), output::EXIT_OK)
+            (status.to_text(), code)
         }
         PackCommand::List => {
             // Outside a repository, the list marks no pack.
@@ -50,10 +68,13 @@ pub fn pack(repo_root: Option<&Path>, args: PackArgs) -> sokf_core::Result<u8> {
         }
         PackCommand::Remove(a) => {
             let (_, root) = output::root(repo_root)?;
-            (
-                sokf_core::pack_remove(&root, &a.name, std::env::home_dir())?.to_text(),
-                output::EXIT_OK,
-            )
+            let report = sokf_core::pack_remove(&root, &a.name, std::env::home_dir())?;
+            let code = if report.conflicted() {
+                output::EXIT_ERRORS
+            } else {
+                output::EXIT_OK
+            };
+            (report.to_text(), code)
         }
         PackCommand::Diff(a) => {
             let (_, root) = output::root(repo_root)?;
@@ -71,4 +92,15 @@ pub fn pack(repo_root: Option<&Path>, args: PackArgs) -> sokf_core::Result<u8> {
     };
     output::write_stdout(text.as_bytes())?;
     Ok(code)
+}
+
+/// `synced` returns the text of the report of `sync` or `add`, and exits
+/// with code 1 when a merge conflicts.
+fn synced(report: &PackSyncReport) -> (String, u8) {
+    let code = if report.conflicted() {
+        output::EXIT_ERRORS
+    } else {
+        output::EXIT_OK
+    };
+    (report.to_text(), code)
 }

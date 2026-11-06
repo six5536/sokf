@@ -51,10 +51,11 @@ sokf harness install codex cursor   # the parts that OpenAI Codex and Cursor sup
 sokf harness status all             # each part of each harness: current, shared, stale, edited, absent
 sokf harness diff claude            # a patch for each part that you edited
 sokf harness install claude --force skills  # overwrite an edited part, or every part with `all`
-sokf pack sync sokf                 # copy the built-in sokf pack into /knowledge, with its lock
-sokf pack sync https://example.com/method.git   # copy a schema pack from a git repository
-sokf pack sync                      # merge each later change of every locked pack with your edits
+sokf pack add sokf                  # declare the built-in sokf pack and copy it into /knowledge
+sokf pack add https://example.com/method.git    # declare and copy a schema pack from a git repository
+sokf pack sync                      # merge each later change of every declared pack with your edits
 sokf pack status                    # each pack, and each of its files that you edited or that conflicts
+sokf pack status --check            # the same, and exit with code 1 when a file differs from its pack
 sokf validate                       # check every knowledge store and additional file
 sokf validate --fix                 # regenerate blocks and indexes, move lifecycle documents, and rewrite headings
 sokf validate knowledge/core --json # report on a directory, as one JSON object
@@ -160,18 +161,38 @@ repository's files that stay out of git (Claude Code and GitHub Copilot). Keep
 
 A schema pack is a directory, with the manifest `pack.sokf.yaml`, that holds a
 method for a store: schemas, documents such as documentation standards, and
-line formats. `sokf pack sync <SOURCE>` fetches the pack with your own `git`,
-copies it into the store, and records it in `/.sokf/packs.lock`. The store
+line formats. `sokf pack add <SOURCE>` fetches the pack with your own `git`,
+declares it in a `[[pack]]` entry of `/.sokf/config.toml`, copies it into the
+store, and records it in `/.sokf/packs.lock`. The store
 owns the copy, so you edit it as any other document, and a later
 `sokf pack sync` merges each upstream change into your edit with
 `git merge-file`. A merge that conflicts leaves git's markers in the file, and
 the command exits with code 1. Run `sokf validate --fix` after a sync.
+
+A pack can also hold `files/`, the files that projects share outside a store,
+such as `rustfmt.toml`, a lint configuration, or a workflow. Sync places each
+at the same path from the repository root, `files/rustfmt.toml` at
+`/rustfmt.toml`, and keeps it current as it keeps a document, with its
+executable bit. A pack that holds only `files/` needs no store. Sync refuses a
+file that would land in `/.git/` or `/.sokf/`, inside a store, or on a file
+that a harness writes.
 
 `builtin:<NAME>`, or `NAME` alone, names a pack that the binary embeds, and
 `sokf pack list` shows them. `sokf pack diff <NAME>` prints your edits as a
 patch that `git apply` applies in the pack's repository, `sokf pack remove
 <NAME>` deletes the pack's files that you haven't edited, and
 `sokf pack export <NAME> <DIR>` writes an embedded pack to a new directory.
+To move a pack to another source or ref, edit its `[[pack]]` entry and run
+`sokf pack sync`, and delete an entry to remove its pack at the next sync.
+
+A pack can build on another: its manifest names the packs that it depends on,
+each with its oldest version, as in `depends: { house-base: 1.4.0 }`. A pack
+comes after the packs that it depends on, the order of the `[[pack]]` entries
+orders the rest, and the highest pack that supplies a file or a schema type
+owns it. Sync writes only the owner's version, so a group pack can replace a
+file of the base pack, such as a stricter Issue schema. When the owner of a
+file changes, sync merges the new owner's version with your edit, and
+`sokf pack status` lists each shadowed file with the pack that owns it.
 
 ## Output and exit codes
 
@@ -255,7 +276,7 @@ formats that they share, documentation standards, and recipes for rewriting a
 document and for planning a building block. It also holds instructions for the
 agent, which the harness's instructions block carries. sokf's own development
 records its knowledge with the pack. The binary embeds it, so a repository
-syncs it with `sokf pack sync sokf`.
+adds it with `sokf pack add sokf`.
 
 The schema language comes from [tramlines](https://github.com/six5536/tramlines),
 a Markdown schema engine with its own

@@ -328,6 +328,12 @@ fn check_once(
     if !loaded.full {
         findings.extend(cache.stored_outputs(&checked));
     }
+    // The files of a pack's `files/` lie outside every store, so the check
+    // reads them afresh on every run.
+    findings.extend(crate::check::pack_file_conflicts(
+        root,
+        &crate::pack::read_lock(root)?,
+    ));
     Ok((loaded, findings))
 }
 

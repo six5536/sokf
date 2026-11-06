@@ -3,6 +3,7 @@
 //! with `git merge-file`, and prints a patch with `git diff --no-index`.
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -113,6 +114,28 @@ impl Clone {
     /// `worktree` returns the clone's working tree.
     pub fn worktree(&self) -> PathBuf {
         self.dir.path().join("repo")
+    }
+
+    /// `executables` returns the path from the clone's root of each file
+    /// that the checked-out commit records as executable. It reads the mode
+    /// from git's tree, which records it on every platform, and not from the
+    /// working tree, which has no mode on Windows.
+    // sokf-implements: CLI-13_AC-59
+    pub fn executables(&self) -> Result<BTreeSet<String>> {
+        let out = git(Some(&self.worktree()), &["ls-tree", "-r", "-z", "HEAD"])?;
+        if !out.status.success() {
+            return Err(Error::Pack(format!(
+                "`git ls-tree` failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .split('\0')
+            .filter_map(|entry| {
+                let (meta, path) = entry.split_once('\t')?;
+                meta.starts_with("100755 ").then(|| path.to_string())
+            })
+            .collect())
     }
 }
 

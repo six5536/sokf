@@ -26,7 +26,7 @@ mod warnings;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use config::check_config;
-pub use conflicts::conflict_lines;
+pub use conflicts::{conflict_lines, pack_files as pack_file_conflicts};
 pub use coverage::{Citation, Citations};
 pub use generated::asset_include;
 pub use host::{SchemaHost, SokfHost, check_against};

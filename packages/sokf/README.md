@@ -50,8 +50,9 @@ sokf locate ID...                 # print the absolute path of each document
 sokf info grammar                 # describe the schema language that the validator uses
 sokf info formats --schema ID     # list the line formats that a schema can match
 sokf new TYPE --slug SLUG --write # create a document from its schema's template
-sokf pack sync sokf               # copy the built-in sokf pack, a method for a project's knowledge, into /knowledge
-sokf pack sync SOURCE             # copy a schema pack from a git URL or path; with no SOURCE, sync each locked pack again
+sokf pack add sokf                # declare the built-in sokf pack, a method for a project's knowledge, and copy it into /knowledge
+sokf pack add SOURCE              # declare and copy a schema pack from a git URL or path
+sokf pack sync                    # merge each later change of every declared pack with your edits
 sokf pack status                  # list each pack, and each of its files that you edited or that conflicts
 sokf completions zsh              # print a completion script for your shell
 ```

@@ -220,7 +220,7 @@ pub fn harness_ids(names: &[String]) -> Vec<String> {
 /// `shown` returns `path`, which the adapter gives relative to the root of `scope`, as the
 /// report shows it: from the repository root with `/`, or from the home directory with
 /// `~/`. A path that already starts with either stays as it is.
-fn shown(scope: Scope, path: &str) -> String {
+pub(super) fn shown(scope: Scope, path: &str) -> String {
     if path.starts_with('/') || path.starts_with('~') {
         return path.to_string();
     }
@@ -239,7 +239,7 @@ fn shown(scope: Scope, path: &str) -> String {
 // sokf-implements: CONF-4_AC-3
 // sokf-implements: CLI-3_AC-73
 // sokf-implements: CLI-3_AC-74
-fn tool(dirs: &HarnessDirs, scope: Scope) -> Result<SokfTool> {
+pub(super) fn tool(dirs: &HarnessDirs, scope: Scope) -> Result<SokfTool> {
     let (config_root, prefix) =
         match scope {
             Scope::User => {
@@ -275,7 +275,7 @@ fn tool(dirs: &HarnessDirs, scope: Scope) -> Result<SokfTool> {
 
 /// `refusal` turns an error of the adapter into a sokf error, naming a file by its path from the
 /// root of `scope` (CLI-9_AC-2).
-fn refusal(scope: Scope) -> impl Fn(agent_harness_adapter_core::Error) -> Error {
+pub(super) fn refusal(scope: Scope) -> impl Fn(agent_harness_adapter_core::Error) -> Error {
     move |e| match e {
         agent_harness_adapter_core::Error::File { file, message } => {
             Error::Harness(format!("{}: {message}", shown(scope, &file)))
@@ -360,6 +360,7 @@ fn report(result: agent_harness_adapter_core::InstallResult) -> HarnessReport {
 // sokf-implements: CLI-3_AC-76
 pub fn install(dirs: &HarnessDirs, opts: &HarnessOptions) -> Result<HarnessReport> {
     let tool = tool(dirs, opts.scope)?;
+    super::harness_packs::refuse_pack_files(dirs, &tool, opts)?;
     let kit_opts = InstallOptions::new(harness_ids(&opts.harnesses), opts.scope)
         .force_parts(opts.force.iter().cloned());
     Ok(report(

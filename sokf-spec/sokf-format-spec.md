@@ -72,7 +72,7 @@ Each normative rule of this specification is a criterion in the EARS (Easy Appro
 - <a id="writer"></a>`writer` - An agent or a human that writes documents.
 - <a id="process"></a>`process` - A deterministic program that writes to the knowledge, such as a link checker.
 - <a id="consumer"></a>`consumer` - A program that reads a knowledge store to display, search, or export it, or to pass it to an agent.
-- <a id="schema-pack"></a>`schema pack` - A directory with the manifest `pack.sokf.yaml` that holds schemas, documents, and formats for a tool to copy into a knowledge store (§2).
+- <a id="schema-pack"></a>`schema pack` - A directory with the manifest `pack.sokf.yaml` that holds schemas, documents, and formats for a tool to copy into a knowledge store, and files for it to copy to fixed paths of a repository (§2).
 
 ## 2. SOKF knowledge store structure
 
@@ -140,13 +140,14 @@ The store identity is `<scope>/<name>`, and documents in other stores use it to 
 - <a id="sokf_format_15"></a>SOKF_FORMAT_15 [ubiquitous]: the agent SHALL leave the `name` and `scope` of the manifest unchanged.
 - <a id="sokf_format_16"></a>SOKF_FORMAT_16 [ubiquitous]: the manifest SHALL contain no `producer`, `generated`, or `counts` key in the working tree (§4).
 
-A schema pack is a directory that holds the method of a knowledge store: schemas, formats, and documents that a tool, such as `sokf pack sync`, copies into a store. The directory is the root of a repository or any directory inside one, so a project can publish its pack beside its code. A schema pack holds these files:
+A schema pack is a directory that holds the method of a knowledge store, schemas, formats, and documents that a tool, such as `sokf pack sync`, copies into a store, and the other files that projects share, which the tool copies to fixed paths of a repository. The directory is the root of a repository or any directory inside one, so a project can publish its pack beside its code. A schema pack holds these files:
 
 - `pack.sokf.yaml` - The manifest of the pack, at its root.
 - `schemas/` - Schema documents, which a copy places in the `schemas/` directory of the store.
 - `documents/` - Documents, such as documentation standards, which a copy places at the same path relative to the store.
 - `formats.yaml` - The line formats and placeholder types of the pack, in the form of a formats file, which a tool adds to its lookup of formats.
 - `instructions.md` - A fragment of the instructions that an agent harness reads.
+- `files/` - Files outside any store, such as a formatter's configuration or a workflow, which a copy places at the same path relative to the root of the repository.
 
 The manifest describes the pack:
 
@@ -161,12 +162,14 @@ description: The schemas and the documentation standards with which a team recor
 - `version` - The version of the pack, in semantic versioning.
 - `requires-sokf` - The oldest version of sokf that the pack works with.
 - `description` - A summary of the pack.
+- `depends` - The packs that the pack builds on, each with the oldest version that it works with. A pack overrides each file and each schema type of the packs that it depends on.
 
 A copy of a pack belongs to the store: the store's writers edit it, and a later copy merges the pack's own changes with those edits.
 
 - <a id="sokf_format_160"></a>SOKF_FORMAT_160 [ubiquitous]: the schema pack SHALL hold a manifest, `pack.sokf.yaml`, at its root.
-- <a id="sokf_format_161"></a>SOKF_FORMAT_161 [ubiquitous]: the schema pack SHALL declare in its manifest a slug `name`, a `version` and a `requires-sokf` of the form `MAJOR.MINOR.PATCH`, and a `description`, and no other key.
+- <a id="sokf_format_161"></a>SOKF_FORMAT_161 [ubiquitous]: the schema pack SHALL declare in its manifest a slug `name`, a `version` and a `requires-sokf` of the form `MAJOR.MINOR.PATCH`, a `description`, and, optionally, `depends`, a map from the slug of each pack that the pack depends on to the oldest version of it, of the form `MAJOR.MINOR.PATCH`, and no other key.
 - <a id="sokf_format_162"></a>SOKF_FORMAT_162 [ubiquitous]: the schema pack SHALL hold only Schema documents in `schemas/`, and only documents in `documents/`.
+- <a id="sokf_format_163"></a>SOKF_FORMAT_163 [ubiquitous]: the schema pack SHALL hold in `files/` only text files whose paths, relative to `files/`, lie outside every knowledge root of the repository that receives them.
 
 ## 3. Documents
 

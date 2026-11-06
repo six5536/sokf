@@ -10,6 +10,10 @@ use crate::{Error, RepoPath, RepoRoot, Result, source::read_optional};
 /// `HEADER` is the comment at the top of the lock.
 const HEADER: &str = "# sokf pack sync writes this file. Do not edit it.\n";
 
+/// `LOCK_VERSION` is the version of the lock's format that this tool reads
+/// and writes. A lock without `lock-version` has the version 1.
+pub const LOCK_VERSION: u32 = 2;
+
 /// `lock_path` returns the path of the lock.
 pub fn lock_path() -> RepoPath {
     RepoPath::parse("/.sokf/packs.lock").expect("literal")
@@ -42,12 +46,13 @@ pub fn instructions_of(name: &str) -> RepoPath {
 }
 
 /// `fragments` returns the instructions fragment of each pack in `lock` that
-/// has one, by the pack's name, in the order of the lock. It reads only the
-/// copies under `/.sokf/packs/`, so it needs no network.
+/// has one, by the pack's name, in the order of the packs, from the lowest
+/// to the highest. It reads only the configuration and the copies under
+/// `/.sokf/packs/`, so it needs no network.
 // sokf-implements: CLI-3_AC-74
 pub fn fragments(root: &RepoRoot, lock: &Lock) -> Result<Vec<(String, String)>> {
     let mut out = Vec::new();
-    for name in lock.packs.keys() {
+    for name in &ordered(root, lock) {
         if let Some(text) = read_optional(&instructions_of(name).to_fs(root))? {
             out.push((name.clone(), text));
         }
@@ -55,13 +60,43 @@ pub fn fragments(root: &RepoRoot, lock: &Lock) -> Result<Vec<(String, String)>> 
     Ok(out)
 }
 
+/// `ordered` returns the names of the packs of `lock` in the order of the
+/// packs: the packs that the configuration declares, sorted by their
+/// dependencies and their entries, then any other pack by its name. A
+/// configuration that doesn't parse, or dependencies that form a cycle,
+/// leave the declared packs in the order of their entries, because a sync
+/// refuses both before it writes.
+fn ordered(root: &RepoRoot, lock: &Lock) -> Vec<String> {
+    let list: Vec<String> = crate::config::read_packs(root)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| e.name)
+        .filter(|n| lock.packs.contains_key(n))
+        .collect();
+    let depends = lock
+        .packs
+        .iter()
+        .map(|(n, p)| (n.clone(), p.depends.keys().cloned().collect()))
+        .collect();
+    let mut out = super::order::precedence(&list, &depends).unwrap_or(list);
+    for name in lock.packs.keys() {
+        if !out.contains(name) {
+            out.push(name.clone());
+        }
+    }
+    out
+}
+
 /// A `Lock` is the content of `/.sokf/packs.lock`: one entry for each pack,
 /// by name.
 // sokf-implements: CONF-8_AC-1
 // sokf:begin lock
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lock {
+    /// The version of the lock's format.
+    #[serde(rename = "lock-version", default = "first_version")]
+    pub lock_version: u32,
     /// The packs, by name.
     #[serde(default)]
     pub packs: BTreeMap<String, LockedPack>,
@@ -79,12 +114,17 @@ pub struct LockedPack {
     /// The pack's directory in the source, when it isn't the source's root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// The knowledge root that holds the pack's schemas and documents.
-    pub store: String,
+    /// The knowledge root that holds the pack's schemas and documents, when
+    /// the pack has any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store: Option<String>,
     /// The resolved commit, or the tool's version for an embedded pack.
     pub commit: String,
     /// The version that the pack's manifest gives.
     pub version: String,
+    /// The packs that the pack depends on, each with its oldest version.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub depends: BTreeMap<String, String>,
     /// The pack's files, by their paths in the pack.
     #[serde(default)]
     pub files: BTreeMap<String, LockedFile>,
@@ -100,17 +140,47 @@ pub struct LockedFile {
     /// The hash of the file's base: the pack's version of the file at the
     /// last sync, as `fnv1a64:<HEX>`.
     pub base: String,
+    /// Whether the pack's version of a file of `files/` is executable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub executable: bool,
+    /// The pack higher in the order that owns the file's destination or
+    /// its schema type, so that the file holds that pack's version and not
+    /// this one.
+    #[serde(
+        rename = "shadowed-by",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub shadowed_by: Option<String>,
+    /// Whether the last sync changed this pack's version of a shadowed file.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub changed: bool,
 }
 // sokf:end lock
 
+impl Default for Lock {
+    fn default() -> Self {
+        Lock {
+            lock_version: LOCK_VERSION,
+            packs: BTreeMap::new(),
+        }
+    }
+}
+
+/// `first_version` is the version of a lock without `lock-version`.
+fn first_version() -> u32 {
+    1
+}
+
 impl Lock {
-    /// `owner_of` returns the pack whose lock entry records the destination
-    /// `dest`, and the file's path in that pack.
+    /// `owner_of` returns the pack whose version of the destination `dest`
+    /// the file holds, which is the one pack whose record of it isn't
+    /// shadowed, and the file's path in that pack.
     pub fn owner_of(&self, dest: &str) -> Option<(&str, &str)> {
         self.packs.iter().find_map(|(name, pack)| {
             pack.files
                 .iter()
-                .find(|(_, f)| f.path == dest)
+                .find(|(_, f)| f.path == dest && f.shadowed_by.is_none())
                 .map(|(rel, _)| (name.as_str(), rel.as_str()))
         })
     }
@@ -129,7 +199,23 @@ pub fn read_lock(root: &RepoRoot) -> Result<Lock> {
     let Some(text) = read_optional(&path.to_fs(root))? else {
         return Ok(Lock::default());
     };
-    let lock: Lock = toml::from_str(&text).map_err(|e| Error::config(path.clone(), e.message()))?;
+    // The version is read first, so that a lock of a newer format gives an
+    // error that says to upgrade, and not one about an unknown key.
+    // sokf-implements: CONF-8_AC-7
+    let table: toml::Table =
+        toml::from_str(&text).map_err(|e| Error::config(path.clone(), e.message()))?;
+    if let Some(v) = table.get("lock-version").and_then(toml::Value::as_integer)
+        && v > i64::from(LOCK_VERSION)
+    {
+        return Err(Error::config(
+            path,
+            format!(
+                "the lock has the format {v}, and this sokf reads the format {LOCK_VERSION} at most; upgrade sokf"
+            ),
+        ));
+    }
+    let mut lock: Lock =
+        toml::from_str(&text).map_err(|e| Error::config(path.clone(), e.message()))?;
     for name in lock.packs.keys() {
         if !super::manifest::is_slug(name) {
             return Err(Error::config(
@@ -138,12 +224,20 @@ pub fn read_lock(root: &RepoRoot) -> Result<Lock> {
             ));
         }
     }
+    // A lock that this tool writes again takes its format.
+    lock.lock_version = LOCK_VERSION;
     Ok(lock)
 }
 
-/// `lock_text` returns the text of the lock, with its header.
+/// `lock_text` returns the text of the lock, with its header and the
+/// version of its format.
+// sokf-implements: CONF-8_AC-6
 pub fn lock_text(lock: &Lock) -> Result<String> {
-    let body = toml::to_string(lock).map_err(|e| Error::Internal(e.to_string()))?;
+    let lock = Lock {
+        lock_version: LOCK_VERSION,
+        ..lock.clone()
+    };
+    let body = toml::to_string(&lock).map_err(|e| Error::Internal(e.to_string()))?;
     Ok(format!("{HEADER}{body}"))
 }
 
@@ -158,9 +252,10 @@ mod tests {
             source: "https://example.com/method.git".into(),
             git_ref: Some("main".into()),
             path: None,
-            store: "/knowledge".into(),
+            store: Some("/knowledge".into()),
             commit: "0123abcd".into(),
             version: "1.0.0".into(),
+            depends: BTreeMap::new(),
             files: BTreeMap::new(),
         };
         pack.files.insert(
@@ -168,12 +263,17 @@ mod tests {
             LockedFile {
                 path: "/knowledge/schemas/issue.md".into(),
                 base: hash_of(b"x"),
+                executable: false,
+                shadowed_by: None,
+                changed: false,
             },
         );
         lock.packs.insert("method".into(), pack);
         let text = lock_text(&lock).unwrap();
         assert!(text.starts_with(HEADER), "{text}");
         assert!(text.contains("[packs.method]"), "{text}");
+        assert!(text.contains("lock-version = 2\n"), "{text}");
+        assert!(!text.contains("executable"), "{text}");
         assert!(text.contains("ref = \"main\""), "{text}");
         assert!(!text.contains("path = \"\""), "{text}");
         let back: Lock = toml::from_str(&text).unwrap();

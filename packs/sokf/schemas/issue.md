@@ -2,7 +2,7 @@
 type: Schema
 id: schema-issue
 title: Issue schema
-description: 'An issue records one piece of work (a feature, a bug, or a chore): what the work asks for, the plan for doing it, and its outcome.'
+description: 'An issue records one piece of work (a feature, a bug, or a chore), or an epic of several: what the work asks for, the plan for doing it, and its outcome.'
 ---
 
 <!-- prettier-ignore -->
@@ -10,7 +10,8 @@ description: 'An issue records one piece of work (a feature, a bug, or a chore):
 line-limit: 0
 
 guidance: >
-  An issue records one piece of work: a feature, a bug, or a chore. Its readers are the
+  An issue records one piece of work: a feature, a bug, or a chore. An epic is an issue
+  that groups the issues that together meet one need. Its readers are the
   person or the agent doing the work and anyone who later asks why the work was done. The
   issue begins with what the work has to achieve, as a GitHub issue does. The plan follows,
   with its open questions, its approach, its files, its steps, and its verification. After
@@ -40,10 +41,13 @@ lifecycle:
       or dropped, and a closed issue doesn't change. The issue's folder has the name of its
       state, and `sokf graph` shows a closed issue only with `--archived`.
   - key: kind
-    states: [feature, bug, chore]
+    states: [feature, bug, chore, epic]
     guidance: >
       The kind is _feature_ for something that a user can't do yet, _bug_ for something
-      that doesn't work as a contract says, and _chore_ for work that no user sees. The id
+      that doesn't work as a contract says, and _chore_ for work that no user sees. The kind
+      is _epic_ for a need that several issues meet together. An epic plans no code of its
+      own: its issues hold the criteria, the files, and the steps, and the epic lists them in
+      the order of the work. The id
       contains the kind, so the kind never changes. An issue of the wrong kind closes, and a
       new issue of the right kind replaces it.
 
@@ -76,6 +80,11 @@ links:
     to-type: Issue
     min: 0
     guidance: A relates-to link points to another issue whose work included this one's.
+  - rel: part-of
+    to-type: Issue
+    min: 0
+    max: 1
+    guidance: A part-of link points to the epic whose need this issue helps to meet. An epic is part of no other issue.
 
 types:
   decision-id: 'D-[1-9][0-9]*'
@@ -129,6 +138,16 @@ sections:
             - '[Out of scope](#out-of-scope)'
             - '[Plan](#plan)'
       - kind: bullet-list
+        only: { state: [open], kind: [epic] }
+        guidance: The contents list has one item for each level-2 section, in order, and each item links to its section's heading.
+        each:
+          template: '[${}](#${:slug})'
+          example:
+            - '[Problem](#problem)'
+            - '[Proposed solution](#proposed-solution)'
+            - '[Issues](#issues)'
+            - '[Out of scope](#out-of-scope)'
+      - kind: bullet-list
         optional: true
         only: { state: [closed], kind: [feature] }
         guidance: >
@@ -178,11 +197,26 @@ sections:
             - '[Out of scope](#out-of-scope)'
             - '[Plan](#plan)'
             - '[Outcome](#outcome)'
+      - kind: bullet-list
+        optional: true
+        only: { state: [closed], kind: [epic] }
+        guidance: >
+          The contents list has one item for each level-2 section, in order, and each item
+          links to its section's heading. The list is optional in a closed issue, because a
+          closed issue is history and keeps the form it had when it closed.
+        each:
+          template: '[${}](#${:slug})'
+          example:
+            - '[Problem](#problem)'
+            - '[Proposed solution](#proposed-solution)'
+            - '[Issues](#issues)'
+            - '[Out of scope](#out-of-scope)'
+            - '[Outcome](#outcome)'
 
   # The issue: a feature.
   - heading: Problem
     level: 2
-    only: { kind: [feature] }
+    only: { kind: [feature, epic] }
     guidance: >
       This section says what the user can't do yet, why that matters, and what the code does
       now, with a link to the code or to the section of the design concerned. It links the
@@ -199,7 +233,7 @@ sections:
           - 'The file server turns every nil result into the same error.'
   - heading: Proposed solution
     level: 2
-    only: { kind: [feature] }
+    only: { kind: [feature, epic] }
     guidance: This section describes the change as the user sees it. The plan describes how the change is built.
     blocks:
       - kind: prose
@@ -277,8 +311,30 @@ sections:
           - 'A log of every match in a file: the user has to find the log and read it after each failure.'
           - 'A command that tests one message against one rule set: it reports nothing about the other rule sets.'
 
+  # An epic.
+  - heading: Issues
+    level: 2
+    only: { kind: [epic] }
+    guidance: >
+      This section lists the issues of the epic in the order of the work, and says why the
+      order matters where the reason isn't obvious. Each issue links the epic with part-of.
+    blocks:
+      - kind: numbered-list
+        each:
+          template: '[${}][sokf:${:ref}]: ${}.'
+          to-type: Issue
+          example:
+            - '[Report the failed pattern][sokf:issue-041-feature-report-failed-pattern]: the matcher records the pattern that stops a match, and `plumb` prints it.'
+            - '[Report the failed pattern in acme][sokf:issue-042-feature-acme-failed-pattern]: the editor shows the error in its window.'
+      - kind: prose
+        optional: true
+        max: 1
+        guidance: One paragraph says why the order matters, where the reason isn't obvious.
+        example: 'The editor shows only what the file server reports, so the report in `plumb` comes first.'
+
   - heading: Acceptance criteria
     level: 2
+    only: { kind: [feature, bug, chore] }
     guidance: >
       This section is a checklist of what is true when the work is done, with one item for
       each criterion. A check that applies to every issue, such as a clean validation or a

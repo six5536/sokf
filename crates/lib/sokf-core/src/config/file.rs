@@ -21,6 +21,8 @@ struct ConfigFile {
     repository: RepositorySection,
     markers: MarkersSection,
     harness: BTreeMap<String, HarnessSection>,
+    /// The packs, which `read_packs` checks.
+    pack: Vec<super::packs::PackEntry>,
 }
 // sokf:end config-file
 

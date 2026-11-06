@@ -422,16 +422,21 @@ pub struct PackArgs {
 /// `PackCommand` lists the subcommands of `pack`.
 #[derive(Debug, Subcommand)]
 pub enum PackCommand {
-    /// Copy a pack into a store, or merge each later upstream change of
-    /// every pack in `/.sokf/packs.lock` with the store's edits.
+    /// Sync each pack that `/.sokf/config.toml` declares: merge each
+    /// upstream change with your edits, and remove each pack that no entry
+    /// declares.
     Sync(PackSyncArgs),
+    /// Declare the pack of a source at the end of the `[[pack]]` list of
+    /// `/.sokf/config.toml`, and sync it.
+    Add(PackAddArgs),
     /// Print each pack in the lock that is stale, and each of its files that
-    /// is edited or conflicted. It writes nothing and uses no network.
-    Status,
+    /// is edited, conflicted, or deleted. It writes nothing and uses no
+    /// network.
+    Status(PackStatusArgs),
     /// Print the packs that the binary embeds, and mark those in the lock.
     List,
-    /// Delete the files of a pack that you haven't edited, keep the edited
-    /// ones, and drop the pack from the lock.
+    /// Delete the pack's `[[pack]]` entry and the files of the pack that you
+    /// haven't edited, keep the edited ones, and drop the pack from the lock.
     Remove(PackNameArgs),
     /// Print your edits of a pack's files as a patch against the recorded
     /// bases, which `git apply` applies in the pack's repository.
@@ -443,35 +448,54 @@ pub enum PackCommand {
 /// `PackSyncArgs` holds the arguments of `pack sync`.
 #[derive(Debug, Args)]
 pub struct PackSyncArgs {
+    /// The name of one declared pack to sync. Default: every pack that
+    /// `/.sokf/config.toml` declares.
+    #[arg(value_name = "NAME")]
+    pub name: Option<String>,
+
+    /// Keep each existing file that a file of a pack lands on, and record
+    /// it as your edit of the pack's version. Delete a file first to take
+    /// the pack's version of it.
+    #[arg(long)]
+    pub keep_existing: bool,
+}
+
+/// `PackAddArgs` holds the arguments of `pack add`.
+#[derive(Debug, Args)]
+pub struct PackAddArgs {
     /// The pack's source: a git URL or path, `builtin:NAME`, or the NAME of
-    /// an embedded pack alone. Default: each pack in `/.sokf/packs.lock`,
-    /// from its recorded source, at the head of its recorded ref.
+    /// an embedded pack alone.
     #[arg(value_name = "SOURCE")]
-    pub source: Option<String>,
+    pub source: String,
 
     /// The branch, tag, or commit of a git source. Default: the source's
-    /// default branch, which the lock then records.
-    #[arg(long = "ref", value_name = "REF", requires = "source")]
+    /// default branch.
+    #[arg(long = "ref", value_name = "REF")]
     pub git_ref: Option<String>,
 
     /// The pack's directory in a git source. Default: the repository's root.
-    #[arg(long, value_name = "DIR", requires = "source")]
+    #[arg(long, value_name = "DIR")]
     pub path: Option<String>,
 
     /// The knowledge root that receives the pack's schemas and documents.
-    /// Default: the store that the lock records, or `/knowledge`.
-    #[arg(long, value_name = "ROOT", requires = "source")]
+    /// Default: `/knowledge`.
+    #[arg(long, value_name = "ROOT")]
     pub store: Option<PathBuf>,
 
     /// Keep each existing file that a file of the pack lands on, and record
-    /// it as your edit of the pack's version.
+    /// it as your edit of the pack's version. Delete a file first to take
+    /// the pack's version of it.
     #[arg(long)]
-    pub adopt: bool,
+    pub keep_existing: bool,
+}
 
-    /// Move the locked pack of the source's name to this source, and keep
-    /// its recorded bases.
-    #[arg(long, requires = "source")]
-    pub replace: bool,
+/// `PackStatusArgs` holds the arguments of `pack status`.
+#[derive(Debug, Args)]
+pub struct PackStatusArgs {
+    /// Exit with code 1 when a file of a pack is edited, conflicted, or
+    /// deleted, so that a check fails on an edit that nobody has reviewed.
+    #[arg(long)]
+    pub check: bool,
 }
 
 /// `PackNameArgs` holds the name of a pack in the lock.

@@ -1,7 +1,11 @@
 //! This module reads a pack from its source: a directory of a git clone, or
 //! a pack that the binary embeds (D-14, D-23, and D-24 of design-pack).
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use super::manifest::{MANIFEST, PackManifest, parse_manifest};
 use crate::{Error, Result};
@@ -51,6 +55,8 @@ pub struct PackFiles {
     /// Each file of the pack other than the manifest, by its path in the
     /// pack, with `/` between the segments.
     pub files: BTreeMap<String, Vec<u8>>,
+    /// The path in the pack of each file of `files/` that is executable.
+    pub executable: BTreeSet<String>,
 }
 
 /// An `EmbeddedPack` is a pack that the build embeds from `/packs/`.
@@ -83,7 +89,12 @@ impl EmbeddedPack {
         let manifest = manifest.ok_or_else(|| {
             Error::Internal(format!("the embedded pack {} has no manifest", self.dir))
         })?;
-        Ok(PackFiles { manifest, files })
+        // The build embeds each file as text, with no mode.
+        Ok(PackFiles {
+            manifest,
+            files,
+            executable: BTreeSet::new(),
+        })
     }
 }
 
@@ -140,7 +151,12 @@ pub fn read_dir(dir: &Path, label: &str) -> Result<PackFiles> {
     let text = String::from_utf8(text)
         .map_err(|_| Error::Pack(format!("{label}/{MANIFEST} is not UTF-8")))?;
     let manifest = parse_manifest(&text, &format!("{label}/{MANIFEST}"))?;
-    Ok(PackFiles { manifest, files })
+    // The caller reads the executable bits from git's tree.
+    Ok(PackFiles {
+        manifest,
+        files,
+        executable: BTreeSet::new(),
+    })
 }
 
 /// `collect` adds each file under `dir` to `out`, by its path under the pack
@@ -204,16 +220,27 @@ pub fn clone_dir(worktree: &Path, path: &str) -> Result<std::path::PathBuf> {
     Ok(dir)
 }
 
+/// `FILES` is the directory of a pack whose files land at the same path
+/// from the repository root, outside any store.
+pub const FILES: &str = "files/";
+
 /// `destination` returns where sync writes the file `rel` of the pack
-/// `name` into the store `store`: a file of `schemas/` goes to the store's
-/// `schemas/`, a file under `documents/` to the same path in the store, and
-/// `formats.yaml` and `instructions.md` to the same name under
-/// `/.sokf/packs/<NAME>/`. Any other file,
-/// and each `index.md`, which `validate --fix` writes, has no destination.
+/// `name`: a file under `files/` goes to the same path from the repository
+/// root, a file of `schemas/` to the `schemas/` of the store `store`, a file
+/// under `documents/` to the same path in that store, and `formats.yaml`
+/// and `instructions.md` to the same name under `/.sokf/packs/<NAME>/`. Any
+/// other file, a file of the store without a store, and each `index.md` of
+/// the store, which `validate --fix` writes, has no destination. The planner
+/// checks where a file of `files/` lands.
 // sokf-implements: CLI-13_AC-4
 // sokf-implements: SOKF_FORMAT_162
+// sokf-implements: SOKF_FORMAT_163
 // sokf-implements: CLI-13_AC-5
-pub fn destination(name: &str, store: &str, rel: &str) -> Option<String> {
+// sokf-implements: CLI-13_AC-51
+pub fn destination(name: &str, store: Option<&str>, rel: &str) -> Option<String> {
+    if let Some(rest) = rel.strip_prefix(FILES) {
+        return Some(format!("/{rest}"));
+    }
     if rel == "formats.yaml" {
         return Some(super::lock::formats_of(name).as_str().to_string());
     }
@@ -224,7 +251,7 @@ pub fn destination(name: &str, store: &str, rel: &str) -> Option<String> {
     if rel == "index.md" || rel.ends_with("/index.md") {
         return None;
     }
-    let store = store.trim_end_matches('/');
+    let store = store?.trim_end_matches('/');
     if let Some(rest) = rel.strip_prefix("schemas/") {
         return Some(format!("{store}/schemas/{rest}"));
     }
@@ -254,7 +281,7 @@ mod tests {
 
     #[test]
     fn each_file_lands_at_its_destination() {
-        let d = |rel| destination("m", "/knowledge", rel);
+        let d = |rel| destination("m", Some("/knowledge"), rel);
         assert_eq!(
             d("schemas/issue.md").unwrap(),
             "/knowledge/schemas/issue.md"
@@ -270,6 +297,18 @@ mod tests {
         );
         assert_eq!(d("README.md"), None);
         assert_eq!(d("schemas/index.md"), None);
+        assert_eq!(d("files/rustfmt.toml").unwrap(), "/rustfmt.toml");
+        assert_eq!(
+            d("files/.github/workflows/ci.yml").unwrap(),
+            "/.github/workflows/ci.yml"
+        );
+        // A file of `files/` named `index.md` is no index of a store.
+        assert_eq!(d("files/docs/index.md").unwrap(), "/docs/index.md");
+        assert_eq!(destination("m", None, "schemas/issue.md"), None);
+        assert_eq!(
+            destination("m", None, "files/deny.toml").unwrap(),
+            "/deny.toml"
+        );
     }
 
     static FAKE: &[EmbeddedPack] = &[EmbeddedPack {

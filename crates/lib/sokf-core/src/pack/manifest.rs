@@ -1,13 +1,15 @@
 //! This module reads `pack.sokf.yaml`, the manifest of a schema pack, and
 //! compares the versions that the manifest gives (CLI-13).
 
+use std::collections::BTreeMap;
+
 use crate::{Error, Result, yaml};
 
 /// `MANIFEST` is the file name of a pack's manifest.
 pub const MANIFEST: &str = "pack.sokf.yaml";
 
-/// `KEYS` lists the keys of a manifest, each of which is required.
-const KEYS: &[&str] = &["name", "version", "requires-sokf", "description"];
+/// `KEYS` lists the keys of a manifest. Each is required except `depends`.
+const KEYS: &[&str] = &["name", "version", "requires-sokf", "description", "depends"];
 
 /// A `PackManifest` is the content of `pack.sokf.yaml`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,11 +22,16 @@ pub struct PackManifest {
     pub requires_sokf: String,
     /// One sentence that says what the pack holds.
     pub description: String,
+    /// The packs that the pack depends on, by name, each with the oldest
+    /// version that it works with.
+    pub depends: BTreeMap<String, String>,
 }
 
 /// `parse_manifest` reads the text of a manifest. `label` names the file in
-/// an error. It refuses a manifest that lacks a key, has an unknown key, or
-/// gives a name that isn't a slug or a version that isn't `MAJOR.MINOR.PATCH`.
+/// an error. It refuses a manifest that lacks a required key, has an
+/// unknown key, or gives a name that isn't a slug or a version that isn't
+/// `MAJOR.MINOR.PATCH`, and a `depends` that isn't a map from the name of
+/// another pack to such a version.
 // sokf-implements: CLI-13_AC-1
 // sokf-implements: SOKF_FORMAT_160
 // sokf-implements: SOKF_FORMAT_161
@@ -50,6 +57,7 @@ pub fn parse_manifest(text: &str, label: &str) -> Result<PackManifest> {
         version: get("version")?,
         requires_sokf: get("requires-sokf")?,
         description: get("description")?,
+        depends: depends(&doc, &fail)?,
     };
     if !is_slug(&manifest.name) {
         return Err(fail(format!(
@@ -68,6 +76,38 @@ pub fn parse_manifest(text: &str, label: &str) -> Result<PackManifest> {
         }
     }
     Ok(manifest)
+}
+
+/// `depends` reads the optional `depends` of the manifest `doc`: a map from
+/// the name of a pack to the oldest version of it that the pack works with.
+// sokf-implements: CLI-13_AC-67
+fn depends(
+    doc: &crate::Spanned,
+    fail: &dyn Fn(String) -> Error,
+) -> Result<BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    let Some(value) = doc.get("depends") else {
+        return Ok(out);
+    };
+    let map = value.as_map().ok_or_else(|| {
+        fail("`depends` is not a map from the name of a pack to its version".into())
+    })?;
+    for (key, v) in map {
+        let name = key.value.clone();
+        let version = v.scalar_text().unwrap_or_default();
+        if !is_slug(&name) {
+            return Err(fail(format!(
+                "the name `{name}` in `depends` is not a slug"
+            )));
+        }
+        if parse_version(&version).is_none() {
+            return Err(fail(format!(
+                "the version `{version}` of `{name}` in `depends` is not of the form MAJOR.MINOR.PATCH"
+            )));
+        }
+        out.insert(name, version);
+    }
+    Ok(out)
 }
 
 /// `is_slug` returns whether `s` is lowercase words of letters and digits,
@@ -119,6 +159,26 @@ mod tests {
         assert_eq!(m.version, "1.2.0");
         assert_eq!(m.requires_sokf, "0.1.0");
         assert_eq!(m.description, "The method of a store.");
+        assert!(m.depends.is_empty());
+    }
+
+    // sokf-tests: CLI-13_AC-67
+    #[test]
+    fn a_manifest_reads_the_packs_that_it_depends_on() {
+        let text = format!("{GOOD}depends:\n  house-base: 1.4.0\n");
+        let m = parse_manifest(&text, "pack.sokf.yaml").unwrap();
+        assert_eq!(
+            m.depends,
+            BTreeMap::from([("house-base".to_string(), "1.4.0".to_string())])
+        );
+        for bad in [
+            "depends: [a]\n",
+            "depends:\n  Base: 1.0.0\n",
+            "depends:\n  base: 1.0\n",
+        ] {
+            let e = parse_manifest(&format!("{GOOD}{bad}"), "x/pack.sokf.yaml").unwrap_err();
+            assert!(e.to_string().contains("depends"), "{bad:?} -> {e}");
+        }
     }
 
     // sokf-tests: CLI-13_AC-1
