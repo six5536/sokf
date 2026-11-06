@@ -1,5 +1,5 @@
-//! This module carries out `sokf harness install` and `sokf harness status` (CLI-3), through
-//! `install` and `status` of agent-harness-adapter. It reads the config, presents sokf to the adapter
+//! This module carries out `sokf harness install`, `sokf harness status`, and `sokf harness diff`
+//! (CLI-3), through `install`, `status`, and `edits` of agent-harness-adapter. It reads the config, presents sokf to the adapter
 //! as a `Tool`, and turns the adapter's result and refusals into sokf's report and errors, with
 //! paths from the repository root, or from the home directory at the user scope.
 
@@ -48,10 +48,9 @@ pub struct HarnessOptions {
     pub harnesses: Vec<String>,
     /// The scope: `project`, `user`, or `local`.
     pub scope: Scope,
-    /// The parts listed after `--without`, or `None` when the option isn't given.
-    pub without: Option<Vec<String>>,
-    /// Whether `--force` is given.
-    pub force: bool,
+    /// The parts that `--force` names, which `install` writes whatever their state, or `all`
+    /// for every part that the configuration doesn't decline. Empty without `--force`.
+    pub force: Vec<String>,
 }
 
 impl HarnessOptions {
@@ -61,22 +60,15 @@ impl HarnessOptions {
         HarnessOptions {
             harnesses: harnesses.into_iter().map(Into::into).collect(),
             scope,
-            without: None,
-            force: false,
+            force: Vec::new(),
         }
     }
 
-    /// `without` declines `parts`, replacing the declined parts in the configuration.
+    /// `force` writes `parts` whatever their state, or every part that the configuration
+    /// doesn't decline when `parts` holds `all`.
     #[must_use]
-    pub fn without<I: IntoIterator<Item = S>, S: Into<String>>(mut self, parts: I) -> Self {
-        self.without = Some(parts.into_iter().map(Into::into).collect());
-        self
-    }
-
-    /// `force` writes the parts that the user edited too.
-    #[must_use]
-    pub fn force(mut self, force: bool) -> Self {
-        self.force = force;
+    pub fn force<I: IntoIterator<Item = S>, S: Into<String>>(mut self, parts: I) -> Self {
+        self.force = parts.into_iter().map(Into::into).collect();
         self
     }
 }
@@ -165,15 +157,27 @@ impl HarnessReport {
     }
 
     /// `to_text` returns the text report: for each harness, `<name>:`, one indented line for
-    /// each part, then `unsupported:` and `note:` lines; then a `warning:` line for each
-    /// warning.
+    /// each part, with a `next:` line after each part that is edited and stays as it is,
+    /// then `unsupported:` and `note:` lines; then a `warning:` line for each warning.
     // sokf-implements: CLI-3_AC-19
+    // sokf-implements: CLI-3_AC-77
     pub fn to_text(&self) -> String {
+        let scope = match self.scope {
+            Scope::Project => String::new(),
+            other => format!(" --scope {other}"),
+        };
         let mut out = String::new();
         for h in &self.harnesses {
             out.push_str(&format!("{}:\n", h.harness));
             for p in &h.parts {
                 out.push_str(&format!("  {}\n", p.to_line()));
+                if p.state == State::Edited && p.action.is_none() {
+                    out.push_str(&format!(
+                        "    next: `sokf harness diff {h}{scope}` shows the edit, and `sokf harness install {h}{scope} --force {p}` overwrites it\n",
+                        h = h.harness,
+                        p = p.part
+                    ));
+                }
             }
             if !h.unsupported.is_empty() {
                 let items: Vec<&str> = h.unsupported.iter().map(|i| i.as_str()).collect();
@@ -311,7 +315,7 @@ fn report(result: agent_harness_adapter_core::InstallResult) -> HarnessReport {
 
 /// `install` makes the tree match sokf's integration for each harness named, as CLI-3
 /// describes. The adapter writes nothing until every check has passed, writes the parts, then
-/// the record, then the declined parts. The adapter carries out the part kinds, the states, the
+/// the record, and never the configuration. The adapter carries out the part kinds, the states, the
 /// hashes, the shared locations, and the record, so this call implements their criteria.
 // sokf-implements: CLI-3_AC-12
 // sokf-implements: CLI-3_AC-13
@@ -352,13 +356,12 @@ fn report(result: agent_harness_adapter_core::InstallResult) -> HarnessReport {
 // sokf-implements: CLI-3_AC-55
 // sokf-implements: CLI-3_AC-21
 // sokf-implements: CLI-3_AC-6
+// sokf-implements: CLI-3_AC-75
+// sokf-implements: CLI-3_AC-76
 pub fn install(dirs: &HarnessDirs, opts: &HarnessOptions) -> Result<HarnessReport> {
     let tool = tool(dirs, opts.scope)?;
-    let mut kit_opts =
-        InstallOptions::new(harness_ids(&opts.harnesses), opts.scope).force(opts.force);
-    if let Some(without) = &opts.without {
-        kit_opts = kit_opts.without(without.iter().cloned());
-    }
+    let kit_opts = InstallOptions::new(harness_ids(&opts.harnesses), opts.scope)
+        .force_parts(opts.force.iter().cloned());
     Ok(report(
         agent_harness_adapter_core::install(&tool, &kit_opts).map_err(refusal(opts.scope))?,
     ))
@@ -375,6 +378,30 @@ pub fn status(dirs: &HarnessDirs, harnesses: &[String], scope: Scope) -> Result<
         agent_harness_adapter_core::status(&tool, harness_ids(harnesses), scope)
             .map_err(refusal(scope))?,
     ))
+}
+
+/// `diff` returns a patch for each file of each part in the state `edited` of each harness
+/// named, from the text that `install` would write to the text on disk, with the paths
+/// `a/<path>` and `b/<path>` from the root of `scope`, in the order of `status`. A `file` part
+/// gives each file whole; a `region` part gives the block between its markers, and a `merge`
+/// part its entries as JSON, so their line numbers count from the block or the entries. It returns
+/// an empty text when no part is edited, and writes nothing.
+// sokf-implements: CLI-3_AC-78
+// sokf-implements: CLI-3_AC-79
+// sokf-implements: CLI-3_AC-80
+pub fn diff(dirs: &HarnessDirs, harnesses: &[String], scope: Scope) -> Result<String> {
+    let tool = tool(dirs, scope)?;
+    let edits = agent_harness_adapter_core::edits(&tool, harness_ids(harnesses), scope)
+        .map_err(refusal(scope))?;
+    let mut out = String::new();
+    for e in &edits {
+        out.push_str(&pack::diff(
+            &e.path,
+            e.expected.as_bytes(),
+            Some(e.found.as_bytes()),
+        )?);
+    }
+    Ok(out)
 }
 
 /// `refresh_instructions` rewrites the `instructions` part of each harness installed at the
@@ -482,12 +509,18 @@ mod tests {
         crate::test_support::fresh_dir(&format!("harness-api-{name}"))
     }
 
-    fn opts(without: Option<&[&str]>, force: bool) -> HarnessOptions {
-        let o = HarnessOptions::new(["claude"], Scope::Project).force(force);
-        match without {
-            Some(w) => o.without(w.iter().copied()),
-            None => o,
-        }
+    fn opts(force: &[&str]) -> HarnessOptions {
+        HarnessOptions::new(["claude"], Scope::Project).force(force.iter().copied())
+    }
+
+    /// `decline` writes the configuration of `dir` so that it declines `parts` of `claude`.
+    fn decline(dir: &std::path::Path, parts: &str) {
+        fs::create_dir_all(dir.join(".sokf")).unwrap();
+        fs::write(
+            dir.join(".sokf/config.toml"),
+            format!("[harness.claude]\nwithout = [{parts}]\n"),
+        )
+        .unwrap();
     }
 
     fn verbs(r: &HarnessReport) -> Vec<&str> {
@@ -527,7 +560,7 @@ mod tests {
         let dirs = HarnessDirs::repo(RepoRoot::new(dir.clone()));
         let e = install(&dirs, &HarnessOptions::new(["cline"], Scope::Project)).unwrap_err();
         assert_eq!(e.to_string(), "harness: no harness named `cline`");
-        let e = install(&dirs, &opts(Some(&["mcp"]), false)).unwrap_err();
+        let e = install(&dirs, &opts(&["mcp"])).unwrap_err();
         assert_eq!(
             e.to_string(),
             "harness: harness `claude` has no part named `mcp`"
@@ -545,14 +578,14 @@ mod tests {
         assert!(status(&dirs, &["cline".into()], Scope::Project).is_err());
         fs::create_dir_all(dir.join(".sokf")).unwrap();
         fs::write(dir.join(".sokf/config.toml"), "[knowledge\n").unwrap();
-        let e = install(&dirs, &opts(None, false)).unwrap_err();
+        let e = install(&dirs, &opts(&[])).unwrap_err();
         assert!(
             e.to_string().starts_with("harness: /.sokf/config.toml: "),
             "{e}"
         );
         fs::remove_file(dir.join(".sokf/config.toml")).unwrap();
         fs::write(dir.join(".sokf/harness.toml"), "x = [\n").unwrap();
-        let e = install(&dirs, &opts(None, false)).unwrap_err();
+        let e = install(&dirs, &opts(&[])).unwrap_err();
         assert!(
             e.to_string().starts_with("harness: /.sokf/harness.toml: "),
             "{e}"
@@ -560,7 +593,7 @@ mod tests {
         fs::remove_file(dir.join(".sokf/harness.toml")).unwrap();
         fs::create_dir_all(dir.join(".claude")).unwrap();
         fs::write(dir.join(".claude/settings.json"), "{ nope").unwrap();
-        let e = install(&dirs, &opts(None, false)).unwrap_err();
+        let e = install(&dirs, &opts(&[])).unwrap_err();
         assert!(e.to_string().contains("does not parse"), "{e}");
         assert!(
             e.to_string()
@@ -583,11 +616,14 @@ mod tests {
     // sokf-tests: CLI-3_AC-9
     // sokf-tests: CLI-3_AC-54
     // sokf-tests: CLI-3_AC-55
+    // sokf-tests: CLI-3_AC-75
+    // sokf-tests: CLI-3_AC-76
     #[test]
     fn the_verbs_follow_the_states() {
         let dir = temp("verbs");
         let dirs = HarnessDirs::repo(RepoRoot::new(dir.clone()));
-        let first = install(&dirs, &opts(Some(&["hooks"]), false)).unwrap();
+        decline(&dir, "\"hooks\"");
+        let first = install(&dirs, &opts(&[])).unwrap();
         assert_eq!(verbs(&first), ["created", "created", "skipped", "created"]);
         let parts = &first.harnesses[0].parts;
         assert_eq!(parts[0].state, State::Absent);
@@ -595,7 +631,7 @@ mod tests {
         assert_eq!(parts[0].path, "/CLAUDE.md");
         assert_eq!(parts[1].path, "/.claude/skills");
         // A second run reports `current` and `skipped`, and the record has no hooks key.
-        let second = install(&dirs, &opts(None, false)).unwrap();
+        let second = install(&dirs, &opts(&[])).unwrap();
         assert_eq!(verbs(&second), ["current", "current", "skipped", "current"]);
         assert!(second.harnesses[0].parts.iter().all(|p| p.action.is_none()));
         let record = fs::read_to_string(dir.join(".sokf/harness.toml")).unwrap();
@@ -614,17 +650,42 @@ mod tests {
         )
         .unwrap();
         fs::write(dir.join(".claude/skills/sokf/SKILL.md"), "mine\n").unwrap();
-        let third = install(&dirs, &opts(None, false)).unwrap();
+        let third = install(&dirs, &opts(&[])).unwrap();
         assert_eq!(verbs(&third), ["edited", "edited", "skipped", "current"]);
         assert_eq!(
             fs::read_to_string(dir.join(".claude/skills/sokf/SKILL.md")).unwrap(),
             "mine\n"
         );
-        let forced = install(&dirs, &opts(None, true)).unwrap();
-        assert_eq!(verbs(&forced), ["updated", "rewrote", "skipped", "current"]);
-        assert_eq!(forced.harnesses[0].parts[1].state, State::Edited);
+        // `--force skills` rewrites the skill alone, and the block keeps its edit.
+        let skill = install(&dirs, &opts(&["skills"])).unwrap();
+        assert_eq!(verbs(&skill), ["edited", "rewrote", "skipped", "current"]);
+        assert!(
+            fs::read_to_string(dir.join("CLAUDE.md"))
+                .unwrap()
+                .contains("ignore the")
+        );
+        // `--force` on a declined part refuses, names the config, and writes nothing.
+        let before = fs::read_to_string(dir.join(".sokf/harness.toml")).unwrap();
+        let e = install(&dirs, &opts(&["hooks"])).unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "harness: harness `claude` declines `hooks` in /.sokf/config.toml; remove it from `without` there to force it"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join(".sokf/harness.toml")).unwrap(),
+            before
+        );
+        // `--force all` covers every part that the config doesn't decline.
+        let forced = install(&dirs, &opts(&["all"])).unwrap();
+        assert_eq!(verbs(&forced), ["updated", "current", "skipped", "current"]);
+        assert_eq!(forced.harnesses[0].parts[0].state, State::Edited);
         let st = status(&dirs, &["claude".into()], Scope::Project).unwrap();
         assert_eq!(verbs(&st), ["current", "current", "skipped", "current"]);
+        // No install changed the config.
+        assert_eq!(
+            fs::read_to_string(dir.join(".sokf/config.toml")).unwrap(),
+            "[harness.claude]\nwithout = [\"hooks\"]\n"
+        );
         // Turn the hooks back on by editing the config: `install` writes them into the
         // settings file, which exists, so it reports `updated`.
         fs::write(
@@ -634,10 +695,50 @@ mod tests {
         .unwrap();
         let st = status(&dirs, &["claude".into()], Scope::Project).unwrap();
         assert_eq!(st.harnesses[0].parts[2].verb(), "absent");
-        let fourth = install(&dirs, &opts(None, false)).unwrap();
+        let fourth = install(&dirs, &opts(&[])).unwrap();
         assert_eq!(fourth.harnesses[0].parts[2].verb(), "updated");
         let record = fs::read_to_string(dir.join(".sokf/harness.toml")).unwrap();
         assert!(record.contains("hooks = \"fnv1a64:"), "{record}");
+        // Declining the hooks again skips them and keeps their hash.
+        decline(&dir, "\"hooks\"");
+        let fifth = install(&dirs, &opts(&[])).unwrap();
+        assert_eq!(fifth.harnesses[0].parts[2].verb(), "skipped");
+        assert_eq!(
+            fs::read_to_string(dir.join(".sokf/harness.toml")).unwrap(),
+            record
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // sokf-tests: CLI-3_AC-77
+    // sokf-tests: CLI-3_AC-78
+    // sokf-tests: CLI-3_AC-79
+    // sokf-tests: CLI-3_AC-80
+    #[test]
+    fn diff_gives_a_patch_for_each_edited_file_and_writes_nothing() {
+        let dir = temp("diff");
+        let dirs = HarnessDirs::repo(RepoRoot::new(dir.clone()));
+        let claude = ["claude".to_string()];
+        install(&dirs, &opts(&[])).unwrap();
+        assert_eq!(diff(&dirs, &claude, Scope::Project).unwrap(), "");
+        let skill = dir.join(".claude/skills/sokf/SKILL.md");
+        let text = fs::read_to_string(&skill).unwrap();
+        fs::write(&skill, format!("{text}mine\n")).unwrap();
+        let patch = diff(&dirs, &claude, Scope::Project).unwrap();
+        assert!(
+            patch.starts_with(
+                "diff --git a/.claude/skills/sokf/SKILL.md b/.claude/skills/sokf/SKILL.md\n"
+            ),
+            "{patch}"
+        );
+        assert!(patch.contains("\n+mine\n"), "{patch}");
+        assert_eq!(fs::read_to_string(&skill).unwrap(), format!("{text}mine\n"));
+        // The text report names both next steps beside the edited part.
+        let st = status(&dirs, &claude, Scope::Project).unwrap().to_text();
+        assert!(
+            st.contains("    next: `sokf harness diff claude` shows the edit, and `sokf harness install claude --force skills` overwrites it\n"),
+            "{st}"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 }

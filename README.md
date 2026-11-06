@@ -49,6 +49,8 @@ sokf init docs                      # a store of a directory that holds document
 sokf harness install claude         # the sokf skill, instructions, stop hook, and permission for Claude Code
 sokf harness install codex cursor   # the parts that OpenAI Codex and Cursor support; `all` names every harness
 sokf harness status all             # each part of each harness: current, shared, stale, edited, absent
+sokf harness diff claude            # a patch for each part that you edited
+sokf harness install claude --force skills  # overwrite an edited part, or every part with `all`
 sokf pack sync sokf                 # copy the built-in sokf pack into /knowledge, with its lock
 sokf pack sync https://example.com/method.git   # copy a schema pack from a git repository
 sokf pack sync                      # merge each later change of every locked pack with your edits

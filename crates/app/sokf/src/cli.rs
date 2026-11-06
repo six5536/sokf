@@ -96,7 +96,7 @@ impl Command {
             Command::Harness(a) => match &a.what {
                 HarnessCommand::Install(a) => a.json_schema.then_some(Output::Harness),
                 HarnessCommand::Status(a) => a.json_schema.then_some(Output::Harness),
-                HarnessCommand::Hook(_) => None,
+                HarnessCommand::Diff(_) | HarnessCommand::Hook(_) => None,
             },
             Command::Validate(a) => a.json_schema.then_some(Output::Validate),
             Command::New(a) => a.json_schema.then_some(Output::New),
@@ -160,10 +160,13 @@ pub struct HarnessArgs {
 #[derive(Debug, Subcommand)]
 pub enum HarnessCommand {
     /// Make each harness's files match sokf's integration: write every absent
-    /// or stale part, but keep a part that you edited unless you pass `--force`.
+    /// or stale part, but keep a part that you edited unless `--force` names it.
     Install(HarnessInstallArgs),
     /// Print the state of each part of each harness, and write nothing.
     Status(HarnessStatusArgs),
+    /// Print a patch for each part that you edited, from what `install` would
+    /// write to the file, and write nothing.
+    Diff(HarnessDiffArgs),
     /// `sokf harness hook` answers a hook of a harness. The command is hidden
     /// because the harness calls it, not a person.
     // sokf-implements: CLI-3_AC-50
@@ -202,15 +205,11 @@ pub struct HarnessInstallArgs {
     #[arg(long, value_enum, value_name = "SCOPE", default_value_t)]
     pub scope: HarnessScopeArg,
 
-    /// Skip a part of each harness. You can repeat the option, and the parts
-    /// you list replace the list of skipped parts of each harness named in
-    /// `/.sokf/config.toml`.
-    #[arg(long, value_name = "PART", action = ArgAction::Append)]
-    pub without: Vec<String>,
-
-    /// Write a part even if you edited it.
-    #[arg(long)]
-    pub force: bool,
+    /// Write the part `PART`, such as `skills`, even if you edited it, or
+    /// `all` for every part. You can repeat the option or list parts with
+    /// commas. To skip a part, list it in `without` in `/.sokf/config.toml`.
+    #[arg(long, value_name = "PART", value_delimiter = ',', action = ArgAction::Append)]
+    pub force: Vec<String>,
 
     /// Print one JSON object to stdout instead of the text lines.
     /// `--json-schema` prints its schema.
@@ -241,6 +240,18 @@ pub struct HarnessStatusArgs {
     /// Print the JSON Schema of the `--json` output, and exit.
     #[arg(long, exclusive = true)]
     pub json_schema: bool,
+}
+
+/// `HarnessDiffArgs` holds the arguments of `harness diff`.
+#[derive(Debug, Args)]
+pub struct HarnessDiffArgs {
+    /// The harnesses, as for `harness install`, or `all`.
+    #[arg(value_name = "HARNESS", required = true)]
+    pub names: Vec<String>,
+
+    /// Where to look: `project`, `user`, or `local`.
+    #[arg(long, value_enum, value_name = "SCOPE", default_value_t)]
+    pub scope: HarnessScopeArg,
 }
 
 /// `HarnessHookArgs` holds the arguments of `harness hook`.

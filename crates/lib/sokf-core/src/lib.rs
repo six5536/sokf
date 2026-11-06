@@ -8,7 +8,7 @@
 //! the assets those documents describe, as the core specifications in
 //! `sokf-spec/` define them. It also runs the `sokf` command that
 //! `knowledge/contracts/` specifies. Its entry points are [`init`],
-//! [`harness_install`], [`harness_status`], [`validate`], [`info_formats`],
+//! [`harness_install`], [`harness_status`], [`harness_diff`], [`validate`], [`info_formats`],
 //! [`info_grammar`], [`new`], [`graph`](fn@graph), [`locate`], and the entry
 //! points of `sokf pack`, such as [`pack_sync`] and [`pack_status`]. The harness
 //! hook is [`harness::hook`].
@@ -62,10 +62,11 @@ pub use api::{
     ALL_HARNESSES, GraphOptions, HarnessDirs, HarnessOptions, HarnessReport, HarnessResult,
     InfoLayer, InitOptions, InitResult, ListedPack, Loaded, NewOptions, NewResult, PackFileState,
     PackRemoved, PackState, PackStatus, PackSyncOptions, PackSyncReport, PartResult, SyncedPack,
-    ValidateOptions, check_repository, graph, harness_ids, harness_install, harness_status,
-    info_formats, info_grammar, init, load_for_lookup, load_keys_for, load_model, load_repository,
-    load_with_keys, load_working, locate, new, pack_diff, pack_export, pack_export_with, pack_list,
-    pack_list_text, pack_list_with, pack_remove, pack_status, pack_sync, pack_sync_with, validate,
+    ValidateOptions, check_repository, graph, harness_diff, harness_ids, harness_install,
+    harness_status, info_formats, info_grammar, init, load_for_lookup, load_keys_for, load_model,
+    load_repository, load_with_keys, load_working, locate, new, pack_diff, pack_export,
+    pack_export_with, pack_list, pack_list_text, pack_list_with, pack_remove, pack_status,
+    pack_sync, pack_sync_with, validate,
 };
 
 pub use cache::{

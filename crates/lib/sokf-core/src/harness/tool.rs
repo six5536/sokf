@@ -1,6 +1,7 @@
 //! This module presents sokf to agent-harness-adapter as a `Tool`: its name, which sets the
 //! region markers, the harnesses it supports, its integration, and where it keeps the record
-//! of the installed parts (CLI-3_AC-52) and the declined parts (CLI-3_AC-8) at each scope.
+//! of the installed parts (CLI-3_AC-52) at each scope, and the configuration from which it
+//! reads the declined parts (CONF-4_AC-1) and which it never writes (CLI-3_AC-8).
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 

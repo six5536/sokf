@@ -1,4 +1,4 @@
-//! `sokf harness` runs its three sub-commands: `install`, `status`, and the hidden `hook`.
+//! `sokf harness` runs its four sub-commands: `install`, `status`, `diff`, and the hidden `hook`.
 
 use std::{
     io::{self, Read},
@@ -27,10 +27,7 @@ pub fn harness(
         HarnessCommand::Install(args) => {
             let scope = scope(args.scope);
             let dirs = dirs(repo_root, scope)?;
-            let mut opts = HarnessOptions::new(names(args.names)?, scope).force(args.force);
-            if !args.without.is_empty() {
-                opts = opts.without(args.without);
-            }
+            let opts = HarnessOptions::new(names(args.names)?, scope).force(args.force);
             let result = sokf_core::harness_install(&dirs, &opts)?;
             print(&result, args.json)
         }
@@ -39,6 +36,13 @@ pub fn harness(
             let dirs = dirs(repo_root, scope)?;
             let result = sokf_core::harness_status(&dirs, &names(args.names)?, scope)?;
             print(&result, args.json)
+        }
+        HarnessCommand::Diff(args) => {
+            let scope = scope(args.scope);
+            let dirs = dirs(repo_root, scope)?;
+            let patch = sokf_core::harness_diff(&dirs, &names(args.names)?, scope)?;
+            output::write_stdout(patch.as_bytes())?;
+            Ok(output::EXIT_OK)
         }
         HarnessCommand::Hook(args) => {
             hook(&output::cwd()?, repo_root, cache, &args.name, &args.hook)

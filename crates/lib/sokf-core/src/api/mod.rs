@@ -19,7 +19,7 @@ pub use admit::{admit_schema_by_id, admit_schemas_of_type};
 pub use graph::{GraphOptions, graph};
 pub use harness::{
     ALL_HARNESSES, HarnessDirs, HarnessOptions, HarnessReport, HarnessResult, PartResult,
-    harness_ids, install as harness_install, status as harness_status,
+    diff as harness_diff, harness_ids, install as harness_install, status as harness_status,
 };
 pub use info::{InfoLayer, info_formats, info_grammar};
 pub use init::{InitOptions, InitResult, init};
