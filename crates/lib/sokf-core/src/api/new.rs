@@ -68,6 +68,15 @@ pub struct NewResult {
     /// out.
     #[serde(skip)]
     pub created: bool,
+    /// `indexes` holds each index that `--write` created or rewrote. The JSON
+    /// report leaves this field out.
+    #[serde(skip)]
+    pub indexes: Vec<RepoPath>,
+    /// `index_error` holds the error that stopped `--write` from bringing the
+    /// indexes up to date, after it wrote the document. The JSON report
+    /// leaves this field out.
+    #[serde(skip)]
+    pub index_error: Option<String>,
 }
 
 /// `new` builds a document of a type from the scaffold of the type's schema,
@@ -156,6 +165,8 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
             path: RepoPath::root(),
             document: String::new(),
             created: false,
+            indexes: Vec::new(),
+            index_error: None,
         });
     }
 
@@ -189,6 +200,8 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
     )?;
 
     let mut created = false;
+    let mut indexes = Vec::new();
+    let mut index_error = None;
     // sokf-implements: CLI-6_AC-9
     // sokf-implements: CLI-9_AC-3
     if opts.write {
@@ -199,13 +212,53 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         }
         scaffold::create_new(&fs_path, &document)?;
         created = true;
+        // The index of each directory that holds the document lists it, so
+        // the command writes them as `validate --fix` would, and a check
+        // after `new` finds no stale index that sokf itself left.
+        // sokf-implements: CLI-6_AC-73
+        // A failure here leaves an index stale, which `validate --fix`
+        // repairs, so it doesn't undo the document that the command wrote
+        // (CLI-9_AC-1), and the handler warns of it.
+        let dirs = holding_dirs(&model, &path);
+        drop(cache);
+        if !dirs.is_empty() {
+            match super::validate::fix_indexes(root, opts.cache, &dirs) {
+                Ok(ops) => {
+                    indexes = ops
+                        .into_iter()
+                        .filter_map(|op| match op {
+                            crate::FixOp::Created { path } | crate::FixOp::Rewrote { path } => {
+                                Some(path)
+                            }
+                            crate::FixOp::Moved { .. } => None,
+                        })
+                        .collect();
+                }
+                Err(e) => index_error = Some(e.to_string()),
+            }
+        }
     }
     Ok(NewResult {
         id,
         path,
         document,
         created,
+        indexes,
+        index_error,
     })
+}
+
+/// `holding_dirs` returns each directory that holds `path`, from its own
+/// directory up to the root of the store that holds it, or none when no
+/// store holds it.
+fn holding_dirs(model: &Model, path: &RepoPath) -> Vec<RepoPath> {
+    let Some(k) = model.knowledge_of(path) else {
+        return Vec::new();
+    };
+    let store = &model.knowledges[k].root;
+    std::iter::successors(path.parent(), RepoPath::parent)
+        .take_while(|d| d.starts_with(store))
+        .collect()
 }
 
 /// `chosen_store` returns the store that the command chooses for the type:

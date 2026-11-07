@@ -1,12 +1,12 @@
 //! This module reads the formats files of the repository: `/.sokf/formats.yaml`,
 //! the repository layer of format resolution, which tramlines calls the
 //! host's layer, and the `formats.yaml` of each pack in the lock, the pack
-//! layer (TL_34, CONF-8).
+//! layer, stacked in the order of the packs (TL_34, CONF-8).
 
 use crate::RepoRoot;
 use crate::{
-    Error, Finding, RepoPath, Result,
-    grammar::{FormatRegistry, FormatSource, Grammar, PackLayer, RegexCache},
+    Error, RepoPath, Result,
+    grammar::{FormatRegistry, FormatSource, Grammar, RegexCache},
     pack,
     source::{Fnv, read_optional},
     yaml,
@@ -23,12 +23,12 @@ pub fn formats_path() -> RepoPath {
 pub struct RepoFormats {
     /// The repository layer, `/.sokf/formats.yaml`, when the file exists.
     pub repo: Option<FormatRegistry>,
-    /// The pack layer, joined from the formats file of each pack in the
-    /// lock that has one, on the embedded formats, or `None` when no pack
-    /// has a formats file.
-    pub packs: Option<PackLayer>,
-    /// The hash of the lock and of every formats file, which changes when a
-    /// layer changes.
+    /// The pack layer on the embedded formats: the formats file of each
+    /// pack in the lock that has one, stacked in the order of the packs, or
+    /// `None` when no pack has a formats file.
+    pub packs: Option<FormatRegistry>,
+    /// The hash of every formats file, read in the order of the packs,
+    /// which changes when a layer or the order of the packs changes.
     pub hash: u64,
 }
 
@@ -39,16 +39,13 @@ impl RepoFormats {
     pub fn effective(&self, embedded: &FormatRegistry) -> FormatRegistry {
         let none = FormatRegistry::default();
         let repo = self.repo.as_ref().unwrap_or(&none);
-        match &self.packs {
-            Some(layer) => layer.with_host(repo).0,
-            None => embedded.layered(repo),
-        }
+        self.packs.as_ref().unwrap_or(embedded).layered(repo)
     }
 
     /// `pack_layer` returns the entries and the types of the pack layer
     /// alone, or `None` when no pack in the lock has a formats file.
     pub fn pack_layer(&self) -> Option<FormatRegistry> {
-        let layer = self.packs.as_ref()?.registry();
+        let layer = self.packs.as_ref()?;
         let mut packs = FormatRegistry::default();
         let pack = |s: &FormatSource| matches!(s, FormatSource::Pack(_));
         packs.entries = layer
@@ -66,30 +63,24 @@ impl RepoFormats {
             .collect();
         Some(packs)
     }
-
-    /// `clashes` returns the finding of each format and each type that two
-    /// files of the pack layer define and the repository layer doesn't
-    /// define in full (TL_128), and of each format of the layer that does
-    /// not compile against the types of the layer (TL_134).
-    // sokf-implements: CLI-13_AC-34
-    pub fn clashes(&self) -> Vec<Finding> {
-        let none = FormatRegistry::default();
-        match &self.packs {
-            Some(layer) => layer.with_host(self.repo.as_ref().unwrap_or(&none)).1,
-            None => Vec::new(),
-        }
-    }
 }
 
 /// `load_repo_formats` reads the repository's formats layers: the formats
 /// file of each pack in the lock, as the pack layer, and
 /// `/.sokf/formats.yaml`, as the repository layer, which is built on the
-/// pack layer. It returns an error when a file does not parse, or when an
-/// entry does not match the grammar's `format` rule.
+/// pack layer. It stacks the files of the packs from the lowest pack to the
+/// highest, each parsed on the packs below it, so that a higher pack's
+/// entry replaces a lower pack's entry of the same name, a `patch: true`
+/// entry merges onto it, and the hash changes with the order. It returns an
+/// error when a file does not parse, or when an entry does not match the
+/// grammar's `format` rule.
 /// It reads only the lock and the files of the working tree, never a pack's
 /// source, so a check reports the same findings for the same tree.
 // sokf-implements: CONF-8_AC-4
 // sokf-implements: CLI-13_AC-35
+// sokf-implements: CLI-13_AC-34
+// sokf-implements: CLI-13_AC-83
+// sokf-implements: CLI-13_AC-84
 pub fn load_repo_formats(
     root: &RepoRoot,
     grammar: &Grammar,
@@ -98,36 +89,34 @@ pub fn load_repo_formats(
     let mut hash = Fnv::new();
     let lock = pack::read_lock(root)?;
     let embedded = crate::grammar::embedded_formats(grammar, regexes)?;
-    let mut packs = Vec::new();
-    for name in lock.packs.keys() {
-        let path = pack::formats_of(name);
+    let mut layer: Option<FormatRegistry> = None;
+    for name in pack::ordered(root, &lock) {
+        let path = pack::formats_of(&name);
         let Some(text) = read_optional(&path.to_fs(root))? else {
             continue;
         };
         hash.update(path.as_str().as_bytes());
         hash.update(text.as_bytes());
+        let below = layer.as_ref().unwrap_or(&embedded);
         let registry = parse(
             &path,
             &text,
             FormatSource::Pack(name.clone()),
             grammar,
             regexes,
-            &embedded,
+            below,
         )?;
-        packs.push((path, registry));
+        layer = Some(below.layered(&registry));
     }
     let mut formats = RepoFormats {
         repo: None,
-        packs: (!packs.is_empty()).then(|| embedded.with_packs(&packs)),
+        packs: layer,
         hash: 0,
     };
     let path = formats_path();
     if let Some(text) = read_optional(&path.to_fs(root))? {
         hash.update(text.as_bytes());
-        let below = match &formats.packs {
-            Some(layer) => layer.registry(),
-            None => &embedded,
-        };
+        let below = formats.packs.as_ref().unwrap_or(&embedded);
         formats.repo = Some(parse(
             &path,
             &text,

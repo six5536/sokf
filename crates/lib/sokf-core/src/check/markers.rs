@@ -86,6 +86,15 @@ pub fn check(
                 ),
                 "SOKF_FORMAT_144",
             ),
+            // sokf-implements: CLI-4_AC-41
+            RowKind::Rel(tag) => push(
+                line,
+                failure,
+                format!(
+                    "`{tag}` has a rel that isn't kebab case. Write the rel as lowercase words of letters and digits joined by `-`, such as `sokf-implements:`"
+                ),
+                "SOKF_FORMAT_143",
+            ),
             RowKind::Case(tag) => push(
                 line,
                 failure,

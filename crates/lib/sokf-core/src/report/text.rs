@@ -3,6 +3,15 @@
 
 use super::{Finding, FixOp, Report, Severity};
 
+/// `LISTED_WARNINGS` holds the keys of the warnings that the text report
+/// lists even without `--warnings`: the warnings at a stale and at an absent
+/// part of a harness, which the agent can act on at once (CLI-4_AC-43).
+pub(crate) const LISTED_WARNINGS: [&str; 2] = [STALE_PART, ABSENT_PART];
+/// `STALE_PART` is the key of the warning at a stale part of a harness.
+pub(crate) const STALE_PART: &str = "CLI-4_AC-40";
+/// `ABSENT_PART` is the key of the warning at an absent part of a harness.
+pub(crate) const ABSENT_PART: &str = "CLI-4_AC-42";
+
 /// `message` returns the message of `f` followed by the key of the criterion
 /// that `f` breaks, in parentheses, such as `(SOKF_FORMAT_53)`.
 // sokf-implements: CLI-4_AC-8
@@ -26,8 +35,15 @@ pub fn text(report: &Report, warnings: bool) -> String {
         }
     }
     let mut findings: Vec<_> = report.errors.iter().collect();
-    if warnings {
-        findings.extend(report.warnings.iter());
+    // sokf-implements: CLI-4_AC-43
+    findings.extend(
+        report
+            .warnings
+            .iter()
+            .filter(|f| warnings || LISTED_WARNINGS.contains(&f.criterion.as_str())),
+    );
+    let listed = findings.len() - report.errors.len();
+    if listed > 0 {
         findings.sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
     }
     for f in findings {
@@ -42,7 +58,6 @@ pub fn text(report: &Report, warnings: bool) -> String {
         }
     }
     // sokf-implements: CLI-4_AC-30
-    let listed = if warnings { report.warnings.len() } else { 0 };
     if !out.is_empty() {
         out.push('\n');
     }

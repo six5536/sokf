@@ -24,6 +24,7 @@ pub fn validate(
         cache,
         query: args.query.as_deref().map(Expr::compile).transpose()?,
         changed: args.changed,
+        home: std::env::home_dir(),
     };
     let (report, projection) = sokf_core::validate(&root, &opts)?;
     let buf = if let Some(projection) = &projection {

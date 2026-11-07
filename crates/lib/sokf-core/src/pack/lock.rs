@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::eol::{is_base, normalise};
 use crate::{Error, RepoPath, RepoRoot, Result, source::read_optional};
 
 /// `HEADER` is the comment at the top of the lock.
@@ -12,7 +13,7 @@ const HEADER: &str = "# sokf pack sync writes this file. Do not edit it.\n";
 
 /// `LOCK_VERSION` is the version of the lock's format that this tool reads
 /// and writes. A lock without `lock-version` has the version 1.
-pub const LOCK_VERSION: u32 = 2;
+pub const LOCK_VERSION: u32 = 3;
 
 /// `lock_path` returns the path of the lock.
 pub fn lock_path() -> RepoPath {
@@ -62,11 +63,11 @@ pub fn fragments(root: &RepoRoot, lock: &Lock) -> Result<Vec<(String, String)>> 
 
 /// `ordered` returns the names of the packs of `lock` in the order of the
 /// packs: the packs that the configuration declares, sorted by their
-/// dependencies and their entries, then any other pack by its name. A
-/// configuration that doesn't parse, or dependencies that form a cycle,
-/// leave the declared packs in the order of their entries, because a sync
-/// refuses both before it writes.
-fn ordered(root: &RepoRoot, lock: &Lock) -> Vec<String> {
+/// dependencies and their entries, then any other pack by its name.
+/// Dependencies that form a cycle leave the declared packs in the order of
+/// their entries, and a configuration that doesn't parse leaves every pack
+/// in the order of its name, because a sync refuses both before it writes.
+pub(crate) fn ordered(root: &RepoRoot, lock: &Lock) -> Vec<String> {
     let list: Vec<String> = crate::config::read_packs(root)
         .unwrap_or_default()
         .into_iter()
@@ -155,8 +156,58 @@ pub struct LockedFile {
     /// Whether the last sync changed this pack's version of a shadowed file.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changed: bool,
+    /// The edit or the deletion of the file that a maintainer accepted with
+    /// `sokf pack accept`, so that `pack status --check` passes on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted: Option<Accepted>,
+}
+
+/// An `Accepted` is the record of an accepted edit: the version of the file
+/// that the project keeps on purpose, or its deletion, with the reason.
+// sokf-implements: CONF-8_AC-8
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Accepted {
+    /// The hash of the accepted version, with each CRLF read as LF, as
+    /// `fnv1a64:<HEX>`, or none for an accepted deletion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
+    /// Whether the accepted version of a file of `files/` is executable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub executable: bool,
+    /// Whether the project deleted the file on purpose.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deleted: bool,
+    /// Why the project keeps the edit.
+    pub note: String,
 }
 // sokf:end lock
+
+impl Accepted {
+    /// `of` returns the acceptance of a file that holds `bytes`, or of a
+    /// deleted file when `bytes` is none, with the executable bit `bit` of a
+    /// file of `files/`.
+    pub fn of(bytes: Option<&[u8]>, bit: bool, note: &str) -> Accepted {
+        Accepted {
+            hash: bytes.map(|b| hash_of(&normalise(b))),
+            executable: bytes.is_some() && bit,
+            deleted: bytes.is_none(),
+            note: note.to_string(),
+        }
+    }
+
+    /// `holds` returns whether a file that holds `bytes`, or that is deleted
+    /// when `bytes` is none, holds the accepted version. `bit` is the
+    /// executable bit of a file of `files/`, and none for any other file.
+    // sokf-implements: CLI-13_AC-101
+    pub fn holds(&self, bytes: Option<&[u8]>, bit: Option<bool>) -> bool {
+        match (bytes, &self.hash) {
+            (None, _) => self.deleted,
+            (Some(_), None) => false,
+            (Some(b), Some(h)) => is_base(b, h) && bit.is_none_or(|x| x == self.executable),
+        }
+    }
+}
 
 impl Default for Lock {
     fn default() -> Self {
@@ -266,13 +317,27 @@ mod tests {
                 executable: false,
                 shadowed_by: None,
                 changed: false,
+                accepted: None,
+            },
+        );
+        pack.files.insert(
+            "files/.gitignore".into(),
+            LockedFile {
+                path: "/.gitignore".into(),
+                base: hash_of(b"y"),
+                executable: false,
+                shadowed_by: None,
+                changed: false,
+                accepted: Some(Accepted::of(Some(b"y\nz\n"), false, "the project's binary")),
             },
         );
         lock.packs.insert("method".into(), pack);
         let text = lock_text(&lock).unwrap();
         assert!(text.starts_with(HEADER), "{text}");
         assert!(text.contains("[packs.method]"), "{text}");
-        assert!(text.contains("lock-version = 2\n"), "{text}");
+        assert!(text.contains("lock-version = 3\n"), "{text}");
+        assert!(text.contains("note = \"the project's binary\""), "{text}");
+        assert!(!text.contains("deleted"), "{text}");
         assert!(!text.contains("executable"), "{text}");
         assert!(text.contains("ref = \"main\""), "{text}");
         assert!(!text.contains("path = \"\""), "{text}");
@@ -283,6 +348,40 @@ mod tests {
             Some(("method", "schemas/issue.md"))
         );
         assert_eq!(lock.owner_of("/knowledge/schemas/other.md"), None);
+    }
+
+    // sokf-tests: CLI-13_AC-101
+    #[test]
+    fn a_file_holds_its_accepted_version_with_either_line_ending() {
+        let a = Accepted::of(Some(b"a\nb\n"), true, "why");
+        assert!(a.holds(Some(b"a\nb\n"), Some(true)));
+        assert!(a.holds(Some(b"a\r\nb\r\n"), Some(true)));
+        assert!(a.holds(Some(b"a\nb\n"), None));
+        assert!(!a.holds(Some(b"a\nb\n"), Some(false)));
+        assert!(!a.holds(Some(b"a\nc\n"), Some(true)));
+        assert!(!a.holds(None, None));
+        let crlf = Accepted::of(Some(b"a\r\nb\r\n"), false, "why");
+        assert!(crlf.holds(Some(b"a\nb\n"), None));
+        let gone = Accepted::of(None, true, "unused");
+        assert!(gone.deleted && !gone.executable && gone.hash.is_none());
+        assert!(gone.holds(None, None));
+        assert!(!gone.holds(Some(b""), None));
+    }
+
+    // sokf-tests: CONF-8_AC-6
+    #[test]
+    fn a_lock_of_the_version_2_reads_and_writes_the_version_3() {
+        let dir = crate::test_support::fresh_dir("lock-v2");
+        let root = RepoRoot::new(dir.clone());
+        std::fs::create_dir_all(dir.join(".sokf")).unwrap();
+        std::fs::write(
+            dir.join(".sokf/packs.lock"),
+            "lock-version = 2\n[packs.p]\nsource = \"builtin:p\"\ncommit = \"1\"\nversion = \"1\"\n",
+        )
+        .unwrap();
+        let lock = read_lock(&root).unwrap();
+        assert!(lock_text(&lock).unwrap().contains("lock-version = 3\n"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

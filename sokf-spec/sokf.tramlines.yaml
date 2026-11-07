@@ -135,7 +135,8 @@ schema:
         `markers` lists the relationships of the markers that can cite a document of
         this type or one of its keys. `[]` refuses every marker, and an absent `markers`
         admits every marker. A validator reports a marker of another relationship as an
-        error at its own file and line.
+        error at its own file and line. Each relationship is lowercase kebab case, the
+        form of a marker's tag, and a validator refuses a schema that names another.
     lifecycle:
       doc: >
         `lifecycle` lists the dimensions of state that the documents of the type move

@@ -5,13 +5,11 @@
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
-use agent_harness_adapter_core::{
-    DeclinedStore, Harness, Integration, Scope, TomlDeclined, Tool, harness,
-};
+use agent_harness_adapter_core::{DeclinedStore, Harness, Integration, Scope, Tool, harness};
 
 use crate::RepoPath;
 
-use super::{instructions_only, integration};
+use super::{SokfDeclined, instructions_only, integration};
 
 /// `HEADER` is the first line of the record file.
 // sokf-implements: CLI-3_AC-58
@@ -30,12 +28,14 @@ const LOCAL_CONFIG: &str = ".sokf/config.local.toml";
 
 /// `SokfTool` is sokf in a repository, in the home directory, or both, with the program
 /// that the hook line of each harness runs and the instructions fragment of each pack.
+#[derive(Clone)]
 pub struct SokfTool {
     repo: Option<PathBuf>,
     home: Option<PathBuf>,
     programs: BTreeMap<String, String>,
     fragments: Vec<(String, String)>,
     only_instructions: bool,
+    held_instructions: bool,
 }
 
 impl SokfTool {
@@ -53,11 +53,12 @@ impl SokfTool {
             programs,
             fragments: Vec::new(),
             only_instructions: false,
+            held_instructions: false,
         }
     }
 
     /// `fragments` adds the instructions fragment of each pack, by the pack's name, in the
-    /// order of the lock, to the instructions block.
+    /// order of the packs, to the instructions block.
     #[must_use]
     pub fn fragments(mut self, fragments: Vec<(String, String)>) -> Self {
         self.fragments = fragments;
@@ -70,6 +71,41 @@ impl SokfTool {
     pub fn instructions_only(mut self) -> Self {
         self.only_instructions = true;
         self
+    }
+
+    /// `hold_instructions` declines the instructions part of every harness, so that an
+    /// install leaves it as it is and keeps its recorded hash, while the copy of a pack's
+    /// fragment holds a conflict.
+    #[must_use]
+    pub fn hold_instructions(mut self) -> Self {
+        self.held_instructions = true;
+        self
+    }
+
+    /// `declined_at` returns the store of the declined parts at `scope`: the configuration of
+    /// the home directory at the user scope, `/.sokf/config.local.toml` at the local scope,
+    /// and `/.sokf/config.toml` at the project scope.
+    pub fn declined_at(&self, scope: Scope) -> agent_harness_adapter_core::Result<SokfDeclined> {
+        let (path, shown) = match scope {
+            Scope::User => (
+                self.home()?.join(".sokf/config.toml"),
+                "~/.sokf/config.toml".to_string(),
+            ),
+            Scope::Local => (self.repo()?.join(LOCAL_CONFIG), format!("/{LOCAL_CONFIG}")),
+            _ => {
+                let path = crate::config::config_path();
+                (
+                    path.to_fs(&crate::RepoRoot::new(self.repo()?.clone())),
+                    path.to_string(),
+                )
+            }
+        };
+        let store = SokfDeclined::new(path, shown);
+        Ok(if self.held_instructions {
+            store.holding(agent_harness_adapter_core::Item::Instructions.as_str())
+        } else {
+            store
+        })
     }
 
     fn repo(&self) -> agent_harness_adapter_core::Result<&PathBuf> {
@@ -128,21 +164,7 @@ impl Tool for SokfTool {
         &self,
         scope: Scope,
     ) -> agent_harness_adapter_core::Result<Box<dyn DeclinedStore + '_>> {
-        let (path, shown) = match scope {
-            Scope::User => (
-                self.home()?.join(".sokf/config.toml"),
-                "~/.sokf/config.toml".to_string(),
-            ),
-            Scope::Local => (self.repo()?.join(LOCAL_CONFIG), format!("/{LOCAL_CONFIG}")),
-            _ => {
-                let path = crate::config::config_path();
-                (
-                    path.to_fs(&crate::RepoRoot::new(self.repo()?.clone())),
-                    path.to_string(),
-                )
-            }
-        };
-        Ok(Box::new(TomlDeclined::new(path, shown)))
+        Ok(Box::new(self.declined_at(scope)?))
     }
 
     fn record_header(&self) -> String {
@@ -180,8 +202,8 @@ mod tests {
             let parts = h.render(&tool.integration(Scope::Project), &cx).unwrap();
             format!("{:?}", parts.iter().find(|p| p.name() == "hooks").unwrap())
         };
-        assert!(hooks("codex").contains("./bin/sokf harness hook codex stop"));
-        assert!(hooks("claude").contains("\"sokf harness hook claude stop\""));
+        assert!(hooks("codex").contains("./bin/sokf harness hook codex prompt-submit"));
+        assert!(hooks("claude").contains("\"sokf harness hook claude prompt-submit\""));
         assert!(tool.root(Scope::User).is_err());
         assert_eq!(tool.root(Scope::Local).unwrap(), dir);
         assert_eq!(

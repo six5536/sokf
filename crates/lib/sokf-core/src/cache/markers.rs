@@ -18,6 +18,7 @@ fn encode(kind: &RowKind) -> (i64, &str, &str) {
         RowKind::Marker { rel, target } => (0, rel, target),
         RowKind::Malformed(tag) => (1, tag, ""),
         RowKind::Case(tag) => (2, tag, ""),
+        RowKind::Rel(tag) => (6, tag, ""),
         RowKind::Ignore(IgnoreFault::BeginInside) => (3, "", ""),
         RowKind::Ignore(IgnoreFault::EndOutside) => (4, "", ""),
         RowKind::Ignore(IgnoreFault::NeverEnds) => (5, "", ""),
@@ -34,6 +35,7 @@ fn decode(code: i64, rel: String, target: String) -> Option<RowKind> {
         3 => RowKind::Ignore(IgnoreFault::BeginInside),
         4 => RowKind::Ignore(IgnoreFault::EndOutside),
         5 => RowKind::Ignore(IgnoreFault::NeverEnds),
+        6 => RowKind::Rel(rel),
         _ => return None,
     })
 }

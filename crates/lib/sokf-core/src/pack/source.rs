@@ -259,6 +259,68 @@ pub fn destination(name: &str, store: Option<&str>, rel: &str) -> Option<String>
         .map(|rest| format!("{store}/{rest}"))
 }
 
+/// `origin` is the inverse of `destination`: it returns the path in the pack
+/// `name`, whose store is `store`, of the project's file `dest`, or the
+/// reason that the file has no place in the pack. The copy of the pack's
+/// `instructions.md` and `formats.yaml` goes to the pack's root, a file of
+/// the store's `schemas/` to `schemas/`, any other file of the store to
+/// `documents/`, except an `index.md`, which `validate --fix` writes, and the
+/// store's manifest, which belongs to the project, and a
+/// file outside the store and each of `roots` to `files/`. A file of another
+/// knowledge root has no place, and a pack without a store has a place for no
+/// file of a root.
+// sokf-implements: CLI-13_AC-104
+// sokf-implements: CLI-13_AC-106
+pub fn origin(
+    name: &str,
+    store: Option<&str>,
+    roots: &[&str],
+    dest: &str,
+) -> std::result::Result<String, String> {
+    if dest == super::lock::instructions_of(name).as_str() {
+        return Ok("instructions.md".into());
+    }
+    if dest == super::lock::formats_of(name).as_str() {
+        return Ok("formats.yaml".into());
+    }
+    let under = |r: &str| {
+        dest.strip_prefix(r.trim_end_matches('/'))?
+            .strip_prefix('/')
+    };
+    let store = store.map(|s| s.trim_end_matches('/'));
+    // The deepest root that holds the file is its store.
+    let holder = roots
+        .iter()
+        .copied()
+        .chain(store)
+        .map(|r| r.trim_end_matches('/'))
+        .filter(|r| under(r).is_some())
+        .max_by_key(|r| r.len());
+    let Some(holder) = holder else {
+        return Ok(format!("{FILES}{}", dest.trim_start_matches('/')));
+    };
+    match store {
+        Some(s) if s == holder => {
+            let rest = under(s).unwrap_or_default();
+            if rest == "index.md" || rest.ends_with("/index.md") {
+                Err("an index.md of a store is the listing that `sokf validate --fix` writes, and no pack holds one".into())
+            } else if rest == "manifest.sokf.yaml" {
+                Err("the manifest of a store belongs to the project, and no pack holds one".into())
+            } else if rest.starts_with("schemas/") {
+                Ok(rest.to_string())
+            } else {
+                Ok(format!("documents/{rest}"))
+            }
+        }
+        Some(s) => Err(format!(
+            "the file lies in the store {holder}, and the pack's store is {s}"
+        )),
+        None => Err(format!(
+            "the file lies in the store {holder}, and the pack has no store, so each of its files lies outside every store"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +371,69 @@ mod tests {
             destination("m", None, "files/deny.toml").unwrap(),
             "/deny.toml"
         );
+    }
+
+    // sokf-tests: CLI-13_AC-104
+    #[test]
+    fn each_file_maps_back_to_its_place_in_the_pack() {
+        let roots = ["/knowledge", "/docs/kb"];
+        let o = |dest| origin("m", Some("/knowledge"), &roots, dest);
+        for (dest, rel) in [
+            ("/knowledge/schemas/runbook.md", "schemas/runbook.md"),
+            (
+                "/knowledge/recipes/recipe-a.md",
+                "documents/recipes/recipe-a.md",
+            ),
+            ("/knowledge/a.md", "documents/a.md"),
+            ("/.sokf/packs/m/instructions.md", "instructions.md"),
+            ("/.sokf/packs/m/formats.yaml", "formats.yaml"),
+            ("/scripts/check.sh", "files/scripts/check.sh"),
+            ("/docs/index.md", "files/docs/index.md"),
+            ("/knowledge.toml", "files/knowledge.toml"),
+        ] {
+            assert_eq!(o(dest).as_deref(), Ok(rel), "{dest}");
+            // The inverse of `destination` leads back to the same file.
+            assert_eq!(
+                destination("m", Some("/knowledge"), rel).as_deref(),
+                Some(dest)
+            );
+        }
+        // Another pack's copies lie outside every store, where sync refuses
+        // to land them.
+        assert_eq!(
+            o("/.sokf/packs/other/formats.yaml").as_deref(),
+            Ok("files/.sokf/packs/other/formats.yaml")
+        );
+        // A pack without a store keeps each file outside every store.
+        assert_eq!(
+            origin("m", None, &roots, "/deny.toml").as_deref(),
+            Ok("files/deny.toml")
+        );
+    }
+
+    // sokf-tests: CLI-13_AC-106
+    #[test]
+    fn a_file_of_another_store_or_an_index_has_no_place_in_the_pack() {
+        let roots = ["/knowledge", "/knowledge/nested", "/docs/kb"];
+        let o = |store, dest| origin("m", store, &roots, dest);
+        let e = o(Some("/knowledge"), "/knowledge/index.md").unwrap_err();
+        assert!(e.contains("index.md"), "{e}");
+        let e = o(Some("/knowledge"), "/knowledge/schemas/index.md").unwrap_err();
+        assert!(e.contains("index.md"), "{e}");
+        // The store's manifest would land on every project's own manifest.
+        let e = o(Some("/knowledge"), "/knowledge/manifest.sokf.yaml").unwrap_err();
+        assert!(e.contains("the manifest of a store"), "{e}");
+        assert_eq!(
+            o(Some("/knowledge"), "/knowledge/notes/manifest.sokf.yaml").as_deref(),
+            Ok("documents/notes/manifest.sokf.yaml")
+        );
+        let e = o(Some("/knowledge"), "/docs/kb/a.md").unwrap_err();
+        assert!(e.contains("the store /docs/kb"), "{e}");
+        // The deepest root that holds the file is its store.
+        let e = o(Some("/knowledge"), "/knowledge/nested/a.md").unwrap_err();
+        assert!(e.contains("the store /knowledge/nested"), "{e}");
+        let e = o(None, "/knowledge/schemas/a.md").unwrap_err();
+        assert!(e.contains("the pack has no store"), "{e}");
     }
 
     static FAKE: &[EmbeddedPack] = &[EmbeddedPack {

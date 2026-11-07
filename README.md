@@ -46,7 +46,7 @@ A store is a directory with a manifest, and `sokf init` creates one.
 sokf init                           # a store at /knowledge, registered as a root
 sokf init docs/kb --name project-kb # a store elsewhere, added to /.sokf/config.toml
 sokf init docs                      # a store of a directory that holds documents: the manifest only, and --fix writes the indexes
-sokf harness install claude         # the sokf skill, instructions, stop hook, and permission for Claude Code
+sokf harness install claude         # the sokf skill, instructions, and permission for Claude Code
 sokf harness install codex cursor   # the parts that OpenAI Codex and Cursor support; `all` names every harness
 sokf harness status all             # each part of each harness: current, shared, stale, edited, absent
 sokf harness diff claude            # a patch for each part that you edited
@@ -56,6 +56,7 @@ sokf pack add https://example.com/method.git    # declare and copy a schema pack
 sokf pack sync                      # merge each later change of every declared pack with your edits
 sokf pack status                    # each pack, and each of its files that you edited or that conflicts
 sokf pack status --check            # the same, and exit with code 1 when a file differs from its pack
+sokf pack accept /.gitignore --note "the project's binary"   # keep an edit of a pack's file on purpose
 sokf validate                       # check every knowledge store and additional file
 sokf validate --fix                 # regenerate blocks and indexes, move lifecycle documents, and rewrite headings
 sokf validate knowledge/core --json # report on a directory, as one JSON object
@@ -120,13 +121,21 @@ sokf accepts a path argument in either form.
 ## Agent harness
 
 `sokf harness install claude` makes a repository ready for Claude Code. It
-writes the `sokf` skill, an instructions block, a stop hook, and the
-permission to run `sokf`. The hook runs `sokf validate --fix` when the agent
-ends its turn, and hands the remaining errors back to the agent. At the
+writes the `sokf` skill, an instructions block, and the permission to run
+`sokf`. A hook is off by default: with `with = ["hooks"]` under
+`[harness.claude]` in `/.sokf/config.toml`, the command also writes a hook that
+runs `sokf validate` when the user submits a prompt, and tells the agent how
+many errors remain, without blocking it. At the
 project and the local scopes, the instructions block also carries the
-`instructions.md` of each pack in `/.sokf/packs.lock`. `sokf pack sync` and
-`sokf pack remove` rewrite each installed block that you haven't edited, so
-that it holds the instructions of each pack. The command
+`instructions.md` of each pack in `/.sokf/packs.lock`, in the order of the
+packs. `sokf pack sync` and `sokf pack remove` rewrite each installed block
+that you haven't edited, so that it holds the instructions of each pack, and
+no command rewrites a block while the copy of a pack's instructions holds a
+conflict. To change a pack's rule for your project, edit the copy
+`/.sokf/packs/<NAME>/instructions.md`, not the block, and run
+`sokf harness install`: a sync merges each upstream change into the copy,
+`sokf pack diff` returns your edit to the pack, and `sokf pack remove` keeps
+an edited copy. The command
 touches only the parts that it writes. It keeps a part that you edited unless
 you pass `--force`. To refresh the stale parts after an upgrade, run the
 command again.
@@ -179,19 +188,30 @@ that a harness writes.
 
 `builtin:<NAME>`, or `NAME` alone, names a pack that the binary embeds, and
 `sokf pack list` shows them. `sokf pack diff <NAME>` prints your edits as a
-patch that `git apply` applies in the pack's repository, `sokf pack remove
-<NAME>` deletes the pack's files that you haven't edited, and
-`sokf pack export <NAME> <DIR>` writes an embedded pack to a new directory.
+patch that `git apply` applies in the pack's repository, without the edits
+that you accepted unless you pass `--accepted`. `--new <PATH>...` adds a
+file that the pack doesn't hold yet, such as a new schema or script, to the
+patch at its path in the pack, and the next `sokf pack sync` records your
+copy as the pack's file, because it holds the pack's version. `sokf pack
+remove <NAME>` deletes the pack's files that you haven't edited, and `sokf
+pack export <NAME> <DIR>` writes an embedded pack to a new directory.
 To move a pack to another source or ref, edit its `[[pack]]` entry and run
 `sokf pack sync`, and delete an entry to remove its pack at the next sync.
+
+An edit of a pack's file either goes back to the pack or stays on purpose.
+`sokf pack accept <PATH> --note <TEXT>` records an edit or a deletion that the
+project keeps, such as its own line in a shared `.gitignore`, and
+`sokf pack status --check` then passes on the file while it holds what you
+accepted. A clean merge of a later change of the pack keeps the acceptance, and
+a conflict drops it. `--withdraw` undoes an acceptance.
 
 A pack can build on another: its manifest names the packs that it depends on,
 each with its oldest version, as in `depends: { house-base: 1.4.0 }`. A pack
 comes after the packs that it depends on, the order of the `[[pack]]` entries
-orders the rest, and the highest pack that supplies a file or a schema type
-owns it. Sync writes only the owner's version, so a group pack can replace a
-file of the base pack, such as a stricter Issue schema. When the owner of a
-file changes, sync merges the new owner's version with your edit, and
+orders the rest, and the highest pack that supplies a file, a schema type, or
+a format owns it. Sync writes only the owner's version, so a group pack can
+replace a file of the base pack, such as a stricter Issue schema. When the
+owner of a file changes, sync merges the new owner's version with your edit, and
 `sokf pack status` lists each shadowed file with the pack that owns it.
 
 ## Output and exit codes
@@ -212,7 +232,8 @@ rewrote /knowledge/architecture.md
 ```
 
 The last line gives the number of warnings listed out of the total.
-`--warnings` lists them all.
+Without `--warnings`, only the warnings at a stale or an absent part of an
+installed harness are listed; `--warnings` lists them all.
 
 Without a start argument, `sokf graph` prints the layout of each knowledge
 root in the way that `tree` does, with each store's description and each

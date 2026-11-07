@@ -10,9 +10,9 @@ use std::{
 use super::{
     eol::{is_base, keep_ending, normalise, same_text},
     git, landing,
-    lock::{Lock, LockedFile, LockedPack, base_path, hash_of},
+    lock::{Accepted, Lock, LockedFile, LockedPack, base_path, hash_of},
     manifest::{requires_newer, tool_version},
-    mode::file_is_executable,
+    mode::{carries_mode, file_is_executable},
     owner::{Ownership, Supply},
     source::{FILES, PackFiles, Source, destination},
 };
@@ -225,7 +225,8 @@ pub fn supply(fetched: &Fetched, store: Option<&RepoPath>) -> Supply {
 /// file written, when the pack needs a newer sokf, when the lock holds the
 /// pack in another store, when another pack supplies one of its types or
 /// files, or when a file lands on an existing file that the lock doesn't
-/// record and `--keep-existing` is absent, or when an edited file needs a
+/// record, that differs from the pack's version, and `--keep-existing` is
+/// absent, or when an edited file needs a
 /// merge and its base copy is missing. A pack whose source or path differs
 /// from the lock's record moves to it, and keeps its bases. It also refuses a pack with a file
 /// that isn't text, or a file of `files/` that lands where no pack writes,
@@ -306,6 +307,15 @@ pub fn plan(
         if let Some(shadow) = own.shadowed.get(&dest) {
             let changed = old.is_some_and(|f| f.base != hash_of(upstream));
             let wrote = old.is_some_and(|f| f.shadowed_by.is_none());
+            // A shadowed record holds no acceptance, so a higher pack that
+            // takes the file over drops it.
+            // sokf-implements: CLI-13_AC-98
+            if wrote && old.is_some_and(|f| f.accepted.is_some()) {
+                out.notes.push(format!(
+                    "note: the pack {} now owns {dest}, so the acceptance of its edit is dropped; accept it again if the project keeps the edit",
+                    shadow.owner
+                ));
+            }
             // A schema whose type a higher pack now owns at another path
             // goes, unless the user edited it.
             let action = match (&current, old) {
@@ -337,6 +347,7 @@ pub fn plan(
                     executable,
                     shadowed_by: Some(shadow.owner.clone()),
                     changed,
+                    accepted: None,
                 },
             );
             let base = base_path(&name, rel);
@@ -351,7 +362,7 @@ pub fn plan(
         let takeover = own.takeover.get(&dest);
         // A platform without the bit neither compares nor sets it.
         // sokf-implements: CLI-13_AC-59
-        let mode = (cfg!(unix) && rel.starts_with(FILES))
+        let mode = carries_mode(rel)
             .then(|| match takeover {
                 Some(t) if current.is_some() => {
                     let bit = file_is_executable(&dest.to_fs(root));
@@ -366,6 +377,21 @@ pub fn plan(
                 .is_some_and(|c| !conflict_lines(&dest, &String::from_utf8_lossy(c)).is_empty())
         {
             conflicted.push(dest.to_string());
+        }
+        let before = current.clone();
+        let was = recorded.and_then(|f| f.accepted.clone());
+        let held = was.as_ref().is_some_and(|a| {
+            let bit = (carries_mode(rel) && before.is_some())
+                .then(|| file_is_executable(&dest.to_fs(root)));
+            a.holds(before.as_deref(), bit)
+        });
+        // An acceptance belongs to the owner's record, so a lower pack that
+        // takes a file back from a higher pack, which no longer supplies it
+        // or is removed, drops the higher pack's.
+        if takeover.is_some_and(|t| t.accepted) {
+            out.notes.push(format!(
+                "note: the pack {name} now owns {dest}, so the acceptance of its edit is dropped; accept it again if the project keeps the edit"
+            ));
         }
         let action = match (recorded, current) {
             // sokf-implements: CLI-13_AC-77
@@ -409,11 +435,15 @@ pub fn plan(
                 out.writes.push((dest.clone(), upstream.clone()));
                 Some(FileAction::Added)
             }
+            // A file that already holds the pack's version, such as the
+            // copy that `pack diff --new` sent to the pack, is no edit.
             (None, Some(cur)) => {
-                if !request.keep_existing {
+                let same = same_text(&cur, upstream)
+                    && (!carries_mode(rel) || file_is_executable(&dest.to_fs(root)) == executable);
+                if !same && !request.keep_existing {
                     unrecorded.push(dest.to_string());
                 }
-                (!same_text(&cur, upstream)).then_some(FileAction::KeptExisting)
+                (!same).then_some(FileAction::KeptExisting)
             }
             // A file and the pack's version that differ only in their line
             // endings hold the same text (the decision "The committed bytes"
@@ -466,6 +496,27 @@ pub fn plan(
         if let Some(action) = action {
             out.actions.push((dest.clone(), action));
         }
+        let after = if written {
+            out.writes.last().map(|(_, b)| b.clone())
+        } else {
+            before
+        };
+        let accepted = was.and_then(|a| {
+            follow_acceptance(
+                a,
+                &Followed {
+                    dest: &dest,
+                    action,
+                    held,
+                    after: after.as_deref(),
+                    bit: mode,
+                    upstream,
+                    executable,
+                    changed: recorded.is_some_and(|f| f.base != hash_of(upstream)),
+                },
+                &mut out.notes,
+            )
+        });
         out.entry.files.insert(
             rel.clone(),
             LockedFile {
@@ -474,6 +525,7 @@ pub fn plan(
                 executable,
                 shadowed_by: None,
                 changed: false,
+                accepted,
             },
         );
         // sokf-implements: CLI-13_AC-7
@@ -516,6 +568,79 @@ pub fn plan(
     }
     out.actions.sort();
     Ok(out)
+}
+
+/// A `Followed` is what a sync did to one file of a pack that has an
+/// acceptance.
+struct Followed<'a> {
+    /// The file's destination.
+    dest: &'a RepoPath,
+    /// What the sync did to the file.
+    action: Option<FileAction>,
+    /// Whether the file held its accepted version before the sync.
+    held: bool,
+    /// The file's content after the sync, or none for a deleted file.
+    after: Option<&'a [u8]>,
+    /// The file's executable bit after the sync, for a file of `files/`.
+    bit: Option<bool>,
+    /// The pack's new version of the file.
+    upstream: &'a [u8],
+    /// Whether the pack's new version is executable.
+    executable: bool,
+    /// Whether the sync changed the pack's version of the file.
+    changed: bool,
+}
+
+/// `follow_acceptance` returns the acceptance `accepted` after the sync
+/// that `f` describes, and pushes a note for each acceptance that it drops
+/// or keeps against a change of the pack. A clean merge into the accepted
+/// version moves the acceptance to the merged file, because the project's
+/// lines are unchanged. A conflict, a merge into a file that changed since
+/// its acceptance, and a file that holds the pack's new version drop it.
+// sokf-implements: CLI-13_AC-93
+// sokf-implements: CLI-13_AC-94
+// sokf-implements: CLI-13_AC-95
+// sokf-implements: CLI-13_AC-96
+// sokf-implements: CLI-13_AC-97
+fn follow_acceptance(
+    accepted: Accepted,
+    f: &Followed,
+    notes: &mut Vec<String>,
+) -> Option<Accepted> {
+    let dest = f.dest;
+    let holds_base = f.after.is_some_and(|b| same_text(b, f.upstream))
+        && f.bit.is_none_or(|b| b == f.executable);
+    if holds_base {
+        return None;
+    }
+    match f.action {
+        Some(FileAction::Conflicted) => {
+            notes.push(format!(
+                "note: the merge into {dest} conflicts, so its acceptance is dropped; accept it again with `sokf pack accept` after you resolve the conflict"
+            ));
+            None
+        }
+        Some(FileAction::Merged) if !f.held => {
+            notes.push(format!(
+                "note: the sync merged the pack's change into {dest}, which changed since its acceptance, so the acceptance is dropped"
+            ));
+            None
+        }
+        _ => {
+            if accepted.deleted && f.after.is_none() && f.changed {
+                notes.push(format!(
+                    "note: the pack changed {dest}, whose deletion is accepted; the file stays deleted"
+                ));
+            }
+            // A file that held its accepted version follows the sync, as a
+            // clean merge or the pack's change of the executable bit.
+            Some(if f.held {
+                Accepted::of(f.after, f.bit.unwrap_or(false), &accepted.note)
+            } else {
+                accepted
+            })
+        }
+    }
 }
 
 /// `file_mode` returns the executable bit that the file `dest` of `files/`

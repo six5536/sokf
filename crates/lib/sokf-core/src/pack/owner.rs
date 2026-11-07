@@ -44,6 +44,10 @@ pub struct Takeover {
     pub base: String,
     /// Whether that pack's version was executable.
     pub executable: bool,
+    /// Whether that pack's record holds an acceptance that the sync drops
+    /// and no longer supplies the destination, so that the note of the drop
+    /// falls to the pack that takes the file over.
+    pub accepted: bool,
 }
 
 /// An `Ownership` is what one pack owns of what it supplies.
@@ -109,6 +113,11 @@ pub fn owners(
                 && from != name
             {
                 let f = &old.packs[from].files[rel];
+                // A pack that still supplies the destination is shadowed by
+                // this sync, and its own plan gives the note.
+                let supplied = supplies
+                    .get(from)
+                    .is_some_and(|s| s.files.iter().any(|(d, _)| d == dest));
                 own.takeover.insert(
                     dest.clone(),
                     Takeover {
@@ -116,6 +125,7 @@ pub fn owners(
                         rel: rel.to_string(),
                         base: f.base.clone(),
                         executable: f.executable,
+                        accepted: f.accepted.is_some() && !supplied,
                     },
                 );
             }
@@ -155,6 +165,7 @@ mod tests {
                 executable: false,
                 shadowed_by: None,
                 changed: false,
+                accepted: None,
             },
         );
         lock.packs.insert(owner.into(), pack);

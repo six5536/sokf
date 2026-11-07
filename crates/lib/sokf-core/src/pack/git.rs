@@ -251,6 +251,23 @@ pub fn merge_file(current: &[u8], base: &[u8], upstream: &[u8], label: &str) -> 
 /// deleted.
 // sokf-implements: CLI-13_AC-30
 pub fn diff(rel: &str, base: &[u8], current: Option<&[u8]>) -> Result<String> {
+    diff_modes(rel, Some(base), current, None)
+}
+
+/// `diff_modes` is `diff` with the executable bit of each side, `(base,
+/// current)`, when `modes` gives them, so that the patch carries a change of
+/// the bit as git's `old mode` and `new mode` lines, which `git apply`
+/// applies. `base` is `None` for a file that the pack doesn't hold yet,
+/// which the patch adds with git's `new file mode` line. A platform without
+/// the bit writes no mode line.
+// sokf-implements: CLI-13_AC-82
+// sokf-implements: CLI-13_AC-105
+pub fn diff_modes(
+    rel: &str,
+    base: Option<&[u8]>,
+    current: Option<&[u8]>,
+    modes: Option<(bool, bool)>,
+) -> Result<String> {
     let dir = TempDir::new()?;
     let write = |side: &str, bytes: &[u8]| -> Result<()> {
         let p = dir.path().join(side).join(rel);
@@ -259,15 +276,29 @@ pub fn diff(rel: &str, base: &[u8], current: Option<&[u8]>) -> Result<String> {
         }
         fs::write(&p, bytes).map_err(|e| Error::io(&p, e))
     };
-    write("a", base)?;
-    let a = format!("a/{rel}");
-    let b = match current {
-        Some(bytes) => {
-            write("b", bytes)?;
-            format!("b/{rel}")
+    let side = |name: &str, bytes: Option<&[u8]>| -> Result<String> {
+        match bytes {
+            Some(bytes) => {
+                write(name, bytes)?;
+                Ok(format!("{name}/{rel}"))
+            }
+            None => Ok("/dev/null".to_string()),
         }
-        None => "/dev/null".to_string(),
     };
+    let a = side("a", base)?;
+    let b = side("b", current)?;
+    // A deleted file has no `b` side, and a new file no `a` side, and the
+    // other side still carries its bit, which git writes as the `deleted
+    // file mode` or the `new file mode`.
+    if let Some((old, new)) = modes {
+        let sides = [("a", base.map(|_| old)), ("b", current.map(|_| new))];
+        for (side, bit) in sides {
+            if let Some(bit) = bit {
+                let p = dir.path().join(side).join(rel);
+                super::mode::set_executable(&p, bit).map_err(|e| Error::io(&p, e))?;
+            }
+        }
+    }
     let out = git(
         Some(dir.path()),
         &[
@@ -319,6 +350,35 @@ mod tests {
         assert!(d.contains("+++ b/schemas/a.md\n"), "{d}");
         assert!(d.contains("-x\n+y\n"), "{d}");
         assert_eq!(diff("schemas/a.md", b"x\n", Some(b"x\n")).unwrap(), "");
+    }
+
+    // sokf-tests: CLI-13_AC-82
+    #[cfg(unix)]
+    #[test]
+    fn a_diff_carries_the_executable_bit_of_each_side() {
+        let rel = "files/run.sh";
+        let d = diff_modes(rel, Some(b"x\n"), Some(b"x\n"), Some((false, true))).unwrap();
+        assert!(d.contains("old mode 100644\nnew mode 100755\n"), "{d}");
+        let d = diff_modes(rel, Some(b"x\n"), Some(b"y\n"), Some((true, true))).unwrap();
+        assert!(d.contains(" 100755\n"), "{d}");
+        assert!(!d.contains("old mode"), "{d}");
+        let d = diff_modes(rel, Some(b"x\n"), None, Some((true, false))).unwrap();
+        assert!(d.contains("deleted file mode 100755\n"), "{d}");
+    }
+
+    // sokf-tests: CLI-13_AC-105
+    #[cfg(unix)]
+    #[test]
+    fn a_new_file_carries_its_executable_bit() {
+        let rel = "files/scripts/new.sh";
+        let d = diff_modes(rel, None, Some(b"x\n"), Some((false, true))).unwrap();
+        assert!(d.contains("new file mode 100755\n"), "{d}");
+        assert!(
+            d.contains("--- /dev/null\n+++ b/files/scripts/new.sh\n"),
+            "{d}"
+        );
+        let d = diff_modes(rel, None, Some(b"x\n"), Some((false, false))).unwrap();
+        assert!(d.contains("new file mode 100644\n"), "{d}");
     }
 
     #[test]

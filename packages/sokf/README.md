@@ -40,7 +40,7 @@ cargo install sokf
 
 ```sh
 sokf init [DIR]                   # create a knowledge store and register it as a root
-sokf harness install claude       # install the sokf skill, instructions, stop hook, and permission for Claude Code (or the parts that codex, cursor, gemini, copilot, factory, pi, opencode, kilo, qwen, devin, agents, or all support)
+sokf harness install claude       # install the sokf skill, instructions, and permission for Claude Code (or the parts that codex, cursor, gemini, copilot, factory, pi, opencode, kilo, qwen, devin, agents, or all support)
 sokf harness diff claude          # print a patch for each part that you edited; `install --force PART` overwrites it
 sokf validate                     # check the knowledge stores and additional files
 sokf validate --fix               # regenerate blocks and indexes, move each document to the folder that matches its state (a closed issue moves to closed/), rewrite headings

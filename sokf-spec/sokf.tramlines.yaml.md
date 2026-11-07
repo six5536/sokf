@@ -349,8 +349,10 @@ cited-by:
 of the type or one of its keys. The validator reports a marker of another
 relationship as an error at the file and line of the marker. `markers: []`
 refuses every marker, and a schema that leaves out `markers` admits every
-one. A validator that does not read markers skips every `from-marker`
-entry, and warns once on each schema that declares one.
+one. Each relationship is lowercase kebab case, the form of a marker's
+tag, and the validator refuses a schema that names another, such as
+`Implements`. A validator that does not read markers skips every
+`from-marker` entry, and warns once on each schema that declares one.
 
 ## <a id="7"></a>7. Lifecycle paths
 

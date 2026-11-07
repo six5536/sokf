@@ -116,10 +116,9 @@ impl Compiled {
 // sokf-implements: SOKF_SCHEMA_15
 // sokf-implements: SOKF_SCHEMA_43
 // sokf-implements: CLI-13_AC-33
-// sokf-implements: CLI-13_AC-34
 pub fn compile_all(model: &Model, grammar: Grammar, formats: &RepoFormats) -> Compiled {
     let regexes = RegexCache::new();
-    let mut problems = formats.clashes();
+    let mut problems = Vec::new();
     let embedded = embedded_formats(&grammar, &regexes).unwrap_or_default();
     let registry = formats.effective(&embedded);
     // The schema extension is embedded, and a test checks that it has a

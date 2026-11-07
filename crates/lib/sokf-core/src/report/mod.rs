@@ -7,5 +7,6 @@ mod text;
 
 pub use collect::{Report, ValidateReport};
 pub use fix_op::FixOp;
+pub(crate) use text::{ABSENT_PART, STALE_PART};
 pub use text::{message, text};
 pub use tramlines_md::{Finding, Locator, Severity};

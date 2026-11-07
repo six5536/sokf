@@ -473,19 +473,40 @@ pub(super) fn remove(root: &RepoRoot, path: &RepoPath) -> Result<()> {
 pub(super) fn edited_files(root: &RepoRoot, pack: &pack::LockedPack) -> BTreeSet<String> {
     pack.files
         .iter()
-        .filter(|(_, f)| f.shadowed_by.is_none())
-        .filter(|(rel, f)| {
-            let Some(path) = RepoPath::parse(&f.path).map(|p| p.to_fs(root)) else {
-                return true;
-            };
-            let Ok(bytes) = std::fs::read(&path) else {
-                return true;
-            };
-            !pack::is_base(&bytes, &f.base)
-                || (cfg!(unix)
-                    && rel.starts_with(pack::FILES)
-                    && pack::file_is_executable(&path) != f.executable)
-        })
+        .filter(|(rel, f)| is_edited(root, rel, f))
         .map(|(_, f)| f.path.clone())
         .collect()
+}
+
+/// `is_edited` returns whether the file `rel` of a locked pack, whose record
+/// is `f`, is one of the pack's edited files, as `edited_files` says.
+pub(super) fn is_edited(root: &RepoRoot, rel: &str, f: &pack::LockedFile) -> bool {
+    if f.shadowed_by.is_some() {
+        return false;
+    }
+    let Some(path) = RepoPath::parse(&f.path).map(|p| p.to_fs(root)) else {
+        return true;
+    };
+    let Ok(bytes) = std::fs::read(&path) else {
+        return true;
+    };
+    !pack::is_base(&bytes, &f.base)
+        || (pack::carries_mode(rel) && pack::file_is_executable(&path) != f.executable)
+}
+
+/// `holds_accepted` returns whether the file `rel` of a locked pack, whose
+/// record is `f`, holds the version that its acceptance records: the
+/// accepted text, with each CRLF read as LF, and the accepted executable bit
+/// for a file of `files/`, or no file for an accepted deletion.
+pub(super) fn holds_accepted(root: &RepoRoot, rel: &str, f: &pack::LockedFile) -> bool {
+    let Some(accepted) = &f.accepted else {
+        return false;
+    };
+    let path = RepoPath::parse(&f.path).map(|p| p.to_fs(root));
+    let bytes = path.as_ref().and_then(|p| std::fs::read(p).ok());
+    let bit = path
+        .as_deref()
+        .filter(|_| pack::carries_mode(rel) && bytes.is_some())
+        .map(pack::file_is_executable);
+    accepted.holds(bytes.as_deref(), bit)
 }

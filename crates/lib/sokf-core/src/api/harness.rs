@@ -285,7 +285,7 @@ pub(super) fn refusal(scope: Scope) -> impl Fn(agent_harness_adapter_core::Error
 }
 
 /// `report` turns the adapter's result into sokf's report.
-fn report(result: agent_harness_adapter_core::InstallResult) -> HarnessReport {
+pub(super) fn report(result: agent_harness_adapter_core::InstallResult) -> HarnessReport {
     let scope = result.scope;
     HarnessReport {
         scope,
@@ -361,11 +361,44 @@ fn report(result: agent_harness_adapter_core::InstallResult) -> HarnessReport {
 pub fn install(dirs: &HarnessDirs, opts: &HarnessOptions) -> Result<HarnessReport> {
     let tool = tool(dirs, opts.scope)?;
     super::harness_packs::refuse_pack_files(dirs, &tool, opts)?;
+    refuse_forced_off_parts(&tool, opts)?;
+    if let Some(report) = super::harness_packs::install_held(dirs, &tool, opts)? {
+        return Ok(report);
+    }
     let kit_opts = InstallOptions::new(harness_ids(&opts.harnesses), opts.scope)
         .force_parts(opts.force.iter().cloned());
     Ok(report(
         agent_harness_adapter_core::install(&tool, &kit_opts).map_err(refusal(opts.scope))?,
     ))
+}
+
+/// `refuse_forced_off_parts` refuses a `--force` that names a part that is off by default for
+/// a harness whose `with` doesn't list it, and says to add the part to `with`, because the
+/// adapter's refusal of a declined part would say to remove it from `without`.
+// sokf-implements: CLI-3_AC-86
+fn refuse_forced_off_parts(tool: &SokfTool, opts: &HarnessOptions) -> Result<()> {
+    if opts.force.is_empty() {
+        return Ok(());
+    }
+    let store = tool.declined_at(opts.scope).map_err(refusal(opts.scope))?;
+    for id in harness_ids(&opts.harnesses) {
+        let runs_hooks = harness::find(&id).is_some_and(|h| !h.hook_events().is_empty());
+        // A part that `without` also declines gets the adapter's refusal, which says to
+        // remove it from `without`.
+        let without = store.without(&id).map_err(refusal(opts.scope))?;
+        for part in store.off_by_default(&id).map_err(refusal(opts.scope))? {
+            if (part == "hooks" && !runs_hooks) || without.contains(&part) {
+                continue;
+            }
+            if opts.force.contains(&part) {
+                return Err(Error::Harness(format!(
+                    "harness `{id}` installs `{part}` only when `with` lists it; add `with = [\"{part}\"]` under `[harness.{id}]` in {} to install it",
+                    store.shown()
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `status` returns the state of every part of each harness named, and writes nothing.
@@ -405,6 +438,21 @@ pub fn diff(dirs: &HarnessDirs, harnesses: &[String], scope: Scope) -> Result<St
     Ok(out)
 }
 
+/// `installed_status` returns the state of every part of each harness installed at `scope`,
+/// or `None` when no harness is installed there. It writes nothing.
+pub(super) fn installed_status(
+    tool: &SokfTool,
+    scope: Scope,
+) -> Result<Option<agent_harness_adapter_core::InstallResult>> {
+    let installed = agent_harness_adapter_core::installed(tool, scope).map_err(refusal(scope))?;
+    if installed.is_empty() {
+        return Ok(None);
+    }
+    agent_harness_adapter_core::status(tool, &installed, scope)
+        .map(Some)
+        .map_err(refusal(scope))
+}
+
 /// `refresh_instructions` rewrites the `instructions` part of each harness installed at the
 /// project and local scopes of `dirs` whose part is stale, so that the block follows the
 /// packs in the lock. It leaves every other part, and an instructions part that is edited,
@@ -420,24 +468,15 @@ pub fn diff(dirs: &HarnessDirs, harnesses: &[String], scope: Scope) -> Result<St
 // sokf-implements: CLI-13_AC-40
 pub(crate) fn refresh_instructions(dirs: &HarnessDirs) -> Result<Vec<String>> {
     let mut lines = Vec::new();
-    let conflicted: Vec<String> = match &dirs.repo {
-        Some(repo) => pack::fragments(repo, &pack::read_lock(repo)?)?
-            .into_iter()
-            .map(|(name, text)| (pack::instructions_of(&name), text))
-            .filter(|(path, text)| !crate::check::conflict_lines(path, text).is_empty())
-            .map(|(path, _)| path.as_str().to_string())
-            .collect(),
+    let conflicted = match &dirs.repo {
+        Some(repo) => super::harness_packs::conflicted_fragments(repo)?,
         None => Vec::new(),
     };
     for scope in [Scope::Project, Scope::Local] {
         let tool = tool(dirs, scope)?.instructions_only();
-        let installed =
-            agent_harness_adapter_core::installed(&tool, scope).map_err(refusal(scope))?;
-        if installed.is_empty() {
+        let Some(found) = installed_status(&tool, scope)? else {
             continue;
-        }
-        let found =
-            agent_harness_adapter_core::status(&tool, &installed, scope).map_err(refusal(scope))?;
+        };
         let state = |h: &agent_harness_adapter_core::HarnessResult| {
             h.parts
                 .iter()
@@ -514,14 +553,15 @@ mod tests {
         HarnessOptions::new(["claude"], Scope::Project).force(force.iter().copied())
     }
 
-    /// `decline` writes the configuration of `dir` so that it declines `parts` of `claude`.
+    /// `decline` writes the configuration of `dir` so that it opts `claude` in to its hooks,
+    /// which are off by default, and declines `parts` of it.
     fn decline(dir: &std::path::Path, parts: &str) {
         fs::create_dir_all(dir.join(".sokf")).unwrap();
-        fs::write(
-            dir.join(".sokf/config.toml"),
-            format!("[harness.claude]\nwithout = [{parts}]\n"),
-        )
-        .unwrap();
+        fs::write(dir.join(".sokf/config.toml"), declining(parts)).unwrap();
+    }
+
+    fn declining(parts: &str) -> String {
+        format!("[harness.claude]\nwith = [\"hooks\"]\nwithout = [{parts}]\n")
     }
 
     fn verbs(r: &HarnessReport) -> Vec<&str> {
@@ -640,7 +680,7 @@ mod tests {
         assert!(!record.contains("hooks"), "{record}");
         assert_eq!(
             fs::read_to_string(dir.join(".sokf/config.toml")).unwrap(),
-            "[harness.claude]\nwithout = [\"hooks\"]\n"
+            declining("\"hooks\"")
         );
         // Edit the block and the skill: `install` leaves them unchanged, and `--force` then
         // rewrites them.
@@ -685,15 +725,11 @@ mod tests {
         // No install changed the config.
         assert_eq!(
             fs::read_to_string(dir.join(".sokf/config.toml")).unwrap(),
-            "[harness.claude]\nwithout = [\"hooks\"]\n"
+            declining("\"hooks\"")
         );
         // Turn the hooks back on by editing the config: `install` writes them into the
         // settings file, which exists, so it reports `updated`.
-        fs::write(
-            dir.join(".sokf/config.toml"),
-            "[harness.claude]\nwithout = []\n",
-        )
-        .unwrap();
+        fs::write(dir.join(".sokf/config.toml"), declining("")).unwrap();
         let st = status(&dirs, &["claude".into()], Scope::Project).unwrap();
         assert_eq!(st.harnesses[0].parts[2].verb(), "absent");
         let fourth = install(&dirs, &opts(&[])).unwrap();

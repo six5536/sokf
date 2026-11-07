@@ -97,11 +97,11 @@ fn print(result: &HarnessReport, json: bool) -> sokf_core::Result<u8> {
 }
 
 /// `hook` answers a hook of the harness `name` for the event `event`, writes the answer in
-/// the harness's form to stdout, and exits with the harness's code. When the harness or the
-/// event is unknown, the command exits with code 2. Outside a repository, it lets the agent
-/// stop. On any other failure, `hook` writes the error to stderr and nothing to stdout and
-/// exits with code 1, so that the failure never blocks the harness.
-// sokf-implements: CLI-3_AC-29
+/// the harness's form to stdout, and exits with the harness's code. Outside a repository, it
+/// adds nothing. On any failure, an unknown harness or event among them, `hook` writes the
+/// error to stderr and nothing to stdout and exits with code 1, so that the failure never
+/// blocks the harness: Claude Code and Gemini CLI read code 2 at the prompt as a refusal of the
+/// prompt.
 fn hook(
     cwd: &Path,
     repo_root: Option<&Path>,
@@ -110,7 +110,13 @@ fn hook(
     event: &str,
 ) -> sokf_core::Result<u8> {
     // sokf-implements: CLI-3_AC-31
-    let call = harness::hook_call(name, event)?;
+    let call = match harness::hook_call(name, event) {
+        Ok(call) => call,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return Ok(output::EXIT_ERRORS);
+        }
+    };
     let mut input = String::new();
     let answer = match std::io::stdin().read_to_string(&mut input) {
         Err(e) => Err(Error::io("<stdin>", e)),
@@ -120,10 +126,10 @@ fn hook(
             root => root.and_then(|root| harness::hook(&root, &call, &input, cache)),
         },
     };
-    // `emit` writes an answer's report to stderr and its form to stdout, and returns the
-    // harness's exit code. On any other failure, it writes the error to stderr and returns 1.
+    // `emit` writes an answer's form to stdout, and returns the harness's exit code. On any
+    // other failure, it writes the error to stderr and returns 1.
     // sokf-implements: CLI-3_AC-25
-    // sokf-implements: CLI-3_AC-26
+    // sokf-implements: CLI-3_AC-82
     // sokf-implements: CLI-3_AC-30
     emit(
         call.harness.as_ref(),

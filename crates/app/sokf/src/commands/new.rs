@@ -7,7 +7,8 @@ use sokf_core::{CacheMode, NewOptions};
 use crate::{cli::NewArgs, output};
 
 /// `new` derives a document from a schema and prints it. With `--write`, it
-/// prints the `created` line instead. With `--id-only`, it prints only the id.
+/// prints the `created` line instead, and an `updated` line for each index
+/// that it wrote. With `--id-only`, it prints only the id.
 /// With `--json`, it prints one JSON object, and with `--write` too, the
 /// object takes the place of the `created` line.
 // sokf-implements: CLI-6_AC-10
@@ -39,10 +40,16 @@ pub fn new(repo_root: Option<&Path>, cache: CacheMode, args: NewArgs) -> sokf_co
         writeln!(buf, "{}", result.id).map_err(output::stdout_err)?;
     } else if args.write {
         writeln!(buf, "created {}", result.path).map_err(output::stdout_err)?;
+        for index in &result.indexes {
+            writeln!(buf, "updated {index}").map_err(output::stdout_err)?;
+        }
     } else {
         buf.extend_from_slice(result.document.as_bytes());
     }
     output::write_stdout(&buf)?;
+    if let Some(e) = &result.index_error {
+        eprintln!("warning: new: {e}, so an index may be stale: run `sokf validate --fix`");
+    }
     // sokf-implements: CLI-6_AC-55
     Ok(output::EXIT_OK)
 }

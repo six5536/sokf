@@ -1,9 +1,12 @@
-//! `sokf pack` runs its subcommands: `sync`, `add`, `status`, `list`,
-//! `remove`, `diff`, and `export` (CLI-13).
+//! `sokf pack` runs its subcommands: `sync`, `add`, `status`, `accept`,
+//! `list`, `remove`, `diff`, and `export` (CLI-13).
 
 use std::path::Path;
 
-use sokf_core::{PackAddOptions, PackSyncOptions, PackSyncReport, discover_root};
+use sokf_core::{
+    PackAcceptOptions, PackAddOptions, PackDiffOptions, PackSyncOptions, PackSyncReport,
+    discover_root,
+};
 
 use crate::{
     cli::{PackArgs, PackCommand},
@@ -60,6 +63,19 @@ pub fn pack(repo_root: Option<&Path>, args: PackArgs) -> sokf_core::Result<u8> {
             };
             (status.to_text(), code)
         }
+        PackCommand::Accept(a) => {
+            let (cwd, root) = output::root(repo_root)?;
+            let report = sokf_core::pack_accept(
+                &root,
+                &PackAcceptOptions {
+                    paths: a.paths,
+                    note: a.note,
+                    withdraw: a.withdraw,
+                    cwd,
+                },
+            )?;
+            (report.to_text(), output::EXIT_OK)
+        }
         PackCommand::List => {
             // Outside a repository, the list marks no pack.
             let root = discover_root(&output::cwd()?, repo_root).ok();
@@ -77,8 +93,18 @@ pub fn pack(repo_root: Option<&Path>, args: PackArgs) -> sokf_core::Result<u8> {
             (report.to_text(), code)
         }
         PackCommand::Diff(a) => {
-            let (_, root) = output::root(repo_root)?;
-            (sokf_core::pack_diff(&root, &a.name)?, output::EXIT_OK)
+            let (cwd, root) = output::root(repo_root)?;
+            let patch = sokf_core::pack_diff(
+                &root,
+                &PackDiffOptions {
+                    name: a.name,
+                    accepted: a.accepted,
+                    new: a.new,
+                    cwd,
+                    home: std::env::home_dir(),
+                },
+            )?;
+            (patch, output::EXIT_OK)
         }
         PackCommand::Export(a) => {
             let dir = output::cwd()?.join(&a.dir);

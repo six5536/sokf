@@ -1,14 +1,102 @@
 //! This module keeps `sokf harness install` and `sokf pack sync` off each
 //! other's files (CLI-3, CLI-13): it refuses an install whose part would
-//! write a file that the pack lock records, and lists the paths that each
-//! installed harness writes, on which no file of a pack lands.
+//! write a file that the pack lock records, lists the paths that each
+//! installed harness writes, on which no file of a pack lands, and keeps the
+//! instructions part as it is while the copy of a pack's fragment holds a
+//! conflict.
 
 use std::collections::BTreeMap;
 
-use agent_harness_adapter_core::{Item, Scope};
+use agent_harness_adapter_core::{InstallOptions, Item, Scope, State};
 
-use super::harness::{HarnessDirs, HarnessOptions, harness_ids, refusal, shown, tool};
-use crate::{Error, Result, harness::SokfTool, pack};
+use super::harness::{
+    HarnessDirs, HarnessOptions, HarnessReport, harness_ids, refusal, report, shown, tool,
+};
+use crate::{Error, RepoRoot, Result, harness::SokfTool, pack};
+
+/// `conflicted_fragments` returns the path of each copy of a pack's instructions fragment in
+/// `repo` that holds a conflict that a merge left.
+pub(super) fn conflicted_fragments(repo: &RepoRoot) -> Result<Vec<String>> {
+    Ok(pack::fragments(repo, &pack::read_lock(repo)?)?
+        .into_iter()
+        .map(|(name, text)| (pack::instructions_of(&name), text))
+        .filter(|(path, text)| !crate::check::conflict_lines(path, text).is_empty())
+        .map(|(path, _)| path.as_str().to_string())
+        .collect())
+}
+
+/// `install_held` carries out an install at the project or the local scope
+/// while the copy of a pack's fragment holds a conflict that a merge left:
+/// it installs every other part, leaves the instructions part of each
+/// harness as it is, even under `--force`, because the block would hold the
+/// conflict markers, reports the part in the state in which it found it, and
+/// adds a note that names the conflicted copy. It returns `None` when no copy
+/// holds a conflict, at the user scope, and when `--force` names the
+/// instructions part that the configuration declines, which the adapter
+/// refuses before it writes.
+// sokf-implements: CLI-3_AC-87
+pub(super) fn install_held(
+    dirs: &HarnessDirs,
+    tool: &SokfTool,
+    opts: &HarnessOptions,
+) -> Result<Option<HarnessReport>> {
+    let Some(repo) = &dirs.repo else {
+        return Ok(None);
+    };
+    if opts.scope == Scope::User {
+        return Ok(None);
+    }
+    let conflicted = conflicted_fragments(repo)?;
+    if conflicted.is_empty() {
+        return Ok(None);
+    }
+    let scope = opts.scope;
+    let ids = harness_ids(&opts.harnesses);
+    let part = Item::Instructions.as_str();
+    let before =
+        report(agent_harness_adapter_core::status(tool, &ids, scope).map_err(refusal(scope))?);
+    let declined = before.harnesses.iter().any(|h| {
+        h.parts
+            .iter()
+            .any(|p| p.part == part && p.state == State::Skipped)
+    });
+    if declined && opts.force.iter().any(|p| p == part) {
+        return Ok(None);
+    }
+    let force = opts.force.iter().filter(|p| *p != part).cloned();
+    let held = tool.clone().hold_instructions();
+    let mut out = report(
+        agent_harness_adapter_core::install(
+            &held,
+            &InstallOptions::new(ids, scope).force_parts(force),
+        )
+        .map_err(refusal(scope))?,
+    );
+    let local = match scope {
+        Scope::Project => String::new(),
+        other => format!(" --scope {other}"),
+    };
+    for h in &mut out.harnesses {
+        let Some(was) = before
+            .harness(&h.harness)
+            .and_then(|b| b.parts.iter().find(|p| p.part == part))
+        else {
+            continue;
+        };
+        for p in h.parts.iter_mut().filter(|p| p.part == part) {
+            *p = was.clone();
+        }
+        if !matches!(was.state, State::Skipped | State::Shared) {
+            h.notes.push(format!(
+                "kept {} ({part}): {} holds a conflict; resolve it, then run `sokf harness install {}{local}`",
+                was.path,
+                conflicted.join(", "),
+                h.harness
+            ));
+        }
+    }
+    Ok(Some(out))
+}
 
 /// `refuse_pack_files` refuses an install at the project or the local scope
 /// that would write a part to a file that the pack lock records, and names

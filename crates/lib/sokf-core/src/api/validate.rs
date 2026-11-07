@@ -44,6 +44,10 @@ pub struct ValidateOptions {
     /// path from the current directory or from the repository root. The
     /// cache reads the file metadata of only these files (CLI-4_AC-21).
     pub changed: Vec<PathBuf>,
+    /// The home directory, whose settings a harness installed at the
+    /// project scope can read, so that the check of the installed harnesses
+    /// sees what `sokf harness install` sees (CLI-4_AC-40).
+    pub home: Option<PathBuf>,
 }
 
 /// `changed_paths` resolves the paths of `--changed`, each a path from the
@@ -474,6 +478,35 @@ fn plan_is_stale(root: &RepoRoot, model: &crate::Model, plan: &fix::FixPlan) -> 
         })
 }
 
+/// `fix_indexes` brings the index of each directory of `dirs` up to date,
+/// as `validate --fix` does, and repairs nothing else. It creates an index
+/// that is absent, leaves an index that isn't in the generated form, and
+/// returns what it wrote. When it writes, it checks again, as `validate`
+/// does after a fix, so that the cache holds the indexes that it wrote.
+pub(crate) fn fix_indexes(
+    root: &RepoRoot,
+    cache: CacheMode,
+    dirs: &[RepoPath],
+) -> Result<Vec<crate::FixOp>> {
+    let config = config::load_config(root)?;
+    let (grammar, repo_formats) = load_formats(root)?;
+    let cache = Cache::open(root, cache);
+    let scope = config::Scope {
+        files: dirs.iter().filter_map(|d| d.join("index.md")).collect(),
+        dirs: Default::default(),
+    };
+    let (mut loaded, findings) =
+        check_repository(root, &config, &grammar, &repo_formats, &cache, false)?;
+    let plan = plan_fix(root, &cache, &mut loaded, &findings, &scope)?;
+    let (ops, _) = fix::apply(root, plan)?;
+    // The indexes are written whether or not the second check succeeds, and
+    // a full walk brings a cache that it failed to sync up to date.
+    if !ops.is_empty() {
+        let _ = check_repository(root, &config, &grammar, &repo_formats, &cache, false);
+    }
+    Ok(ops)
+}
+
 /// `FIX_PASSES` bounds the passes of one fix, and so the depth of a chain of
 /// includes that one run repairs.
 const FIX_PASSES: usize = 10;
@@ -567,6 +600,9 @@ pub fn validate(
     // The check of the configuration runs once in each run, outside the
     // cache, because the configuration is no unit of the cache.
     report.extend(check::check_config(&config));
+    // The state of each installed harness lies outside the knowledge and
+    // the cache, so the run reads it afresh, as it reads the configuration.
+    report.extend(super::harness_stale::stale_parts(root, opts.home.clone()));
     let report = report.finish().filter(&scope);
     let projection = opts.query.as_ref().map(|q| report.project(q)).transpose()?;
     Ok((report, projection))

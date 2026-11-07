@@ -3,6 +3,7 @@
 //! the hook. The adapter holds the harnesses, the part kinds, the states, the
 //! record, and `install` and `status`.
 
+mod declined;
 mod hook;
 mod integration;
 mod tool;
@@ -12,7 +13,8 @@ mod tool;
 /// CONF-4_AC-3).
 pub const DEFAULT_HOOK_PROGRAM: &str = "sokf";
 
-pub use hook::{Answer, Decision, HookAnswer, HookCall, guard_key, hook, hook_call};
+pub use declined::{OFF_BY_DEFAULT, SokfDeclined, bad_with};
+pub use hook::{Answer, EventName, HookAnswer, HookCall, NoteOutput, guard_key, hook, hook_call};
 pub use integration::{
     ALLOWED_COMMAND, HOOK_COMMAND_MARK, HOOK_EVENTS, hook_command, instructions, instructions_only,
     integration, skill,

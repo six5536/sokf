@@ -261,7 +261,7 @@ pub struct HarnessHookArgs {
     #[arg(value_name = "HARNESS")]
     pub name: String,
 
-    /// The event, for example `stop`.
+    /// The event, for example `prompt-submit`.
     #[arg(value_name = "EVENT")]
     pub hook: String,
 }
@@ -296,7 +296,8 @@ pub struct ValidateArgs {
     #[arg(long, value_name = "EXPR", requires = "json")]
     pub query: Option<String>,
 
-    /// List each warning. Default: print only the number of warnings.
+    /// List each warning. Default: list only the warnings at a stale or an absent part of a
+    /// harness, and print the number of warnings.
     #[arg(long)]
     pub warnings: bool,
 
@@ -430,9 +431,13 @@ pub enum PackCommand {
     /// `/.sokf/config.toml`, and sync it.
     Add(PackAddArgs),
     /// Print each pack in the lock that is stale, and each of its files that
-    /// is edited, conflicted, or deleted. It writes nothing and uses no
-    /// network.
+    /// is edited, conflicted, deleted, or accepted. It writes nothing and
+    /// uses no network.
     Status(PackStatusArgs),
+    /// Record that the project keeps your edit or deletion of a pack's file
+    /// on purpose, with the reason, so that `pack status --check` passes on
+    /// it while the file holds what you accepted. It writes only the lock.
+    Accept(PackAcceptArgs),
     /// Print the packs that the binary embeds, and mark those in the lock.
     List,
     /// Delete the pack's `[[pack]]` entry and the files of the pack that you
@@ -440,7 +445,7 @@ pub enum PackCommand {
     Remove(PackNameArgs),
     /// Print your edits of a pack's files as a patch against the recorded
     /// bases, which `git apply` applies in the pack's repository.
-    Diff(PackNameArgs),
+    Diff(PackDiffArgs),
     /// Write an embedded pack to a new directory, in the layout of a pack.
     Export(PackExportArgs),
 }
@@ -493,9 +498,44 @@ pub struct PackAddArgs {
 #[derive(Debug, Args)]
 pub struct PackStatusArgs {
     /// Exit with code 1 when a file of a pack is edited, conflicted, or
-    /// deleted, so that a check fails on an edit that nobody has reviewed.
+    /// deleted and doesn't hold its accepted version, so that a check fails
+    /// on an edit that nobody has reviewed.
     #[arg(long)]
     pub check: bool,
+}
+
+/// `PackAcceptArgs` holds the arguments of `pack accept`.
+#[derive(Debug, Args)]
+pub struct PackAcceptArgs {
+    /// The edited or deleted files of packs to accept.
+    #[arg(value_name = "PATH", required = true)]
+    pub paths: Vec<String>,
+
+    /// Why the project keeps the edit. Required, unless `--withdraw` is
+    /// given; `pack status` prints it.
+    #[arg(long, value_name = "TEXT", conflicts_with = "withdraw")]
+    pub note: Option<String>,
+
+    /// Withdraw the acceptance of each file instead.
+    #[arg(long)]
+    pub withdraw: bool,
+}
+
+/// `PackDiffArgs` holds the arguments of `pack diff`.
+#[derive(Debug, Args)]
+pub struct PackDiffArgs {
+    /// The pack's name, as `pack status` prints it.
+    #[arg(value_name = "NAME")]
+    pub name: String,
+
+    /// Also print each edit that the project accepted.
+    #[arg(long)]
+    pub accepted: bool,
+
+    /// Add each file of the project that the pack doesn't hold yet to the
+    /// patch, as a new file at its place in the pack.
+    #[arg(long, value_name = "PATH", num_args = 1..)]
+    pub new: Vec<String>,
 }
 
 /// `PackNameArgs` holds the name of a pack in the lock.

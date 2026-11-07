@@ -7,6 +7,8 @@ use std::sync::OnceLock;
 use regex::bytes::Regex;
 use serde::{Deserialize, Serialize};
 
+use crate::markdown::is_slug;
+
 /// `BINARY_PROBE` is the number of bytes at the start of a file that the
 /// scan searches for a NUL byte to decide whether the file is binary
 /// (SOKF_VALIDATION_50).
@@ -38,6 +40,9 @@ pub enum RowKind {
     /// A tag that matches `sokf-<rel>:` only when case is ignored
     /// (SOKF_VALIDATION_52). The value is the tag as written.
     Case(String),
+    /// A tag whose rel isn't kebab case, such as `sokf-foo_bar:`
+    /// (CLI-4_AC-41). The value is the tag as written.
+    Rel(String),
     /// An ignore directive that is out of order (SOKF_FORMAT_152 and
     /// SOKF_FORMAT_153).
     Ignore(IgnoreFault),
@@ -187,12 +192,18 @@ fn directive(word: &str) -> Option<Directive> {
 /// `parse` returns the marker that starts `word`, or the fault in a tag
 /// that looks like a marker. It returns `None` when `word` doesn't start
 /// with a tag.
+// sokf-implements: CLI-4_AC-41
 fn parse(word: &str) -> Option<RowKind> {
     let (tag, rest) = tag(word)?;
+    let rel = &tag["sokf-".len()..tag.len() - 1];
+    // A rel in the wrong case of letters is a fault of its own
+    // (SOKF_VALIDATION_52), so the kebab test ignores case.
+    if !is_slug(&rel.to_ascii_lowercase()) {
+        return Some(RowKind::Rel(tag.to_string()));
+    }
     if !tag.starts_with("sokf-") || tag.bytes().any(|b| b.is_ascii_uppercase()) {
         return Some(RowKind::Case(tag.to_string()));
     }
-    let rel = &tag["sokf-".len()..tag.len() - 1];
     let rest = rest.trim_start();
     let len = rest
         .find(|c: char| !is_reference_char(c))
@@ -213,8 +224,12 @@ fn parse(word: &str) -> Option<RowKind> {
 
 /// `tag` returns the tag that starts `word` and the text after the tag. A
 /// tag is `sokf-<rel>:` in any case, followed by whitespace or the end of
-/// the line. A qualified reference, such as `sokf-spec:glossary`, has no
-/// whitespace after its colon, and so it isn't a tag.
+/// the line, where the rel is a word of letters, digits, `-`, and `_`,
+/// kebab case or not, so that the scan reports a rel that isn't kebab case.
+/// A `.` ends the word, because a file name such as `sokf-spec.md:` starts
+/// many a line that holds no marker.
+/// A qualified reference, such as `sokf-spec:glossary`, has no whitespace
+/// after its colon, and so it isn't a tag.
 fn tag(word: &str) -> Option<(&str, &str)> {
     let head = word.get(..5)?;
     if !head.eq_ignore_ascii_case("sokf-") {
@@ -222,15 +237,15 @@ fn tag(word: &str) -> Option<(&str, &str)> {
     }
     let colon = word.find(':')?;
     let rel = &word[5..colon];
-    let kebab = !rel.is_empty()
+    let word_like = !rel.is_empty()
         && rel
-            .split('-')
-            .all(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_alphanumeric()));
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
     let spaced = word[colon + 1..]
         .chars()
         .next()
         .is_none_or(char::is_whitespace);
-    (kebab && spaced).then(|| word.split_at(colon + 1))
+    (word_like && spaced).then(|| word.split_at(colon + 1))
 }
 
 /// `is_reference_char` returns whether `c` can appear in a reference, that
@@ -278,6 +293,33 @@ mod tests {
     fn prose_strings_and_directives_are_no_markers() {
         let text = "Tag it with `// sokf-implements: CLI-1_AC-2`.\nlet s = \"// sokf-tests: X\";\n// sokf:begin config\n// sokf:links\n[sokf:config]: /a.md\n// sokf-implements is a tag\n    \"sokf-spec:sokf-format-spec#9\",\n/// `sokf-spec:glossary`, `#key`\n";
         assert_eq!(rows(text), vec![]);
+    }
+
+    // sokf-tests: CLI-4_AC-41
+    #[test]
+    fn a_rel_that_isnt_kebab_case_is_a_fault() {
+        let text = "// sokf-foo_bar: CLI-1_AC-2\n# sokf-implements-: X\n// sokf-a--b: X\n// sokf-v1.2: X\n// sokf-implements: CLI-1_AC-2\n";
+        assert_eq!(
+            rows(text),
+            vec![
+                MarkerRow {
+                    line: 1,
+                    kind: RowKind::Rel("sokf-foo_bar:".into())
+                },
+                MarkerRow {
+                    line: 2,
+                    kind: RowKind::Rel("sokf-implements-:".into())
+                },
+                MarkerRow {
+                    line: 3,
+                    kind: RowKind::Rel("sokf-a--b:".into())
+                },
+                marker(5, "implements", "CLI-1_AC-2"),
+            ]
+        );
+        // A qualified reference, a file name, and a word with a slash stay
+        // no tags, and so does line 4 above.
+        assert!(rows("sokf-spec:glossary\n- sokf-spec.md: the spec\n// sokf-a/b: X\n").is_empty());
     }
 
     // sokf-tests: SOKF_FORMAT_144

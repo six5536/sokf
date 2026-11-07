@@ -6,6 +6,7 @@ mod dirty;
 mod graph;
 mod harness;
 mod harness_packs;
+mod harness_stale;
 mod info;
 mod init;
 mod load;
@@ -13,6 +14,7 @@ mod locate;
 mod markers;
 mod new;
 mod pack;
+mod pack_accept;
 mod pack_info;
 mod pack_run;
 mod validate;
@@ -35,8 +37,10 @@ pub use pack::{
     PackAddOptions, PackSyncOptions, PackSyncReport, SyncedPack, UndeclaredPack, pack_add,
     pack_add_with, pack_sync, pack_sync_with,
 };
+pub use pack_accept::{PackAcceptOptions, PackAccepted, pack_accept};
 pub use pack_info::{
-    ListedPack, PackFileState, PackRemoved, PackState, PackStatus, list_text as pack_list_text,
-    pack_diff, pack_export, pack_export_with, pack_list, pack_list_with, pack_remove, pack_status,
+    ListedPack, PackDiffOptions, PackFile, PackFileState, PackRemoved, PackState, PackStatus,
+    list_text as pack_list_text, pack_diff, pack_export, pack_export_with, pack_list,
+    pack_list_with, pack_remove, pack_status,
 };
 pub use validate::{ValidateOptions, check_repository, validate};

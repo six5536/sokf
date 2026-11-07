@@ -138,6 +138,25 @@ fn list(node: &Spanned) -> Vec<String> {
     node.as_str_or_list().unwrap_or_default()
 }
 
+/// `kebab` returns the lowercase kebab case form of `rel`, splitting camel
+/// case and turning `_` and spaces into `-`, such as `test-of` for `TestOf`
+/// or `test_of`. It returns `None` when the form still isn't a slug.
+fn kebab(rel: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut prev_lower = false;
+    for c in rel.chars() {
+        if c.is_ascii_uppercase() && prev_lower {
+            out.push('-');
+        }
+        prev_lower = c.is_ascii_lowercase() || c.is_ascii_digit();
+        out.push(match c {
+            '_' | ' ' => '-',
+            c => c.to_ascii_lowercase(),
+        });
+    }
+    crate::markdown::is_slug(&out).then_some(out)
+}
+
 /// `glob_inside` reports whether every path that `glob` can match lies under
 /// `dir`: it checks that the glob's literal prefix, up to its first wildcard,
 /// starts with `dir/`.
@@ -387,7 +406,30 @@ impl SokfSchema {
                 message,
             });
         }
-        let markers = ext("markers").map(list);
+        let markers_node = ext("markers");
+        let markers = markers_node.map(list);
+        // A tag is lowercase kebab case, so a rel of `markers` in another
+        // form matches no marker, and the schema would refuse every marker
+        // that its author meant.
+        // sokf-implements: EXT-9_AC-11
+        for item in markers_node.and_then(|n| n.as_seq()).unwrap_or(&[]) {
+            let Some(rel) = item.as_str() else { continue };
+            if crate::markdown::is_slug(rel) {
+                continue;
+            }
+            let fix = match kebab(rel) {
+                Some(k) => format!("Write it as `{k}`"),
+                None => "Write it as lowercase words of letters and digits joined by `-`".into(),
+            };
+            findings.push(fail(
+                path,
+                item.line,
+                "EXT-9_AC-11",
+                format!(
+                    "`markers` names the relationship `{rel}`, which isn't lowercase kebab case, so it matches no marker. {fix}"
+                ),
+            ));
+        }
         // A path plan's `section` is the `rule-id` of a section of this
         // schema.
         // sokf-implements: SOKF_SCHEMA_52

@@ -497,10 +497,12 @@ sections:
     only: { state: [closed] }
     guidance: >
       This section is one paragraph about what the work delivered, with a link to each
-      document that the work changed. The subsections Differs from the plan and Left for later
-      follow it where they apply. When another issue's work included this one's, the paragraph
-      says so, and the issue links the other issue with relates-to. The paragraph describes the
-      result, because git records the steps, the counts, and the dates.
+      document that the work changed. The subsection Differs from the plan follows it where it
+      applies. When another issue's work included this one's, the paragraph says so, and the
+      issue links the other issue with relates-to. Work that is still wanted but left undone
+      becomes a new issue before this one closes, because a list of work in a closed issue is
+      read by nobody who plans the next work. The paragraph describes the result, because git
+      records the steps, the counts, and the dates.
     blocks:
       - kind: prose
         max: 1
@@ -518,14 +520,4 @@ sections:
         each:
           prohibited-patterns: [{pattern: '\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b', message: 'The text contains no date, because git records when the work happened.'}, {pattern: '^Step [0-9]+:', message: 'An item begins with no step number, because the outcome describes the result, not the steps.'}]
         example: 'The error names the failed pattern of the last rule set only, because an error string of 9P, the Plan 9 file protocol, holds at most 128 bytes.'
-  - heading: Left for later
-    level: 3
-    optional: true
-    only: { state: [closed] }
-    guidance: This section lists the work that is still wanted but left undone, one thing in each item. An item links the issue that covers it, where there is one.
-    blocks:
-      - kind: bullet-list
-        each:
-          prohibited-patterns: [{pattern: '\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b', message: 'The text contains no date, because git records when the work happened.'}, {pattern: '^Step [0-9]+:', message: 'An item begins with no step number, because the outcome describes the result, not the steps.'}]
-        example: 'A report of the failed pattern of every rule set. It needs a way to return more text than an error string of 9P, the Plan 9 file protocol, holds.'
 ````

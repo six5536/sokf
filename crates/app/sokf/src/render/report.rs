@@ -6,8 +6,8 @@ use std::io::{self, Write};
 use sokf_core::Report;
 
 /// `text` writes the text report: the fixes, then the findings, then the line
-/// of counts. The core builds the text, so the stop hook and the `validate`
-/// command print the report in the same form.
+/// of counts. The core builds the text, so `validate` and every other
+/// command that prints it print the report in the same form.
 // sokf-implements: CLI-4_AC-7
 // sokf-implements: CLI-4_AC-11
 // sokf-implements: CLI-4_AC-25

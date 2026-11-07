@@ -28,12 +28,14 @@ struct ConfigFile {
 
 // sokf:begin config-harness
 /// `HarnessSection` holds one `[harness.NAME]` table (CONF-4). `without`
-/// lists the parts of the harness that `install` skips. `command` sets the
+/// lists the parts of the harness that `install` skips, and `with` the parts
+/// that are off by default and that `install` writes. `command` sets the
 /// program that the harness's hook lines run.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 struct HarnessSection {
     without: Vec<String>,
+    with: Vec<String>,
     command: Option<String>,
 }
 // sokf:end config-harness
@@ -44,6 +46,14 @@ impl ConfigFile {
             .iter()
             .map(|(name, section)| (name.clone(), section.without.clone()))
             .collect()
+    }
+
+    /// `bad_with` returns the message for the first part that a `with` list
+    /// names and that isn't off by default.
+    fn bad_with(&self) -> Option<String> {
+        self.harness
+            .iter()
+            .find_map(|(name, section)| crate::harness::bad_with(name, &section.with))
     }
 
     /// `hook_commands` returns the program that each harness's hook line
@@ -166,6 +176,9 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
     // sokf-implements: CONF-6_AC-1
     let file: ConfigFile =
         toml::from_str(&text).map_err(|e| Error::config(path.clone(), e.message().to_string()))?;
+    if let Some(m) = file.bad_with() {
+        return Err(Error::config(path, m));
+    }
     let mut roots = Vec::new();
     for r in &file.knowledge.roots {
         // sokf-implements: CONF-2_AC-7
@@ -246,6 +259,9 @@ pub fn read_lenient(root: &RepoRoot) -> Result<ConfigText> {
     };
     let file: ConfigFile =
         toml::from_str(&text).map_err(|e| Error::Init(format!("{path}: {}", e.message())))?;
+    if let Some(m) = file.bad_with() {
+        return Err(Error::Init(format!("{path}: {m}")));
+    }
     let mut roots = Vec::new();
     for r in &file.knowledge.roots {
         let rp = RepoPath::parse(r).ok_or_else(|| {
@@ -434,9 +450,21 @@ mod tests {
         let c = with(&dir, "[harness.claude]\n[harness.other]\nwithout = []\n").unwrap();
         assert_eq!(c.declined["claude"], Vec::<String>::new());
         assert_eq!(c.declined["other"], Vec::<String>::new());
+        // A `with` list may list the hooks, which are off by default, or nothing.
+        for text in [
+            "[harness.claude]\nwith = []\n",
+            "[harness.claude]\nwith = [\"hooks\"]\n",
+        ] {
+            assert!(with(&dir, text).is_ok(), "{text:?}");
+        }
+        // A `with` list that lists a part that is on by default opts in to nothing, so the
+        // tool refuses it and names the list.
+        let e = with(&dir, "[harness.claude]\nwith = [\"skills\"]\n").unwrap_err();
+        assert!(matches!(e, Error::Config { .. }), "{e}");
+        assert!(e.to_string().contains("harness.claude.with"), "{e}");
         // The tool refuses an unknown key in the table, as it refuses every
         // unknown key.
-        let e = with(&dir, "[harness.claude]\nwith = []\n").unwrap_err();
+        let e = with(&dir, "[harness.claude]\nwithin = []\n").unwrap_err();
         assert!(matches!(e, Error::Config { .. }), "{e}");
         fs::remove_dir_all(&dir).unwrap();
     }

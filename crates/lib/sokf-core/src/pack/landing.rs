@@ -30,66 +30,76 @@ pub fn covers(written: &str, path: &str) -> bool {
     }
 }
 
-/// `check` returns a line for each file of `pack` that sync must refuse: a
-/// file that isn't UTF-8, and a file of `files/` whose path holds a segment
-/// that leaves its place, that lands in `/.git/` or `/.sokf/` or in any
-/// `.git` directory, inside one of `roots`, or on a path of `protected`,
-/// which maps a file, or a directory with a trailing `/`, to what writes it. It compares paths without regard to
-/// the case of letters, because macOS and Windows open `.GIT/` as `.git/`.
+/// `check` returns a line for each file of `pack` that sync must refuse, as
+/// `refusal` says.
 // sokf-implements: CLI-13_AC-52
 // sokf-implements: CLI-13_AC-53
 // sokf-implements: CLI-13_AC-54
 // sokf-implements: CLI-13_AC-55
 pub fn check(pack: &PackFiles, roots: &[RepoPath], protected: &Protected) -> Vec<String> {
-    let mut out = Vec::new();
-    let protected: Vec<(&str, &str)> = INSTRUCTION_FILES
+    pack.files
         .iter()
-        .map(|p| (*p, "the instructions block of a harness"))
-        .chain(protected.iter().map(|(p, who)| (p.as_str(), who.as_str())))
-        .collect();
-    for (rel, bytes) in &pack.files {
-        if std::str::from_utf8(bytes).is_err() {
-            out.push(format!(
-                "{rel} is not UTF-8 text, and every file of a pack is text"
-            ));
-            continue;
-        }
-        let Some(rest) = rel.strip_prefix(FILES) else {
-            continue;
-        };
-        let segments: Vec<&str> = rest.split('/').collect();
-        if segments
-            .iter()
-            .any(|s| s.is_empty() || *s == "." || *s == "..")
-        {
-            out.push(format!(
-                "{rel}: the path leaves its place in the repository"
-            ));
-            continue;
-        }
-        let dest = format!("/{rest}");
-        let lower = dest.to_lowercase();
-        let first = segments[0].to_lowercase();
-        if first == ".sokf" || segments.iter().any(|s| s.eq_ignore_ascii_case(".git")) {
-            out.push(format!(
-                "{rel} lands at {dest}, among git's or sokf's own files, which no pack writes"
-            ));
-            continue;
-        }
-        if let Some(root) = roots.iter().find(|r| {
-            let r = r.as_str().to_lowercase();
-            lower == r || lower.starts_with(&format!("{}/", r.trim_end_matches('/')))
-        }) {
-            out.push(format!(
-                "{rel} lands at {dest}, inside the knowledge root {root}; a file of a store belongs under schemas/ or documents/"
-            ));
-            continue;
-        }
-        if let Some((_, who)) = protected.iter().find(|(p, _)| covers(p, &dest)) {
-            out.push(format!("{rel} lands at {dest}, which {who} writes"));
-        }
+        .filter_map(|(rel, bytes)| refusal(rel, bytes, roots, protected))
+        .collect()
+}
+
+/// `refusal` returns why sync must refuse the file `rel` of a pack, which
+/// holds `bytes`, or `None` when sync lands it: sync refuses a file that
+/// isn't UTF-8, and a file of `files/` whose path holds a segment that leaves
+/// its place, that lands in `/.git/` or `/.sokf/` or in any `.git`
+/// directory, inside one of `roots`, or on a path of `protected`, which maps
+/// a file, or a directory with a trailing `/`, to what writes it. It
+/// compares paths without regard to the case of letters, because macOS and
+/// Windows open `.GIT/` as `.git/`.
+// sokf-implements: CLI-13_AC-106
+pub fn refusal(
+    rel: &str,
+    bytes: &[u8],
+    roots: &[RepoPath],
+    protected: &Protected,
+) -> Option<String> {
+    if std::str::from_utf8(bytes).is_err() {
+        return Some(format!(
+            "{rel} is not UTF-8 text, and every file of a pack is text"
+        ));
     }
-    out
+    let rest = rel.strip_prefix(FILES)?;
+    let segments: Vec<&str> = rest.split('/').collect();
+    if segments
+        .iter()
+        .any(|s| s.is_empty() || *s == "." || *s == "..")
+    {
+        return Some(format!(
+            "{rel}: the path leaves its place in the repository"
+        ));
+    }
+    let dest = format!("/{rest}");
+    let lower = dest.to_lowercase();
+    let first = segments[0].to_lowercase();
+    if first == ".sokf" || segments.iter().any(|s| s.eq_ignore_ascii_case(".git")) {
+        return Some(format!(
+            "{rel} lands at {dest}, among git's or sokf's own files, which no pack writes"
+        ));
+    }
+    if let Some(root) = roots.iter().find(|r| {
+        let r = r.as_str().to_lowercase();
+        lower == r || lower.starts_with(&format!("{}/", r.trim_end_matches('/')))
+    }) {
+        return Some(format!(
+            "{rel} lands at {dest}, inside the knowledge root {root}; a file of a store belongs under schemas/ or documents/"
+        ));
+    }
+    let instructions = INSTRUCTION_FILES
+        .iter()
+        .find(|p| covers(p, &dest))
+        .map(|_| "the instructions block of a harness");
+    let who = instructions.or_else(|| {
+        protected
+            .iter()
+            .find(|(p, _)| covers(p, &dest))
+            .map(|(_, who)| who.as_str())
+    })?;
+    Some(format!("{rel} lands at {dest}, which {who} writes"))
 }
 
 #[cfg(test)]

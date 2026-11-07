@@ -1,5 +1,5 @@
 //! This module defines sokf's integration with agent harnesses (CLI-3_AC-14): the
-//! instructions block, the `sokf` skill, the stop hook, and the allowed command, declared
+//! instructions block, the `sokf` skill, the hook, and the allowed command, declared
 //! once as an integration of agent-harness-adapter. Each harness of the adapter renders it into its
 //! own files.
 
@@ -36,7 +36,7 @@ pub const HOOK_COMMAND_MARK: &str = " harness hook ";
 pub const ALLOWED_COMMAND: &str = "sokf";
 
 /// `HOOK_EVENTS` lists the events that `sokf harness hook` answers.
-pub const HOOK_EVENTS: &[Event] = &[Event::Stop];
+pub const HOOK_EVENTS: &[Event] = &[Event::PromptSubmit];
 
 /// `version_line` returns the comment line that `sokf harness install` puts
 /// after the frontmatter of each skill it writes.
@@ -74,7 +74,7 @@ pub fn skill() -> Skill {
     Skill::new(name, description, format!("{}\n\n{body}", version_line()))
 }
 
-/// `hook_command` returns the command template of the stop hook: `program`, then
+/// `hook_command` returns the command template of the hook: `program`, then
 /// ` harness hook {harness} {event}`, with any brace in `program` escaped so that the
 /// adapter leaves it as written (CONF-4_AC-2).
 pub fn hook_command(program: &str) -> String {
@@ -157,7 +157,7 @@ mod tests {
     // sokf-tests: CLI-3_AC-36
     // sokf-tests: CLI-3_AC-37
     #[test]
-    fn the_integration_has_four_items_and_the_stop_hook() {
+    fn the_integration_has_four_items_and_the_hook() {
         let i = integration(&BTreeMap::new(), &[]);
         assert_eq!(
             i.items(),
@@ -170,10 +170,10 @@ mod tests {
         );
         assert_eq!(i.allowed_commands(), ["sokf"]);
         assert_eq!(i.hooks().len(), 1);
-        assert_eq!(i.hooks()[0].event(), Event::Stop);
+        assert_eq!(i.hooks()[0].event(), Event::PromptSubmit);
         assert_eq!(
             i.hooks()[0].command("claude"),
-            "sokf harness hook claude stop"
+            "sokf harness hook claude prompt-submit"
         );
         assert_eq!(
             i.hook_owner(&i.hooks()[0]).unwrap(),
@@ -187,15 +187,15 @@ mod tests {
         );
         assert_eq!(
             i.hooks()[0].command("codex"),
-            "./target/debug/sokf harness hook codex stop"
+            "./target/debug/sokf harness hook codex prompt-submit"
         );
         assert_eq!(
             i.hooks()[0].command("claude"),
-            "sokf harness hook claude stop"
+            "sokf harness hook claude prompt-submit"
         );
         assert_eq!(
-            Hook::new(Event::Stop, hook_command("${DIR}/sokf")).command("pi"),
-            "${DIR}/sokf harness hook pi stop"
+            Hook::new(Event::PromptSubmit, hook_command("${DIR}/sokf")).command("pi"),
+            "${DIR}/sokf harness hook pi prompt-submit"
         );
     }
 

@@ -21,6 +21,13 @@ fn is_executable(meta: &Metadata) -> bool {
     }
 }
 
+/// `carries_mode` returns whether the tool compares and sets the executable
+/// bit of the file `rel` of a pack. Only a file of `files/` carries the bit,
+/// and only on a platform with the bit.
+pub fn carries_mode(rel: &str) -> bool {
+    cfg!(unix) && rel.starts_with(super::source::FILES)
+}
+
 /// `file_is_executable` returns whether the file `path` exists and is
 /// executable by its owner.
 pub fn file_is_executable(path: &Path) -> bool {
