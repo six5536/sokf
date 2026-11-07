@@ -1,4 +1,4 @@
 name: sokf
-version: 0.5.0
+version: 0.5.1
 requires-sokf: 0.2.0
 description: A method for a project's knowledge, with the schemas of its architecture, stories, contracts, designs, issues, recipes, glossary, non-goals, and standards, their formats, three documentation standards, a recipe for rewriting a document, a recipe for planning a block before its code, and the instructions that give the order of the work.

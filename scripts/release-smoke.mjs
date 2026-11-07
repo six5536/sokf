@@ -72,26 +72,34 @@ try {
     fail(`unexpected clean report: ${JSON.stringify(clean.stdout)}`);
   }
 
-  // `sokf harness install` writes every part, and a second install reports
-  // every part as current.
+  // `sokf harness install` writes every part but the hooks, which are off
+  // until a repository lists them in `with`, and a second install reports
+  // every part that it writes as current.
   const installed = run(["--repo-root", repo, "harness", "install", "claude"], 0).stdout;
   if (
     installed !==
-    "claude:\n  created /CLAUDE.md (instructions)\n  created /.claude/skills (skills)\n  created /.claude/settings.json (hooks)\n  created /.claude/settings.json (permissions)\n"
+    "claude:\n  created /CLAUDE.md (instructions)\n  created /.claude/skills (skills)\n  skipped /.claude/settings.json (hooks)\n  created /.claude/settings.json (permissions)\n"
   ) {
     fail(`unexpected harness install report: ${JSON.stringify(installed)}`);
   }
   const again = run(["--repo-root", repo, "harness", "install", "claude"], 0).stdout;
   const parts = again.split("\n").filter((line) => line.startsWith("  "));
-  if (parts.length === 0 || !parts.every((line) => line.trimStart().startsWith("current "))) {
+  const written = parts.filter((line) => !line.endsWith("(hooks)"));
+  if (
+    written.length === 0 ||
+    !written.every((line) => line.trimStart().startsWith("current "))
+  ) {
     fail(`after a second harness install, not every part is current: ${JSON.stringify(again)}`);
   }
 
-  // `sokf new` creates a schema from the grammar's own template. The schema
-  // passes `sokf validate` after its writer deletes the guidance lines, and
-  // `sokf validate --fix` writes the index that lists it.
+  // `sokf new` creates a schema from the grammar's own template and updates
+  // the index that lists it. The schema passes `sokf validate` after its
+  // writer deletes the guidance lines.
   const made = run(["--repo-root", repo, "new", "Schema", "--id", "schema-note", "--write"], 0).stdout;
-  if (made !== "created /knowledge/schemas/schema-note.md\n") {
+  if (
+    made !==
+    "created /knowledge/schemas/schema-note.md\nupdated /knowledge/schemas/index.md\n"
+  ) {
     fail(`unexpected new report: ${JSON.stringify(made)}`);
   }
   const schema = join(repo, "knowledge", "schemas", "schema-note.md");

@@ -15,7 +15,9 @@
     "dev": "cargo run -p sokf --",
     "lint": "cargo clippy --workspace",
     "fmt": "cargo fmt --all",
+    "gate": "node scripts/gate.mjs",
     "smoke": "node scripts/release-smoke.mjs",
+    "test:crlf": "node scripts/test-crlf.mjs",
     "smoke:launcher": "node scripts/launcher-smoke.mjs",
     "verify-version": "node scripts/verify-version.mjs"
   },
