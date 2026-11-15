@@ -75,21 +75,19 @@ fn run() -> sokf_core::Result<u8> {
         // `init` reads no knowledge, so the cache mode does not apply to it.
         Command::Init(args) => commands::init(repo_root, args),
         Command::Harness(args) => commands::harness(repo_root, cache, args),
-        // `pack` reads no knowledge, so the cache mode does not apply to it.
-        Command::Pack(args) => commands::pack(repo_root, args),
         Command::Validate(args) => commands::validate(repo_root, cache, args),
         Command::Info(args) => commands::info(repo_root, cache, args),
         Command::New(args) => commands::new(repo_root, cache, args),
         Command::Graph(args) => commands::graph(repo_root, cache, args),
-        Command::Locate(args) => commands::locate(repo_root, cache, args),
-        Command::Completions(args) => run_completions(args),
+        Command::Locate(args) => commands::locate(repo_root, cache, &args),
+        Command::Completions(args) => run_completions(&args),
         Command::Man => run_man(),
     }
 }
 // sokf:end run
 
 /// `run_completions` writes the shell completion script for `args.shell` to stdout.
-fn run_completions(args: CompletionsArgs) -> sokf_core::Result<u8> {
+fn run_completions(args: &CompletionsArgs) -> sokf_core::Result<u8> {
     let mut cmd = Cli::command();
     let name = cmd.get_name().to_string();
     // The script goes into a buffer, not straight to stdout. `generate` returns

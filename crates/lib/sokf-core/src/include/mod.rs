@@ -6,10 +6,12 @@
 mod expand;
 mod fence;
 mod graph;
+mod pairs;
 mod region;
 
 pub use expand::{
     DefinitionEntry, Expected, expected, expected_for, path_link_label, render_definitions,
 };
 pub use graph::{includes_body, knowledge_of_additional};
+pub use pairs::pairs;
 pub use region::{RegionError, extract};

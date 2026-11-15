@@ -1,7 +1,7 @@
 //! The lifecycle check applies where the schema declares a `root`. Where the
 //! schema ties a document's lifecycle states to the path, a document must sit
-//! in the directory that its states call for (SOKF_SCHEMA_26). Elsewhere, a
-//! document must lie under the root, at any depth (SOKF_SCHEMA_51).
+//! in the directory that its states call for (`SOKF_SCHEMA_26`). Elsewhere, a
+//! document must lie under the root, at any depth (`SOKF_SCHEMA_51`).
 
 use crate::{
     Finding, RepoPath,
@@ -16,7 +16,7 @@ use crate::{
 /// one value, or isn't one of the dimension's states.
 // sokf-implements: SOKF_SCHEMA_26
 pub fn derived_dir(schema: &SokfSchema, states: &States) -> Option<RepoPath> {
-    let mut dir = RepoPath::parse(schema.root.as_deref()?)?;
+    let mut dir = schema.type_root()?;
     for dim in schema
         .core
         .core
@@ -24,9 +24,8 @@ pub fn derived_dir(schema: &SokfSchema, states: &States) -> Option<RepoPath> {
         .iter()
         .filter(|d| schema.is_path(&d.key))
     {
-        let value = match states.0.get(&dim.key).map(Vec::as_slice) {
-            Some([one]) => one,
-            _ => return None,
+        let Some([value]) = states.0.get(&dim.key).map(Vec::as_slice) else {
+            return None;
         };
         if !dim.states.contains(value) {
             return None;
@@ -96,10 +95,10 @@ mod tests {
             .iter()
             .map(|(key, states, _)| LifecycleDimension {
                 key: key.to_string(),
-                states: states.iter().map(|s| s.to_string()).collect(),
+                states: states.iter().map(ToString::to_string).collect(),
                 guidance: None,
                 line: 1,
-                extensions: Default::default(),
+                extensions: BTreeMap::default(),
             })
             .collect();
         SokfSchema {

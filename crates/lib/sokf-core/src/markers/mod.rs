@@ -6,5 +6,5 @@
 mod resolve;
 mod scan;
 
-pub use resolve::{Reference, Unresolvable, resolve};
+pub use resolve::{Reference, Unresolvable, names_broken_store, resolve};
 pub use scan::{BINARY_PROBE, IgnoreFault, MarkerRow, RowKind, is_binary, scan};

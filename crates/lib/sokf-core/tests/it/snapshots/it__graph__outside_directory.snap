@@ -1,0 +1,34 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+expression: "json(&tree, query(&[\"crates\"], 0))"
+---
+{
+  "start": [
+    "/crates"
+  ],
+  "nodes": [
+    {
+      "kind": "directory",
+      "path": "/crates"
+    },
+    {
+      "kind": "file",
+      "path": "/crates/app/sokf/src/main.rs"
+    },
+    {
+      "kind": "file",
+      "path": "/crates/lib/example-core/src/planner.rs"
+    }
+  ],
+  "edges": [],
+  "summary": {
+    "documents": {
+      "shown": 0,
+      "total": 0
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

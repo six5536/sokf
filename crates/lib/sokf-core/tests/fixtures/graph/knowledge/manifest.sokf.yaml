@@ -1,0 +1,4 @@
+sokf: "0.6"
+name: example-knowledge
+scope: test
+description: The example knowledge of the graph design.

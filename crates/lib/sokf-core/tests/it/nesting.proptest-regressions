@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2ad0282ffa5ab7c63b2530ac955feb0e1411a450e45b2aaf1c12ae4bcc6c7f71 # shrinks to n = Nested { optional: false, paired: false, numbered: false, shelf_gate: Some("done"), index_gate: None }

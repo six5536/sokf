@@ -1,7 +1,9 @@
 //! The index check: every directory of a knowledge has its generated
-//! `index.md` (SOKF_FORMAT_96 to SOKF_FORMAT_110).
+//! `index.md` (`SOKF_FORMAT_96` to `SOKF_FORMAT_110`).
 
-use crate::{Finding, Indexes, Located, Model, index};
+use std::collections::BTreeMap;
+
+use crate::{Finding, Indexes, Located, Model, RepoPath, formatter::Layout, index};
 
 /// `check_indexes` reports one finding, at the index's path and with no line,
 /// for each directory that has no index and for each index whose text differs
@@ -10,12 +12,32 @@ use crate::{Finding, Indexes, Located, Model, index};
 // sokf-implements: SOKF_FORMAT_96
 // sokf-implements: SOKF_FORMAT_97
 // sokf-implements: CLI-4_AC-27
-pub fn check_indexes(model: &Model, indexes: &Indexes) -> Vec<Finding> {
-    let mut findings = Vec::new();
+// sokf-implements: CLI-4_AC-46
+pub fn check_indexes(model: &Model, indexes: &Indexes, layout: &Layout) -> Vec<Finding> {
+    check_indexes_by_index(model, indexes, layout)
+        .into_values()
+        .flatten()
+        .collect()
+}
+
+/// `check_indexes_by_index` returns the findings of `check_indexes` by the
+/// index that they concern, the warning that the formatter failed among
+/// them, which lies at the formatter's configuration file (CLI-4_AC-49).
+pub fn check_indexes_by_index(
+    model: &Model,
+    indexes: &Indexes,
+    layout: &Layout,
+) -> BTreeMap<RepoPath, Vec<Finding>> {
+    let mut by_index = BTreeMap::new();
     for (path, text) in &indexes.expected {
+        let findings: &mut Vec<Finding> = by_index.entry(path.clone()).or_default();
         match model.by_path(path) {
+            // An index that the formatter re-laid, even with an entry over
+            // two lines, holds what sokf writes.
+            Some(Located::Index(_, file)) if layout.same("md", text, &file.source.text) => {}
             // sokf-implements: CLI-4_AC-35
             Some(Located::Index(_, file)) if !index::is_generated(&file.source.text) => {
+                findings.extend(layout.warning("md", text, &file.source.text));
                 findings.push(Finding::error(
                     path.clone(),
                     None,
@@ -24,14 +46,13 @@ pub fn check_indexes(model: &Model, indexes: &Indexes) -> Vec<Finding> {
                 ));
             }
             Some(Located::Index(_, file)) => {
-                if file.source.text != *text {
-                    findings.push(Finding::error(
-                        path.clone(),
-                        None,
-                        "SOKF_FORMAT_97",
-                        "the index is stale: it differs from the generated content",
-                    ));
-                }
+                findings.extend(layout.warning("md", text, &file.source.text));
+                findings.push(Finding::error(
+                    path.clone(),
+                    None,
+                    "SOKF_FORMAT_97",
+                    "the index is stale: it differs from the generated content",
+                ));
             }
             _ => findings.push(Finding::error(
                 path.clone(),
@@ -41,7 +62,7 @@ pub fn check_indexes(model: &Model, indexes: &Indexes) -> Vec<Finding> {
             )),
         }
     }
-    findings
+    by_index
 }
 
 #[cfg(test)]
@@ -87,7 +108,7 @@ mod tests {
         let tree = collect(&root, &Config::default()).unwrap();
         let model = build(tree, &mut FsLoader::new(&root)).unwrap();
         let indexes = index::expected(&model, &[]);
-        let findings = check_indexes(&model, &indexes);
+        let findings = check_indexes(&model, &indexes, &Layout::default());
         let lines: Vec<(String, Option<usize>, String)> = findings
             .iter()
             .map(|f| (f.path.to_string(), f.line, crate::report::message(f)))
@@ -123,7 +144,7 @@ mod tests {
         let root = RepoRoot::new(dir.clone());
         let tree = collect(&root, &Config::default()).unwrap();
         let model = build(tree, &mut FsLoader::new(&root)).unwrap();
-        let findings = check_indexes(&model, &index::expected(&model, &[]));
+        let findings = check_indexes(&model, &index::expected(&model, &[]), &Layout::default());
         let on_schemas: Vec<String> = findings
             .iter()
             .filter(|f| f.path.as_str() == "/knowledge/schemas/index.md")

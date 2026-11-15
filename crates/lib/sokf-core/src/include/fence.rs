@@ -1,5 +1,5 @@
 //! This module builds the code fence around the content of a file-form
-//! include (SOKF_FORMAT_92 to SOKF_FORMAT_94).
+//! include (`SOKF_FORMAT_92` to `SOKF_FORMAT_94`).
 
 use crate::RepoPath;
 
@@ -52,6 +52,8 @@ pub fn fenced(extraction: &str, path: &RepoPath) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use proptest::prelude::*;
 
     use super::*;
@@ -87,7 +89,10 @@ mod tests {
 
         #[test]
         fn the_fenced_content_parses_back_unchanged(lines in prop::collection::vec("[a-z` ]{0,12}", 0..6)) {
-            let content: String = lines.iter().map(|l| format!("{l}\n")).collect();
+            let content = lines.iter().fold(String::new(), |mut out, l| {
+                let _ = writeln!(out, "{l}");
+                out
+            });
             let n = fence_len(&content);
             prop_assert!(n >= 3);
             prop_assert!(!content.contains(&"`".repeat(n)));

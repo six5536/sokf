@@ -10,7 +10,7 @@ use super::{Edge, EdgeKind, Graph, Hydrator, Node, NodeKey, NodeKind, model::anc
 use crate::{
     Document, FileKind, Model, RepoPath, Segments, Yaml,
     markdown::{Body, IncludeTarget},
-    model::keys::Label,
+    model::{frontmatter::Resource, keys::Label},
     yaml::Spanned,
 };
 
@@ -33,7 +33,7 @@ pub enum Target {
 /// `resolve_to` resolves `to`, written in a document of `knowledge`. Text
 /// that starts with `/` is a path, and any other text is an id. A store can
 /// prefix an id. A path that identifies a document in any store
-/// resolves to that document (SOKF_FORMAT_54). The lookup searches both the
+/// resolves to that document (`SOKF_FORMAT_54`). The lookup searches both the
 /// documents that the run holds and the rows of the store, so the target
 /// does not need to be in the run (CACHE-1_AC-22).
 // sokf-implements: SOKF_FORMAT_54
@@ -84,6 +84,10 @@ fn path_in(
 // sokf-implements: SOKF_FORMAT_57
 // sokf-implements: SOKF_FORMAT_115
 // sokf-implements: SOKF_FORMAT_116
+#[expect(
+    clippy::match_same_arms,
+    reason = "the arm for `relates-to` repeats the wildcard's value, so that the list names every inverse that SOKF_FORMAT_116 gives"
+)]
 pub fn inverse_rel(rel: &str) -> &'static str {
     match rel {
         "relates-to" => "relates-to",
@@ -148,7 +152,9 @@ pub fn frontmatter_json(doc: &Document) -> Map<String, Value> {
     fields
 }
 
-fn yaml_json(value: &Spanned) -> Value {
+/// `yaml_json` returns the YAML value `value` as JSON, with each map's keys in
+/// the order that it writes them.
+pub(crate) fn yaml_json(value: &Spanned) -> Value {
     match &value.value {
         Yaml::Null => Value::Null,
         Yaml::Bool(b) => Value::Bool(*b),
@@ -410,7 +416,7 @@ impl<'a> Builder<'a> {
             );
         }
         self.body_links(&doc.path, Some(k), &doc.body, &reached);
-        let resources = doc.core.resource.iter().flat_map(|r| r.entries());
+        let resources = doc.core.resource.iter().flat_map(Resource::entries);
         let paths = resources
             .map(|r| (EdgeKind::Resource, r.as_str(), "describes"))
             .chain(
@@ -550,6 +556,17 @@ fn target(nodes: &mut BTreeMap<NodeKey, Node>, key: NodeKey) -> NodeKey {
 /// edge unless that inverse is declared too.
 // sokf-implements: CLI-7_AC-5
 fn link(nodes: &mut BTreeMap<NodeKey, Node>, raw: Vec<RawEdge>) -> Vec<Edge> {
+    type Ends<'e> = (
+        &'e NodeKey,
+        EdgeKind,
+        &'e NodeKey,
+        &'e str,
+        Option<&'e str>,
+        Option<usize>,
+    );
+    fn ends(e: &Edge) -> Ends<'_> {
+        (&e.from, e.kind, &e.to, &e.rel, e.region.as_deref(), e.line)
+    }
     let mut edges: Vec<Edge> = Vec::with_capacity(raw.len());
     for e in raw {
         let to = target(nodes, e.to);
@@ -566,17 +583,6 @@ fn link(nodes: &mut BTreeMap<NodeKey, Node>, raw: Vec<RawEdge>) -> Vec<Edge> {
             synthesised: false,
             note: e.note,
         });
-    }
-    type Ends<'e> = (
-        &'e NodeKey,
-        EdgeKind,
-        &'e NodeKey,
-        &'e str,
-        Option<&'e str>,
-        Option<usize>,
-    );
-    fn ends(e: &Edge) -> Ends<'_> {
-        (&e.from, e.kind, &e.to, &e.rel, e.region.as_deref(), e.line)
     }
     let declared: BTreeSet<Ends> = edges.iter().map(ends).collect();
     let inverses: Vec<Edge> = edges

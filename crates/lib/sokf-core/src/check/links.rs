@@ -1,14 +1,18 @@
 //! This module checks links: labels, fragments, paths, images, footnotes,
-//! and mirroring (SOKF_FORMAT_30, SOKF_FORMAT_37, SOKF_FORMAT_41,
-//! SOKF_FORMAT_53, SOKF_FORMAT_60 to SOKF_FORMAT_76, and SOKF_FORMAT_157 to
-//! SOKF_FORMAT_159).
+//! and mirroring (`SOKF_FORMAT_30`, `SOKF_FORMAT_37`, `SOKF_FORMAT_41`,
+//! `SOKF_FORMAT_53`, `SOKF_FORMAT_60` to `SOKF_FORMAT_76`, and `SOKF_FORMAT_157` to
+//! `SOKF_FORMAT_159`).
 
 use super::{Citations, Ctx, DocView, deprecated::Citer};
 use crate::{
     Finding, RepoPath,
     graph::{Target, resolve_to},
     markdown::{Link, LinkTarget, is_url, sokf_label},
-    model::keys::{self, Label, Unresolved},
+    model::{
+        CoreFields,
+        frontmatter::Resource,
+        keys::{self, Label, Unresolved},
+    },
 };
 
 /// `check_document` checks every body link, image, and footnote of a
@@ -16,16 +20,11 @@ use crate::{
 /// of its frontmatter. It records each `sokf:` label that resolves in a typed
 /// document or an additional file in `citations`. The coverage pass and the
 /// pass of a deprecated document read `citations`.
-// sokf-implements: SOKF_FORMAT_30
-// sokf-implements: SOKF_FORMAT_37
-// sokf-implements: SOKF_FORMAT_41
 // sokf-implements: SOKF_FORMAT_53
 // sokf-implements: SOKF_FORMAT_60
-// sokf-implements: SOKF_FORMAT_61
 // sokf-implements: SOKF_FORMAT_64
 // sokf-implements: SOKF_FORMAT_65
 // sokf-implements: SOKF_FORMAT_66
-// sokf-implements: SOKF_FORMAT_67
 // sokf-implements: SOKF_FORMAT_70
 // sokf-implements: SOKF_FORMAT_71
 // sokf-implements: SOKF_FORMAT_72
@@ -54,83 +53,15 @@ pub fn check_document(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations
     let Some(core) = doc.core else {
         return findings;
     };
-    // Each footnote label must match a `sources[].id`.
-    for (label, line) in &doc.body.footnote_refs {
-        if !core.sources.iter().any(|s| s.id.as_deref() == Some(label)) {
-            fail(
-                &mut findings,
-                Some(*line),
-                format!("footnote `[^{label}]` matches no `sources[].id`"),
-                "SOKF_FORMAT_41",
-            );
-        }
-    }
-    // Each path in `resource` and `sources[].resource` must name a file that
-    // exists, or, in `resource`, a file that a document plans.
-    // sokf-implements: SOKF_SCHEMA_53
-    for resource in core.resource.iter().flat_map(|r| r.entries()) {
-        if let Some(p) = RepoPath::parse(resource)
-            && !ctx.model.exists(&p)
-            && !ctx.model.is_planned(&p)
-        {
-            fail(
-                &mut findings,
-                core.line_of("resource"),
-                format!("`resource` refers to a file that doesn't exist: `{resource}`"),
-                "SOKF_FORMAT_30",
-            );
-        }
-    }
-    for source in &core.sources {
-        if let Some(p) = RepoPath::parse(&source.resource) {
-            if !ctx.model.exists(&p) {
-                fail(
-                    &mut findings,
-                    Some(source.line),
-                    format!(
-                        "`sources[].resource` refers to a file that doesn't exist: {}",
-                        source.resource
-                    ),
-                    "SOKF_FORMAT_37",
-                );
-            }
-        } else if !is_url(&source.resource) {
-            fail(
-                &mut findings,
-                Some(source.line),
-                format!(
-                    "`sources[].resource` must be a `/` path or a URL: {}",
-                    source.resource
-                ),
-                "SOKF_FORMAT_37",
-            );
-        }
-    }
+    check_footnotes(doc, core, &mut findings);
+    check_resources(doc, core, ctx, &mut findings);
     // Each `links` entry must resolve, and a body link must mirror it.
     let Some(k) = knowledge else {
         return findings;
     };
     for entry in &core.links {
         let Some(target) = resolve_to(ctx.model, k, &entry.to) else {
-            // When the entry refers to a store that is not a knowledge root, the
-            // message mentions that store, as it does for a label.
-            let (message, key) = match crate::model::split_store(&entry.to) {
-                (Some(store), _)
-                    if !entry.to.starts_with('/') && ctx.model.store(k, store).is_none() =>
-                {
-                    (
-                        format!(
-                            "`links` entry `to: {}` refers to the store `{store}`, which is not a knowledge root of this repository",
-                            entry.to
-                        ),
-                        "SOKF_FORMAT_64",
-                    )
-                }
-                _ => (
-                    format!("`links` entry `to: {}` resolves to nothing", entry.to),
-                    "SOKF_FORMAT_53",
-                ),
-            };
+            let (message, key) = unresolved_entry(ctx, k, &entry.to);
             fail(&mut findings, Some(entry.line), message, key);
             continue;
         };
@@ -162,32 +93,7 @@ pub fn check_document(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations
                 "SOKF_FORMAT_65",
             );
         }
-        let mirrored = doc.body.links.iter().any(|l| match (&l.target, &target) {
-            // A bare key does not identify a document, so it cannot mirror a `links` entry.
-            (
-                LinkTarget::Host(rest),
-                Target::Document {
-                    path: target_path, ..
-                },
-            ) => {
-                let label = Label::parse(rest);
-                label.id.is_some()
-                    && keys::resolve(ctx.model, ctx.keys, k, label)
-                        .is_ok_and(|r| &r.path == target_path)
-            }
-            (
-                LinkTarget::Repo { path, .. },
-                Target::Document {
-                    path: target_path, ..
-                },
-            ) => path == target_path,
-            (LinkTarget::Repo { path, .. }, Target::File(target_path)) => path == target_path,
-            (LinkTarget::Relative { target: rel, .. }, Target::File(target_path)) => {
-                doc.path.resolve_relative(rel).as_ref() == Some(target_path)
-            }
-            _ => false,
-        });
-        if !mirrored {
+        if !mirrored(doc, ctx, k, &target) {
             fail(
                 &mut findings,
                 Some(entry.line),
@@ -202,6 +108,144 @@ pub fn check_document(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations
     findings
 }
 
+/// `check_footnotes` reports each footnote of a document whose label
+/// matches no `sources[].id`.
+// sokf-implements: SOKF_FORMAT_41
+fn check_footnotes(doc: DocView<'_>, core: &CoreFields, findings: &mut Vec<Finding>) {
+    // Each footnote label must match a `sources[].id`.
+    for (label, line) in &doc.body.footnote_refs {
+        if !core.sources.iter().any(|s| s.id.as_deref() == Some(label)) {
+            findings.push(Finding::error(
+                doc.path.clone(),
+                Some(*line),
+                "SOKF_FORMAT_41",
+                format!("footnote `[^{label}]` matches no `sources[].id`"),
+            ));
+        }
+    }
+}
+
+/// `check_resources` reports each path in the `resource` and the
+/// `sources[].resource` of a document that names no file, and each
+/// `sources[].resource` that is neither a path nor a URL.
+// sokf-implements: SOKF_FORMAT_30
+// sokf-implements: SOKF_FORMAT_37
+fn check_resources(
+    doc: DocView<'_>,
+    core: &CoreFields,
+    ctx: &Ctx<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let fail =
+        |findings: &mut Vec<Finding>, line: Option<usize>, msg: String, key: &'static str| {
+            findings.push(Finding::error(doc.path.clone(), line, key, msg));
+        };
+    // Each path in `resource` and `sources[].resource` must name a file that
+    // exists, or, in `resource`, a file that a document plans.
+    // sokf-implements: SOKF_SCHEMA_53
+    for resource in core.resource.iter().flat_map(Resource::entries) {
+        if let Some(p) = RepoPath::parse(resource)
+            && !ctx.model.exists(&p)
+            && !ctx.model.is_planned(&p)
+        {
+            fail(
+                findings,
+                core.line_of("resource"),
+                format!("`resource` refers to a file that doesn't exist: `{resource}`"),
+                "SOKF_FORMAT_30",
+            );
+        }
+    }
+    for source in &core.sources {
+        if let Some(p) = RepoPath::parse(&source.resource) {
+            if !ctx.model.exists(&p) {
+                fail(
+                    findings,
+                    Some(source.line),
+                    format!(
+                        "`sources[].resource` refers to a file that doesn't exist: {}",
+                        source.resource
+                    ),
+                    "SOKF_FORMAT_37",
+                );
+            }
+        } else if !is_url(&source.resource) {
+            fail(
+                findings,
+                Some(source.line),
+                format!(
+                    "`sources[].resource` must be a `/` path or a URL: {}",
+                    source.resource
+                ),
+                "SOKF_FORMAT_37",
+            );
+        }
+    }
+}
+
+/// `unresolved_entry` returns the message and the criterion of a `links`
+/// entry of the store `k` whose `to` resolves to nothing.
+fn unresolved_entry(ctx: &Ctx<'_>, k: usize, to: &str) -> (String, &'static str) {
+    // When the entry refers to a store that is not a knowledge root, the
+    // message mentions that store, as it does for a label.
+    match crate::model::split_store(to) {
+        (Some(store), _) if !to.starts_with('/') && ctx.model.store(k, store).is_none() => (
+            format!(
+                "`links` entry `to: {to}` refers to the store `{store}`, which is not a knowledge root of this repository"
+            ),
+            "SOKF_FORMAT_64",
+        ),
+        _ => (
+            format!("`links` entry `to: {to}` resolves to nothing"),
+            "SOKF_FORMAT_53",
+        ),
+    }
+}
+
+/// `mirrored` returns whether a body link of a document of the store `k`
+/// refers to `target`, and so mirrors a `links` entry that resolves to it.
+fn mirrored(doc: DocView<'_>, ctx: &Ctx<'_>, k: usize, target: &Target) -> bool {
+    doc.body.links.iter().any(|l| match (&l.target, target) {
+        // A bare key does not identify a document, so it cannot mirror a `links` entry.
+        (
+            LinkTarget::Host(rest),
+            Target::Document {
+                path: target_path, ..
+            },
+        ) => {
+            let label = Label::parse(rest);
+            label.id.is_some()
+                && keys::resolve(ctx.model, ctx.keys, k, label)
+                    .is_ok_and(|r| &r.path == target_path)
+        }
+        (
+            LinkTarget::Repo { path, .. },
+            Target::Document {
+                path: target_path, ..
+            }
+            | Target::File(target_path),
+        ) => path == target_path,
+        (LinkTarget::Relative { target: rel, .. }, Target::File(target_path)) => {
+            doc.path.resolve_relative(rel).as_ref() == Some(target_path)
+        }
+        _ => false,
+    })
+}
+
+/// `fail_at` reports the error `msg`, with the key `key`, at the line `line`
+/// of the document at `path`.
+fn fail_at(
+    findings: &mut Vec<Finding>,
+    path: &RepoPath,
+    line: usize,
+    msg: String,
+    key: &'static str,
+) {
+    findings.push(Finding::error(path.clone(), Some(line), key, msg));
+}
+
+/// `check_link` checks one body link or image of a document: a `sokf:`
+/// label, a reference, a path, or an anchor.
 fn check_link(
     link: &Link,
     doc: DocView<'_>,
@@ -212,75 +256,13 @@ fn check_link(
 ) {
     let path = doc.path;
     let what = if link.is_image { "image" } else { "link" };
-    let fail = |findings: &mut Vec<Finding>, msg: String, key: &'static str| {
-        findings.push(Finding::error(path.clone(), Some(link.line), key, msg));
-    };
     match &link.target {
-        LinkTarget::Host(_) => {
-            let label = sokf_label(link).unwrap_or_default();
-            let parts = Label::of(&link.target).unwrap_or_default();
-            match ctx.knowledge {
-                None => fail(
-                    findings,
-                    format!(
-                        "`[{label}]` cites a document from a file that is outside any knowledge root"
-                    ),
-                    "SOKF_FORMAT_61",
-                ),
-                Some(k) => {
-                    let resolved = keys::resolve(ctx.model, ctx.keys, k, parts);
-                    // A resolved label from a typed document or an additional
-                    // file is a citation of its target (SOKF_SCHEMA_17,
-                    // SOKF_VALIDATION_57).
-                    // sokf-implements: EXT-9_AC-2
-                    if let Ok(r) = &resolved
-                        && let Some(citer) = citer
-                    {
-                        citations.add(
-                            r.path.clone(),
-                            citer.cite(&r.path, r.slug.clone(), link.line, false),
-                        );
-                    }
-                    // Each target has one spelling: the label with the
-                    // shortest store prefix that identifies it.
-                    if let Ok(r) = &resolved
-                        && let Some(canonical) =
-                            ctx.model
-                                .canonical_label(k, r.knowledge, parts.id, parts.fragment)
-                        && canonical != label
-                    {
-                        fail(
-                            findings,
-                            format!(
-                                "write `[{label}]` as `[{canonical}]`, the shortest form that identifies the document in this store. `--fix` makes this change"
-                            ),
-                            "SOKF_FORMAT_65",
-                        );
-                    }
-                    match resolved {
-                        Err(u) => fail(findings, u.message(&label), unresolved_key(&u, parts)),
-                        // An image embeds a file, so its label must identify a
-                        // sidecar, whose asset is that file.
-                        Ok(resolved)
-                            if link.is_image && ctx.model.asset_of(&resolved.path).is_none() =>
-                        {
-                            fail(
-                                findings,
-                                format!(
-                                    "image `[{label}]` refers to the document `{}`, which is not a sidecar. An image must refer to an asset through its sidecar's id",
-                                    resolved.path
-                                ),
-                                "SOKF_FORMAT_67",
-                            );
-                        }
-                        Ok(_) => {}
-                    }
-                }
-            }
-        }
+        LinkTarget::Host(_) => check_label(link, doc, ctx, findings, citations, citer),
         LinkTarget::Reference(label) => {
-            fail(
+            fail_at(
                 findings,
+                path,
+                link.line,
                 format!("reference-style link `[{label}]` matches no definition"),
                 "SOKF_FORMAT_74",
             );
@@ -293,8 +275,10 @@ fn check_link(
             // sokf-implements: SOKF_FORMAT_157
             // sokf-implements: SOKF_FORMAT_158
             if *dir && !ctx.model.is_dir(target) && ctx.model.exists(target) {
-                fail(
+                fail_at(
                     findings,
+                    path,
+                    link.line,
                     format!("{what} `{target}/` names a file, not a directory"),
                     "SOKF_FORMAT_76",
                 );
@@ -304,15 +288,19 @@ fn check_link(
         }
         LinkTarget::Relative { target, .. } => match doc.path.resolve_relative(target) {
             Some(resolved) => check_path(&resolved, link, doc, ctx, findings),
-            None => fail(
+            None => fail_at(
                 findings,
+                path,
+                link.line,
                 format!("{what} `{target}` points outside the repository"),
                 "SOKF_FORMAT_76",
             ),
         },
         // sokf-implements: SOKF_FORMAT_159
-        LinkTarget::Invalid(url) => fail(
+        LinkTarget::Invalid(url) => fail_at(
             findings,
+            path,
+            link.line,
             format!("{what} `{url}` is not a valid repository path"),
             "SOKF_FORMAT_76",
         ),
@@ -325,17 +313,102 @@ fn check_link(
                     ),
                     _ => format!("`#{fragment}` matches no heading or key in this document"),
                 };
-                fail(findings, message, "SOKF_FORMAT_73");
+                fail_at(findings, path, link.line, message, "SOKF_FORMAT_73");
             }
         }
         LinkTarget::Url(_) => {}
     }
 }
 
+/// `check_label` checks a body link or image whose target is a `sokf:`
+/// label: it reports a label outside any knowledge root, a label that is
+/// not in its canonical form or resolves to nothing, and an image whose
+/// label names no sidecar. It records each label that resolves in
+/// `citations`.
+// sokf-implements: SOKF_FORMAT_61
+// sokf-implements: SOKF_FORMAT_67
+fn check_label(
+    link: &Link,
+    doc: DocView<'_>,
+    ctx: &Ctx<'_>,
+    findings: &mut Vec<Finding>,
+    citations: &mut Citations,
+    citer: Option<&Citer>,
+) {
+    let label = sokf_label(link).unwrap_or_default();
+    let parts = Label::of(&link.target).unwrap_or_default();
+    match ctx.knowledge {
+        None => fail_at(
+            findings,
+            doc.path,
+            link.line,
+            format!("`[{label}]` cites a document from a file that is outside any knowledge root"),
+            "SOKF_FORMAT_61",
+        ),
+        Some(k) => {
+            let resolved = keys::resolve(ctx.model, ctx.keys, k, parts);
+            // A resolved label from a typed document or an additional
+            // file is a citation of its target (SOKF_SCHEMA_17,
+            // SOKF_VALIDATION_57).
+            // sokf-implements: EXT-9_AC-2
+            if let Ok(r) = &resolved
+                && let Some(citer) = citer
+            {
+                citations.add(
+                    r.path.clone(),
+                    citer.cite(&r.path, r.slug.clone(), link.line, false),
+                );
+            }
+            // Each target has one spelling: the label with the
+            // shortest store prefix that identifies it.
+            if let Ok(r) = &resolved
+                && let Some(canonical) =
+                    ctx.model
+                        .canonical_label(k, r.knowledge, parts.id, parts.fragment)
+                && canonical != label
+            {
+                fail_at(
+                    findings,
+                    doc.path,
+                    link.line,
+                    format!(
+                        "write `[{label}]` as `[{canonical}]`, the shortest form that identifies the document in this store. `--fix` makes this change"
+                    ),
+                    "SOKF_FORMAT_65",
+                );
+            }
+            match resolved {
+                Err(u) => fail_at(
+                    findings,
+                    doc.path,
+                    link.line,
+                    u.message(&label),
+                    unresolved_key(&u, parts),
+                ),
+                // An image embeds a file, so its label must identify a
+                // sidecar, whose asset is that file.
+                Ok(resolved) if link.is_image && ctx.model.asset_of(&resolved.path).is_none() => {
+                    fail_at(
+                        findings,
+                        doc.path,
+                        link.line,
+                        format!(
+                            "image `[{label}]` refers to the document `{}`, which is not a sidecar. An image must refer to an asset through its sidecar's id",
+                            resolved.path
+                        ),
+                        "SOKF_FORMAT_67",
+                    );
+                }
+                Ok(_) => {}
+            }
+        }
+    }
+}
+
 /// `suffix_clashes` reports each key whose slug equals the suffixed slug
 /// of a heading, such as a key `foo-1` beside a second heading `Foo`. The
-/// engine compares a key with the plain slug of each heading (TLMD_101),
-/// and the suffix is the host's rule, which sokf models (SOKF_FORMAT_155).
+/// engine compares a key with the plain slug of each heading (`TLMD_101`),
+/// and the suffix is the host's rule, which sokf models (`SOKF_FORMAT_155`).
 // sokf-implements: SOKF_FORMAT_68
 fn suffix_clashes(doc: DocView<'_>, ctx: &Ctx<'_>, findings: &mut Vec<Finding>) {
     let suffixed = crate::markdown::suffixed_headings(doc.body);
@@ -379,7 +452,7 @@ fn unresolved_key(u: &Unresolved, label: Label<'_>) -> &'static str {
 
 /// `canonical_to` returns the canonical `to` of a `links` entry that refers to
 /// a document: its id, with the shortest store prefix that identifies it
-/// (SOKF_FORMAT_65).
+/// (`SOKF_FORMAT_65`).
 fn canonical_to(ctx: &Ctx<'_>, citing: usize, target: &Target) -> Option<String> {
     let Target::Document { id, knowledge, .. } = target else {
         return None;
@@ -389,7 +462,7 @@ fn canonical_to(ctx: &Ctx<'_>, citing: usize, target: &Target) -> Option<String>
 
 /// `check_path` checks a path link or image. A link to a document or an asset
 /// of any store must use its canonical `sokf:` label instead, which `--fix`
-/// writes when it can (SOKF_FORMAT_60). A link to any other file must point to
+/// writes when it can (`SOKF_FORMAT_60`). A link to any other file must point to
 /// a file or a directory that exists, or that a document plans.
 fn check_path(
     target: &RepoPath,

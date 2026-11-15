@@ -13,6 +13,7 @@ mod near;
 mod start;
 mod traverse;
 
+pub(crate) use build::yaml_json;
 pub use build::{
     RawEdge, Target, build, build_from, edges_of, frontmatter_json, inverse_rel, resolve_to,
 };

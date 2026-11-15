@@ -1,0 +1,19 @@
+[
+  "dist/",
+  "node_modules/",
+  "templates/",
+  ".github/",
+  "outputs/",
+  "coverage/",
+  "*.lock",
+  "schema/",
+  ".claude/skills/",
+  "sokf-spec/json/",
+  "AGENTS.md",
+  "/archive/",
+  "/crates/",
+  "/packs/",
+  "/sokf-spec/",
+  "/harness/",
+  "/knowledge/contracts/contract-schema-extension.md"
+]

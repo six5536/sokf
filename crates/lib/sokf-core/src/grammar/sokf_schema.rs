@@ -10,7 +10,7 @@ use tramlines_md::grammar::lower_common;
 use super::{Block, RuleCommon, Schema, Unit};
 use crate::{Finding, RepoPath, Spanned};
 
-/// `Dispatch` says which files a schema governs (SOKF_SCHEMA_3).
+/// `Dispatch` says which files a schema governs (`SOKF_SCHEMA_3`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dispatch {
     /// `Type` selects every document of the named type.
@@ -39,7 +39,7 @@ pub struct LinkRule {
 }
 
 /// `CitedFrom` says what a `cited-by` entry counts as a citation
-/// (SOKF_SCHEMA_48).
+/// (`SOKF_SCHEMA_48`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CitedFrom {
     /// `from-type` lists the types whose body links count: a link from a
@@ -170,6 +170,13 @@ pub fn glob_inside(glob: &str, dir: &RepoPath) -> bool {
 }
 
 impl SokfSchema {
+    /// `type_root` returns the schema's `root`, the directory that holds
+    /// the type's documents, as a path in the repository, when the schema
+    /// declares one that parses.
+    pub fn type_root(&self) -> Option<RepoPath> {
+        RepoPath::parse(self.root.as_deref()?)
+    }
+
     /// `of_schema_document` returns the schema that the grammar's
     /// `schema-document` section defines. That schema governs Schema
     /// documents and demands nothing that SOKF adds. Tests also use it as a
@@ -197,20 +204,108 @@ impl SokfSchema {
     /// schema extension (contract-schema-extension) that the generic check
     /// cannot test. It returns the schema with a finding for each rule that
     /// the file breaks.
+    pub fn lower(core: Schema, yaml: &Spanned, path: &RepoPath) -> (Self, Vec<Finding>) {
+        let mut lw = Lowering {
+            core: &core,
+            yaml,
+            path,
+            findings: Vec::new(),
+        };
+        let (dispatch, asset_files) = lw.dispatch();
+        let paths = path_dimensions(&core);
+        let root = lw.ext("root").and_then(|r| r.as_str()).map(str::to_string);
+        lw.check_archived();
+        lw.check_lifecycle(&paths, root.as_deref());
+        lw.findings.extend(asset_globs(
+            path,
+            lw.ext("asset-files").map_or(yaml.line, |a| a.line),
+            &asset_files,
+            root.as_deref(),
+        ));
+        let links = lw.links();
+        let links_open = lw
+            .ext("links-open")
+            .and_then(Spanned::as_bool)
+            .unwrap_or(false);
+        let cited_by = lw.cited_by();
+        let markers = lw.markers();
+        let plans_paths = lw.plans_paths();
+        // The grammar checks that each pattern compiles (TL_118).
+        let current_links = lw
+            .ext("current-links")
+            .map(list)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|p| regex::Regex::new(p).ok())
+            .collect();
+        let findings = lw.findings;
+        let unit_types = unit_types(&core);
+        let schema = SokfSchema {
+            core,
+            dispatch,
+            asset_files,
+            root,
+            paths,
+            links,
+            links_open,
+            cited_by,
+            markers,
+            plans_paths,
+            current_links,
+            unit_types,
+        };
+        (schema, findings)
+    }
+
+    /// `has_assets` reports whether the schema's documents are sidecars, that
+    /// is, whether the schema declares `asset-files` (`SOKF_SCHEMA_11`).
+    pub fn has_assets(&self) -> bool {
+        !self.asset_files.is_empty()
+    }
+
+    /// `is_path` reports whether the lifecycle dimension `key` declares `path`.
+    pub fn is_path(&self, key: &str) -> bool {
+        self.paths.iter().any(|p| p == key)
+    }
+}
+
+/// `Lowering` is the state that `SokfSchema::lower` shares between its
+/// steps: the engine's schema, the schema file's YAML and path, and the
+/// findings raised so far.
+struct Lowering<'a> {
+    /// `core` is the engine's schema of the file.
+    core: &'a Schema,
+    /// `yaml` is the schema file's YAML.
+    yaml: &'a Spanned,
+    /// `path` is the path of the schema file.
+    path: &'a RepoPath,
+    /// `findings` holds the findings raised so far, in the order of the steps.
+    findings: Vec<Finding>,
+}
+
+impl<'a> Lowering<'a> {
+    /// `ext` returns the node of the extension key `key`, if the schema
+    /// declares it.
+    fn ext(&self, key: &str) -> Option<&'a Spanned> {
+        self.core.extensions.get(key)
+    }
+
+    /// `dispatch` reads how the schema selects its files, from its `type`
+    /// const, `additional-files`, and `asset-files`, and returns the dispatch
+    /// with the asset globs. It checks that the schema declares exactly one
+    /// of `type` and `additional-files`, and `asset-files` only with `type`.
     // sokf-implements: EXT-2_AC-2
     // sokf-implements: SOKF_SCHEMA_3
-    // sokf-implements: SOKF_SCHEMA_27
-    pub fn lower(core: Schema, yaml: &Spanned, path: &RepoPath) -> (Self, Vec<Finding>) {
-        let mut findings = Vec::new();
-        let ext = |key: &str| core.extensions.get(key);
-        let globs = ext("additional-files").map(list);
-        let assets = ext("asset-files").map(list);
+    fn dispatch(&mut self) -> (Dispatch, Vec<String>) {
+        let (path, yaml) = (self.path, self.yaml);
+        let globs = self.ext("additional-files").map(list);
+        let assets = self.ext("asset-files").map(list);
         // A schema dispatches on a `type` const, on `additional-files`, or
         // on a `type` const with `asset-files`, and it must declare exactly
         // one of `type` and `additional-files`.
-        let dispatch = match (core.core.type_const().map(str::to_string), globs) {
+        let dispatch = match (self.core.core.type_const().map(str::to_string), globs) {
             (Some(_), Some(_)) => {
-                findings.push(fail(
+                self.findings.push(fail(
                     path,
                     yaml.line,
                     "SOKF_SCHEMA_3",
@@ -224,15 +319,16 @@ impl SokfSchema {
                 } else {
                     "the schema declares neither a `type` const nor `additional-files`. Declare one of them"
                 };
-                findings.push(fail(path, yaml.line, "SOKF_SCHEMA_3", message));
+                self.findings
+                    .push(fail(path, yaml.line, "SOKF_SCHEMA_3", message));
                 Dispatch::Globs(vec![])
             }
             (Some(t), None) => Dispatch::Type(t),
             (None, Some(globs)) => {
-                let line = ext("additional-files").map_or(yaml.line, |a| a.line);
+                let line = self.ext("additional-files").map_or(yaml.line, |a| a.line);
                 for g in &globs {
                     if let Some(why) = glob_problem(g) {
-                        findings.push(fail(
+                        self.findings.push(fail(
                             path,
                             line,
                             "SOKF_SCHEMA_5",
@@ -246,9 +342,9 @@ impl SokfSchema {
         let asset_files = match assets {
             None => vec![],
             Some(globs) => {
-                if ext("additional-files").is_some() {
-                    let line = ext("asset-files").map_or(yaml.line, |a| a.line);
-                    findings.push(fail(
+                if self.ext("additional-files").is_some() {
+                    let line = self.ext("asset-files").map_or(yaml.line, |a| a.line);
+                    self.findings.push(fail(
                         path,
                         line,
                         "SOKF_SCHEMA_4",
@@ -258,31 +354,26 @@ impl SokfSchema {
                 globs
             }
         };
-        let paths: Vec<String> = core
-            .core
-            .lifecycle
-            .iter()
-            .filter(|d| {
-                d.extensions
-                    .get("path")
-                    .and_then(|p| p.as_bool())
-                    .unwrap_or(false)
-            })
-            .map(|d| d.key.clone())
-            .collect();
-        let root = ext("root").and_then(|r| r.as_str()).map(str::to_string);
+        (dispatch, asset_files)
+    }
+
+    /// `check_archived` checks where the schema declares `archived`: on a
+    /// lifecycle dimension, with states of that dimension, or at the schema
+    /// level, only where the schema has no lifecycle.
+    fn check_archived(&mut self) {
+        let path = self.path;
         // Each archived state must be a state of its own dimension. A
         // schema-level `archived: true` is allowed only where the schema has
         // no lifecycle dimension to declare it on.
         // sokf-implements: EXT-7_AC-2
         // sokf-implements: SOKF_SCHEMA_50
-        for d in &core.core.lifecycle {
+        for d in &self.core.core.lifecycle {
             let Some(node) = d.extensions.get("archived") else {
                 continue;
             };
             for state in list(node) {
                 if !d.states.contains(&state) {
-                    findings.push(fail(
+                    self.findings.push(fail(
                         path,
                         node.line,
                         "SOKF_SCHEMA_50",
@@ -295,19 +386,28 @@ impl SokfSchema {
             }
         }
         // sokf-implements: EXT-2_AC-3
-        if let Some(a) = ext("archived")
-            && !core.core.lifecycle.is_empty()
+        if let Some(a) = self.ext("archived")
+            && !self.core.core.lifecycle.is_empty()
         {
-            findings.push(fail(
+            self.findings.push(fail(
                 path,
                 a.line,
                 "SOKF_SCHEMA_50",
                 "the schema declares `archived` together with `lifecycle`. Declare `archived` on a dimension",
             ));
         }
-        if let Some(l) = yaml.get("lifecycle") {
-            if ext("additional-files").is_some() {
-                findings.push(fail(
+    }
+
+    /// `check_lifecycle` checks `lifecycle` and `root` against the rest of
+    /// the schema: `lifecycle` doesn't come with `additional-files`, a
+    /// path-enforced dimension of `paths` has a `root`, and `root` is a valid
+    /// repository path.
+    // sokf-implements: SOKF_SCHEMA_27
+    fn check_lifecycle(&mut self, paths: &[String], root: Option<&str>) {
+        let path = self.path;
+        if let Some(l) = self.yaml.get("lifecycle") {
+            if self.ext("additional-files").is_some() {
+                self.findings.push(fail(
                     path,
                     l.line,
                     "SOKF_SCHEMA_4",
@@ -315,7 +415,7 @@ impl SokfSchema {
                 ));
             }
             if !paths.is_empty() && root.is_none() {
-                findings.push(fail(
+                self.findings.push(fail(
                     path,
                     l.line,
                     "SOKF_SCHEMA_27",
@@ -323,29 +423,27 @@ impl SokfSchema {
                 ));
             }
         }
-        if let Some(r) = ext("root")
-            && root.as_deref().and_then(RepoPath::parse).is_none()
+        if let Some(r) = self.ext("root")
+            && root.and_then(RepoPath::parse).is_none()
         {
-            findings.push(fail(
+            self.findings.push(fail(
                 path,
                 r.line,
                 "SOKF_SCHEMA_27",
                 "`root` is not a valid repository path: it must start with / and have no empty, `.`, or `..` segment",
             ));
         }
-        findings.extend(asset_globs(
-            path,
-            ext("asset-files").map_or(yaml.line, |a| a.line),
-            &asset_files,
-            root.as_deref(),
-        ));
+    }
+
+    /// `links` reads the schema's `links` entries into link rules.
+    fn links(&mut self) -> Vec<LinkRule> {
         let mut links = Vec::new();
-        for node in ext("links").and_then(|l| l.as_seq()).unwrap_or(&[]) {
-            let (common, problems) = lower_common(node, &core.core, path);
-            findings.extend(problems);
+        for node in self.ext("links").and_then(|l| l.as_seq()).unwrap_or(&[]) {
+            let (common, problems) = lower_common(node, &self.core.core, self.path);
+            self.findings.extend(problems);
             let usize_of = |key: &str| {
                 node.get(key)
-                    .and_then(|v| v.as_int())
+                    .and_then(Spanned::as_int)
                     .map(|i| usize::try_from(i).unwrap_or(0))
             };
             links.push(LinkRule {
@@ -364,23 +462,29 @@ impl SokfSchema {
                     .map(str::to_string),
             });
         }
-        let links_open = ext("links-open").and_then(|l| l.as_bool()).unwrap_or(false);
+        links
+    }
+
+    /// `cited_by` reads the schema's `cited-by` entries into citation rules,
+    /// and checks that each entry's `keys` names a rule that captures a key.
+    fn cited_by(&mut self) -> Vec<CitationRule> {
+        let path = self.path;
         // A citation entry's `keys` identifies a rule of this schema that
         // captures a key, and sokf resolves it as it resolves the rule of
         // `for-each-key-of`.
         // sokf-implements: EXT-9_AC-5
         let mut cited_by = Vec::new();
-        for node in ext("cited-by").and_then(|l| l.as_seq()).unwrap_or(&[]) {
-            let (common, problems) = lower_common(node, &core.core, path);
-            findings.extend(problems);
+        for node in self.ext("cited-by").and_then(|l| l.as_seq()).unwrap_or(&[]) {
+            let (common, problems) = lower_common(node, &self.core.core, path);
+            self.findings.extend(problems);
             let keys = node
                 .get("keys")
                 .and_then(|k| k.as_str())
                 .map(str::to_string);
             if let Some(k) = &keys
-                && let Err(why) = core.rule_captures_key(k)
+                && let Err(why) = self.core.rule_captures_key(k)
             {
-                findings.push(fail(
+                self.findings.push(fail(
                     path,
                     node.line,
                     "SOKF_SCHEMA_35",
@@ -406,7 +510,14 @@ impl SokfSchema {
                 message,
             });
         }
-        let markers_node = ext("markers");
+        cited_by
+    }
+
+    /// `markers` reads the schema's `markers`, the relationships of the
+    /// markers that can cite a document of the type, and checks that each is
+    /// in lowercase kebab case.
+    fn markers(&mut self) -> Option<Vec<String>> {
+        let markers_node = self.ext("markers");
         let markers = markers_node.map(list);
         // A tag is lowercase kebab case, so a rel of `markers` in another
         // form matches no marker, and the schema would refuse every marker
@@ -421,8 +532,8 @@ impl SokfSchema {
                 Some(k) => format!("Write it as `{k}`"),
                 None => "Write it as lowercase words of letters and digits joined by `-`".into(),
             };
-            findings.push(fail(
-                path,
+            self.findings.push(fail(
+                self.path,
                 item.line,
                 "EXT-9_AC-11",
                 format!(
@@ -430,24 +541,36 @@ impl SokfSchema {
                 ),
             ));
         }
+        markers
+    }
+
+    /// `plans_paths` reads the schema's `plans-paths` entries, and checks
+    /// that each entry's `section` names a section of the schema.
+    fn plans_paths(&mut self) -> Vec<PathPlan> {
+        let path = self.path;
         // A path plan's `section` is the `rule-id` of a section of this
         // schema.
         // sokf-implements: SOKF_SCHEMA_52
         let mut plans_paths = Vec::new();
-        for node in ext("plans-paths").and_then(|l| l.as_seq()).unwrap_or(&[]) {
-            let (common, problems) = lower_common(node, &core.core, path);
-            findings.extend(problems);
+        for node in self
+            .ext("plans-paths")
+            .and_then(|l| l.as_seq())
+            .unwrap_or(&[])
+        {
+            let (common, problems) = lower_common(node, &self.core.core, path);
+            self.findings.extend(problems);
             let section = node
                 .get("section")
                 .and_then(|s| s.as_str())
                 .unwrap_or_default()
                 .to_string();
-            if !core
+            if !self
+                .core
                 .sections
                 .iter()
                 .any(|s| s.rule_id.as_deref() == Some(section.as_str()))
             {
-                findings.push(fail(
+                self.findings.push(fail(
                     path,
                     node.line,
                     "SOKF_SCHEMA_52",
@@ -456,41 +579,25 @@ impl SokfSchema {
             }
             plans_paths.push(PathPlan { common, section });
         }
-        // The grammar checks that each pattern compiles (TL_118).
-        let current_links = ext("current-links")
-            .map(list)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|p| regex::Regex::new(p).ok())
-            .collect();
-        let unit_types = unit_types(&core);
-        let schema = SokfSchema {
-            core,
-            dispatch,
-            asset_files,
-            root,
-            paths,
-            links,
-            links_open,
-            cited_by,
-            markers,
-            plans_paths,
-            current_links,
-            unit_types,
-        };
-        (schema, findings)
+        plans_paths
     }
+}
 
-    /// `has_assets` reports whether the schema's documents are sidecars, that
-    /// is, whether the schema declares `asset-files` (SOKF_SCHEMA_11).
-    pub fn has_assets(&self) -> bool {
-        !self.asset_files.is_empty()
-    }
-
-    /// `is_path` reports whether the lifecycle dimension `key` declares `path`.
-    pub fn is_path(&self, key: &str) -> bool {
-        self.paths.iter().any(|p| p == key)
-    }
+/// `path_dimensions` returns the keys of the lifecycle dimensions of
+/// `schema` that declare `path`, in lifecycle order.
+fn path_dimensions(schema: &Schema) -> Vec<String> {
+    schema
+        .core
+        .lifecycle
+        .iter()
+        .filter(|d| {
+            d.extensions
+                .get("path")
+                .and_then(Spanned::as_bool)
+                .unwrap_or(false)
+        })
+        .map(|d| d.key.clone())
+        .collect()
 }
 
 /// `unit_types` returns the `to-type` of each unit rule of `schema` that
@@ -521,8 +628,8 @@ fn unit_types(schema: &Schema) -> BTreeMap<usize, Vec<String>> {
     out
 }
 
-/// `asset_globs` checks the glob rules for `asset-files` (SOKF_SCHEMA_8,
-/// SOKF_SCHEMA_10): each glob starts with /, parses, and lies inside the
+/// `asset_globs` checks the glob rules for `asset-files` (`SOKF_SCHEMA_8`,
+/// `SOKF_SCHEMA_10`): each glob starts with /, parses, and lies inside the
 /// schema's knowledge root, which is the grandparent of the schema's path.
 /// Where `root` is declared, each glob also begins with `root` followed by `/**/`.
 // sokf-implements: EXT-2_AC-1

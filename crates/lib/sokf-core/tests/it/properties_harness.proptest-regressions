@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 61949b7e537a924fd0a00b830c671c05807cdd36704da76fd53db1c24752ae80 # shrinks to object = Object {"nested": Object {"z": Number(1), "a": Object {"y": Number(2), "b": Number(3)}}}, indent = "  ", newline = false, part = "hooks"

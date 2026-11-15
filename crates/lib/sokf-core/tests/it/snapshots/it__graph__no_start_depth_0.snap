@@ -1,0 +1,72 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+assertion_line: 136
+expression: "json(&tree, query(&[], 0))"
+---
+{
+  "start": [
+    "/knowledge"
+  ],
+  "nodes": [
+    {
+      "kind": "root",
+      "path": "/knowledge",
+      "name": "example-knowledge",
+      "scope": "test",
+      "description": "The example knowledge of the graph design."
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/config.md",
+      "type": "Subsystem",
+      "id": "config",
+      "title": "Configuration",
+      "status": "stable"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/core"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/core/executor.md",
+      "type": "Subsystem",
+      "id": "executor",
+      "title": "Executor",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/core/planner.md",
+      "type": "Subsystem",
+      "id": "planner",
+      "title": "Planner",
+      "description": "The planner is a pure planning stage.",
+      "resource": "/crates/lib/example-core/src/planner.rs",
+      "status": "stable"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/schemas"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/schemas/subsystem.md",
+      "type": "Schema",
+      "id": "subsystem",
+      "title": "Subsystem",
+      "status": "stable"
+    }
+  ],
+  "edges": [],
+  "summary": {
+    "documents": {
+      "shown": 4,
+      "total": 4
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

@@ -1,0 +1,55 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+assertion_line: 188
+expression: "json(&tree, edges)"
+---
+{
+  "start": [
+    "/knowledge/core/planner.md"
+  ],
+  "nodes": [
+    {
+      "kind": "document",
+      "path": "/knowledge/core/executor.md",
+      "type": "Subsystem",
+      "id": "executor",
+      "title": "Executor",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/core/planner.md",
+      "type": "Subsystem",
+      "id": "planner",
+      "title": "Planner",
+      "description": "The planner is a pure planning stage.",
+      "resource": "/crates/lib/example-core/src/planner.rs",
+      "status": "stable"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "links",
+      "from": "/knowledge/core/executor.md",
+      "to": "/knowledge/core/planner.md",
+      "rel": "depends-on"
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/core/planner.md",
+      "to": "/knowledge/core/executor.md",
+      "rel": "depended-on-by",
+      "synthesised": true
+    }
+  ],
+  "summary": {
+    "documents": {
+      "shown": 2,
+      "total": 3
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

@@ -17,7 +17,7 @@ use crate::{cli::LocateArgs, output};
 pub fn locate(
     repo_root: Option<&Path>,
     cache: CacheMode,
-    args: LocateArgs,
+    args: &LocateArgs,
 ) -> sokf_core::Result<u8> {
     let (_, root) = output::root(repo_root)?;
     let located = sokf_core::locate(&root, &args.ids, args.asset, cache)?;

@@ -1,0 +1,13 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d3138421ead36a30d36778bce9015e7c1b50707c40177cb6e1369e8a64aee797 # shrinks to leads = 0, spare = 0
+cc 646f144992b99a696c07148a3babbd55cd8656212dcab464eb99981c8e1dfcd3 # shrinks to shapes = [false]
+cc f30fafcb5fefa83e9e904d43d15616dd650d4ee2ba07b1a9c9ab0d876edcdee3 # shrinks to quoted = [false]
+cc 61a4573a781ec32495ca5018695ae4a660c315f0c5622c600f5de4889f0f1ff2 # shrinks to items = 1
+cc fb4d51696b23578f401c1228a698a21129d13d1a946450f2f7aa181c2828581a # shrinks to sections = [(None, None)]
+cc 105dc85dac189deca78a16ae6926820ea583a1744f39aa5fe3d5b53cc75c8ca3 # shrinks to quote = false, extra = 0
+cc fc3c15ea8bc59417baa4185e45d23fd89f5999d80c094a58bf81d367a91fd834 # shrinks to lines = ["SEL"]

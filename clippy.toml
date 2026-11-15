@@ -1,0 +1,6 @@
+# Clippy's settings for sokf's crates.
+
+# Words that doc comments may hold without backticks, beside clippy's own
+# list (".."). A doc comment on a command-line argument is its help text,
+# where backticks would show.
+doc-valid-idents = ["JMESPath", ".."]

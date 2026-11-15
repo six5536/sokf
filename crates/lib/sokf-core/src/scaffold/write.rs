@@ -94,7 +94,7 @@ mod tests {
                 p("/docs/kb/schemas/index.md")
             ]
         );
-        assert!(updated.is_empty());
+        assert_eq!(updated, [] as [tramlines_md::RepoPath; 0]);
         assert_eq!(
             fs::read_to_string(dir.join(".sokf/config.toml")).unwrap(),
             "[knowledge]\nroots = [\"/docs/kb\"]\n"
@@ -111,7 +111,7 @@ mod tests {
             &ConfigChange::Update("[knowledge]\nroots = []\n".into()),
         )
         .unwrap();
-        assert!(created.is_empty());
+        assert_eq!(created, [] as [tramlines_md::RepoPath; 0]);
         assert_eq!(updated, vec![p("/.sokf/config.toml")]);
         assert_eq!(
             fs::read_to_string(dir.join(".sokf/config.toml")).unwrap(),

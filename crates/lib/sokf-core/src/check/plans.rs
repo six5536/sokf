@@ -1,8 +1,8 @@
 //! This module finds the files that a document plans. A schema's
 //! `plans-paths` names its planning sections, and while the document is in
 //! the states of an entry's `only`, each `/`-rooted path that such a section
-//! links is planned (SOKF_SCHEMA_53). A link that ends with `/` plans a
-//! directory and every path under it (SOKF_SCHEMA_55).
+//! links is planned (`SOKF_SCHEMA_53`). A link that ends with `/` plans a
+//! directory and every path under it (`SOKF_SCHEMA_55`).
 
 use std::collections::BTreeSet;
 

@@ -1,6 +1,6 @@
 //! This module holds the frontmatter checks that the format specification
 //! requires of each document, and the identity checks across a whole
-//! knowledge store (SOKF_FORMAT_33 and SOKF_SCHEMA_32).
+//! knowledge store (`SOKF_FORMAT_33` and `SOKF_SCHEMA_32`).
 
 use super::Ctx;
 use crate::{
@@ -27,7 +27,7 @@ pub fn check(k: usize, doc: &Document, ctx: &Ctx<'_>) -> Vec<Finding> {
 }
 
 /// `check_ids` reports an error when another document or schema in the
-/// store has the same id as the document (SOKF_FORMAT_33).
+/// store has the same id as the document (`SOKF_FORMAT_33`).
 pub fn check_ids(model: &Model, k: usize, doc: &Document) -> Vec<Finding> {
     let Some(id) = doc.id() else {
         return Vec::new();
@@ -57,7 +57,7 @@ pub(super) fn also_use(others: &[String]) -> String {
 }
 
 /// `check_seq` reports an error when another document of the same type
-/// has the same sequence number as the document (SOKF_SCHEMA_32).
+/// has the same sequence number as the document (`SOKF_SCHEMA_32`).
 fn check_seq(ctx: &Ctx<'_>, k: usize, doc: &Document) -> Vec<Finding> {
     let Some(type_name) = doc.type_name() else {
         return Vec::new();

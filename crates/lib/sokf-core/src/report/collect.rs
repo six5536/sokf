@@ -45,6 +45,7 @@ impl Report {
     /// findings and fixes, and orders the fixes as CLI-4_AC-6 lists them.
     // sokf-implements: CLI-4_AC-6
     // sokf-implements: CLI-4_AC-9
+    #[must_use]
     pub fn finish(mut self) -> Self {
         for list in [&mut self.errors, &mut self.warnings] {
             list.sort_by(|a, b| {
@@ -57,6 +58,18 @@ impl Report {
             });
             list.dedup();
         }
+        // A report holds one warning that the formatter failed, whatever
+        // the runs whose outputs it gathers said, and the reason that the
+        // formatter doesn't start comes first (CLI-4_AC-49).
+        let failed = |f: &Finding| f.criterion == crate::formatter::WARNING;
+        let kept = self
+            .warnings
+            .iter()
+            .filter(|f| failed(f))
+            .min_by_key(|f| !f.message.contains("doesn't start"))
+            .cloned();
+        self.warnings
+            .retain(|f| !failed(f) || Some(f) == kept.as_ref());
         self.fixes.sort_by(|a, b| fix_key(a).cmp(&fix_key(b)));
         self.fixes.dedup();
         self
@@ -65,10 +78,13 @@ impl Report {
     /// `filter` returns a report of the findings in `scope`. It keeps every
     /// fix, whatever its path.
     // sokf-implements: CLI-4_AC-2
+    #[must_use]
     pub fn filter(&self, scope: &Scope) -> Report {
         let keep = |list: &[Finding]| -> Vec<Finding> {
             list.iter()
-                .filter(|f| scope.contains(&f.path))
+                // The warning that the formatter failed explains the stale
+                // blocks of any scope, so every run reports it.
+                .filter(|f| scope.contains(&f.path) || f.criterion == crate::formatter::WARNING)
                 .cloned()
                 .collect()
         };

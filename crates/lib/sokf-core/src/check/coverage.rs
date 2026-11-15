@@ -1,7 +1,7 @@
 //! This module checks coverage across documents. The link check, the
 //! include check, and the marker check record each citation they resolve,
 //! and the `cited-by` pass reads them after every document is checked
-//! (SOKF_SCHEMA_17, SOKF_SCHEMA_49). The pass of a deprecated document reads
+//! (`SOKF_SCHEMA_17`, `SOKF_SCHEMA_49`). The pass of a deprecated document reads
 //! them too.
 
 use std::collections::HashMap;
@@ -142,9 +142,9 @@ impl Citations {
 /// document's schema demands citations, the pass checks each entry that
 /// the document's states admit. It reports an uncited document or key
 /// once, with the entry's severity, on the document without the citation
-/// (SOKF_SCHEMA_17). The pass also reports each marker that cites the
+/// (`SOKF_SCHEMA_17`). The pass also reports each marker that cites the
 /// document with a relationship outside the schema's `markers`. It
-/// reports the marker at the marker's own line (SOKF_SCHEMA_49). An entry's
+/// reports the marker at the marker's own line (`SOKF_SCHEMA_49`). An entry's
 /// `message` follows the text of each finding that the entry raises.
 // sokf-implements: EXT-9_AC-1
 // sokf-implements: EXT-9_AC-2

@@ -98,42 +98,8 @@ pub fn init(root: &RepoRoot, opts: &InitOptions) -> Result<InitResult> {
             .map_err(|e| Error::io(&fs_dir, e))?
             .next()
             .is_none();
-    // sokf-implements: CLI-2_AC-3
-    let name = opts
-        .name
-        .clone()
-        .unwrap_or_else(|| dir.file_name().to_string());
-    // sokf-implements: CLI-2_AC-15
-    if name.is_empty() {
-        return Err(Error::Init("--name is empty".into()));
-    }
-    // sokf-implements: CLI-2_AC-18
-    if !is_slug(&name) {
-        let from = match opts.name {
-            Some(_) => "--name".to_string(),
-            None => format!("the name `{name}`, the last segment of {dir},"),
-        };
-        return Err(Error::Init(format!(
-            "{from} is not a slug. A slug is lower-case letters and digits, joined by single hyphens. Pass --name with a slug."
-        )));
-    }
-    // sokf-implements: CLI-2_AC-16
-    // sokf-implements: CLI-2_AC-17
-    // sokf-implements: CLI-2_AC-18
-    // sokf-implements: CLI-2_AC-19
-    let scope = match &opts.scope {
-        Some(scope) if is_slug(scope) => scope.clone(),
-        Some(scope) => {
-            return Err(Error::Init(format!(
-                "--scope `{scope}` is not a slug. A slug is lower-case letters and digits, joined by single hyphens."
-            )));
-        }
-        None => remote_owner(root).ok_or_else(|| {
-            Error::Init(
-                "you passed no --scope, and the URL of the git remote `origin` has no owner to read. Pass --scope with the slug of the store's owner.".into(),
-            )
-        })?,
-    };
+    let name = name_of(opts, &dir)?;
+    let scope = scope_of(root, opts)?;
     let config: ConfigText = config::read_lenient(root)?;
     let existing: Vec<RepoPath> = config
         .roots
@@ -141,39 +107,21 @@ pub fn init(root: &RepoRoot, opts: &InitOptions) -> Result<InitResult> {
         .filter(|r| r.to_fs(root).is_dir())
         .cloned()
         .collect();
-    // The identity of a store is unique among the roots (SOKF_FORMAT_12). The
-    // default name, the last segment of the directory, is the name most likely
-    // to clash with another store.
-    // sokf-implements: CLI-2_AC-10
-    // sokf-implements: CLI-2_AC-20
-    for other in &existing {
-        let Some(path) = other.join("manifest.sokf.yaml") else {
-            continue;
-        };
-        let Ok(text) = std::fs::read_to_string(path.to_fs(root)) else {
-            continue;
-        };
-        let manifest = crate::model::manifest(crate::yaml::parse(&text, 1), other);
-        let identity = format!("{scope}/{name}");
-        if manifest.scope.as_deref() == Some(scope.as_str())
-            && manifest.name.as_deref() == Some(name.as_str())
-        {
-            return Err(Error::Init(format!(
-                "the store at {other} already has the identity `{identity}`. Pass --name with another slug."
-            )));
-        }
-        // A reference to a former identity still resolves to its store
-        // (SOKF_FORMAT_12), so a new store can't take that identity.
-        if manifest
-            .renamed_from
-            .iter()
-            .any(|(old, _)| *old == identity)
-        {
-            return Err(Error::Init(format!(
-                "the store at {other} was once `{identity}`, and references to that identity still resolve to that store. Pass --name with another slug."
-            )));
-        }
+    // A registered store lies beside every other store, so `init` puts no
+    // store inside or around one, and takes none of their identities.
+    // sokf-implements: CLI-2_AC-73
+    if let Some(other) = config
+        .registered
+        .iter()
+        .find(|r| dir.starts_with(r) || r.starts_with(&dir))
+    {
+        return Err(Error::Init(format!(
+            "{dir} meets the registered knowledge root {other}; a store lies beside a registered store"
+        )));
     }
+    let mut known = existing.clone();
+    known.extend(config.registered.iter().cloned());
+    check_identity(root, &known, &scope, &name)?;
     let mut files = scaffold::store(&dir, &name, &scope, opts.description.as_deref());
     // In a directory that holds files, `init` writes the manifest alone:
     // listing the files in the indexes is the work of `--fix`.
@@ -197,9 +145,93 @@ pub fn init(root: &RepoRoot, opts: &InitOptions) -> Result<InitResult> {
     })
 }
 
+/// `name_of` returns the name of the store in `dir`: the value of `--name`,
+/// or else the last segment of `dir`. It refuses a name that is empty or
+/// that is not a slug.
+fn name_of(opts: &InitOptions, dir: &RepoPath) -> Result<String> {
+    // sokf-implements: CLI-2_AC-3
+    let name = opts
+        .name
+        .clone()
+        .unwrap_or_else(|| dir.file_name().to_string());
+    // sokf-implements: CLI-2_AC-15
+    if name.is_empty() {
+        return Err(Error::Init("--name is empty".into()));
+    }
+    // sokf-implements: CLI-2_AC-18
+    if !is_slug(&name) {
+        let from = match opts.name {
+            Some(_) => "--name".to_string(),
+            None => format!("the name `{name}`, the last segment of {dir},"),
+        };
+        return Err(Error::Init(format!(
+            "{from} is not a slug. A slug is lower-case letters and digits, joined by single hyphens. Pass --name with a slug."
+        )));
+    }
+    Ok(name)
+}
+
+/// `scope_of` returns the scope of the store: the value of `--scope`, or
+/// else the owner in the URL of the git remote `origin`. It refuses a scope
+/// that is not a slug, and a missing scope that the remote can't supply.
+// sokf-implements: CLI-2_AC-16
+// sokf-implements: CLI-2_AC-17
+// sokf-implements: CLI-2_AC-18
+// sokf-implements: CLI-2_AC-19
+fn scope_of(root: &RepoRoot, opts: &InitOptions) -> Result<String> {
+    match &opts.scope {
+        Some(scope) if is_slug(scope) => Ok(scope.clone()),
+        Some(scope) => Err(Error::Init(format!(
+            "--scope `{scope}` is not a slug. A slug is lower-case letters and digits, joined by single hyphens."
+        ))),
+        None => remote_owner(root).ok_or_else(|| {
+            Error::Init(
+                "you passed no --scope, and the URL of the git remote `origin` has no owner to read. Pass --scope with the slug of the store's owner.".into(),
+            )
+        }),
+    }
+}
+
+/// `check_identity` refuses the identity `scope/name` when a store of
+/// `existing` holds it or once held it.
+fn check_identity(root: &RepoRoot, existing: &[RepoPath], scope: &str, name: &str) -> Result<()> {
+    // The identity of a store is unique among the roots (SOKF_FORMAT_12). The
+    // default name, the last segment of the directory, is the name most likely
+    // to clash with another store.
+    // sokf-implements: CLI-2_AC-10
+    // sokf-implements: CLI-2_AC-20
+    for other in existing {
+        let Some(path) = other.join("manifest.sokf.yaml") else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(path.to_fs(root)) else {
+            continue;
+        };
+        let manifest = crate::model::manifest(crate::yaml::parse(&text, 1), other);
+        let identity = format!("{scope}/{name}");
+        if manifest.scope.as_deref() == Some(scope) && manifest.name.as_deref() == Some(name) {
+            return Err(Error::Init(format!(
+                "the store at {other} already has the identity `{identity}`. Pass --name with another slug."
+            )));
+        }
+        // A reference to a former identity still resolves to its store
+        // (SOKF_FORMAT_12), so a new store can't take that identity.
+        if manifest
+            .renamed_from
+            .iter()
+            .any(|(old, _)| *old == identity)
+        {
+            return Err(Error::Init(format!(
+                "the store at {other} was once `{identity}`, and references to that identity still resolve to that store. Pass --name with another slug."
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// `hand_written_indexes` returns each `index.md` under `dir` that is not in
 /// the generated form of an index, ordered by path. `--fix` leaves such a
-/// file as it is (SOKF_VALIDATION_56). The walk follows no symbolic link.
+/// file as it is (`SOKF_VALIDATION_56`). The walk follows no symbolic link.
 // sokf-implements: CLI-2_AC-32
 fn hand_written_indexes(root: &RepoRoot, dir: &RepoPath) -> Result<Vec<RepoPath>> {
     let mut found = Vec::new();
@@ -232,9 +264,10 @@ fn hand_written_indexes(root: &RepoRoot, dir: &RepoPath) -> Result<Vec<RepoPath>
 /// `remote_owner` returns the owner in the URL of the git remote `origin`,
 /// in lower case, when the owner is a slug. For example,
 /// `https://github.com/ncoderz/sokf`, `git@github.com:ncoderz/sokf.git`, and
-/// `ssh://git@host/ncoderz/sokf` all return `ncoderz`.
+/// `ssh://git@host/ncoderz/sokf` all return `ncoderz`. It reads the remote
+/// of the repository at `root`, whatever `GIT_DIR` the environment holds.
 fn remote_owner(root: &RepoRoot) -> Option<String> {
-    let out = std::process::Command::new("git")
+    let out = crate::git::command()
         .arg("-C")
         .arg(root.as_path())
         .args(["config", "--get", "remote.origin.url"])

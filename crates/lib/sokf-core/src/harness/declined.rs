@@ -32,7 +32,6 @@ pub struct SokfDeclined {
     inner: TomlDeclined,
     path: PathBuf,
     shown: String,
-    held: Option<String>,
 }
 
 impl SokfDeclined {
@@ -42,15 +41,7 @@ impl SokfDeclined {
             inner: TomlDeclined::new(path.clone(), shown.clone()),
             path,
             shown,
-            held: None,
         }
-    }
-
-    /// `holding` declines the part `part` of every harness too, whatever the file says.
-    #[must_use]
-    pub fn holding(mut self, part: &str) -> Self {
-        self.held = Some(part.to_string());
-        self
     }
 
     /// `with` returns the parts that `with` lists for `harness`. A file that is absent, or
@@ -117,11 +108,7 @@ impl DeclinedStore for SokfDeclined {
     // sokf-implements: CONF-4_AC-5
     fn declined(&self, harness: &str) -> agent_harness_adapter_core::Result<Vec<String>> {
         let mut declined = self.without(harness)?;
-        for part in self
-            .off_by_default(harness)?
-            .into_iter()
-            .chain(self.held.clone())
-        {
+        for part in self.off_by_default(harness)? {
             if !declined.contains(&part) {
                 declined.push(part);
             }

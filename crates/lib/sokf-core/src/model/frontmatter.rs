@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Finding, RepoPath, Spanned, Yaml, YamlError, markdown::is_url};
 
-/// The `status` values (SOKF_FORMAT_28).
+/// The `status` values (`SOKF_FORMAT_28`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Status {
     /// `draft`.
@@ -21,12 +21,12 @@ pub enum Status {
     Deprecated,
 }
 
-/// `resource` (SOKF_FORMAT_29) is what a document describes: a `/` path or a URL,
+/// `resource` (`SOKF_FORMAT_29`) is what a document describes: a `/` path or a URL,
 /// or a list of them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Resource {
     /// `One` is a resource written as one string, the form that a sidecar's
-    /// `resource` takes (SOKF_FORMAT_31).
+    /// `resource` takes (`SOKF_FORMAT_31`).
     One(String),
     /// `List` is a resource written as a list.
     List(Vec<String>),
@@ -51,7 +51,7 @@ impl Resource {
     }
 }
 
-/// One `sources` entry (SOKF_FORMAT_37, SOKF_FORMAT_38).
+/// One `sources` entry (`SOKF_FORMAT_37`, `SOKF_FORMAT_38`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceEntry {
     /// `resource`: a path relative to the repository root, or a URL.
@@ -64,7 +64,7 @@ pub struct SourceEntry {
     pub line: usize,
 }
 
-/// One `links` entry (SOKF_FORMAT_50, SOKF_FORMAT_51).
+/// One `links` entry (`SOKF_FORMAT_50`, `SOKF_FORMAT_51`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkEntry {
     /// `rel`.
@@ -77,7 +77,7 @@ pub struct LinkEntry {
     pub line: usize,
 }
 
-/// One `verified` entry (SOKF_FORMAT_43, SOKF_FORMAT_44).
+/// One `verified` entry (`SOKF_FORMAT_43`, `SOKF_FORMAT_44`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifiedEntry {
     /// `by`: a `human:` or `process:` actor.
@@ -139,7 +139,7 @@ pub const CORE_KEYS: &[&str] = &[
     "verified",
 ];
 
-/// The stamped keys of documents (SOKF_FORMAT_24): keys that sokf writes
+/// The stamped keys of documents (`SOKF_FORMAT_24`): keys that sokf writes
 /// itself.
 pub const STAMPED_DOCUMENT_KEYS: &[&str] = &["generated"];
 
@@ -181,19 +181,6 @@ fn iso_datetime() -> &'static Regex {
 /// `core_fields` parses the frontmatter into core fields. `yaml` is the parsed
 /// frontmatter, the parse error, or `None` when the document has no frontmatter.
 // sokf-implements: SOKF_FORMAT_17
-// sokf-implements: SOKF_FORMAT_19
-// sokf-implements: SOKF_FORMAT_26
-// sokf-implements: SOKF_FORMAT_27
-// sokf-implements: SOKF_FORMAT_28
-// sokf-implements: SOKF_FORMAT_29
-// sokf-implements: SOKF_FORMAT_32
-// sokf-implements: SOKF_FORMAT_37
-// sokf-implements: SOKF_FORMAT_38
-// sokf-implements: SOKF_FORMAT_42
-// sokf-implements: SOKF_FORMAT_43
-// sokf-implements: SOKF_FORMAT_44
-// sokf-implements: SOKF_FORMAT_50
-// sokf-implements: SOKF_FORMAT_51
 pub fn core_fields(yaml: Option<Result<&Spanned, &YamlError>>, path: &RepoPath) -> CoreFields {
     let mut core = CoreFields::default();
     let node = match yaml {
@@ -228,78 +215,98 @@ pub fn core_fields(yaml: Option<Result<&Spanned, &YamlError>>, path: &RepoPath) 
     };
     core.present = true;
     for (key, value) in entries {
-        core.lines.insert(key.value.clone(), key.line);
-        let line = Some(value.line);
-        match key.value.as_str() {
-            "type" => match value.as_str() {
-                Some(s) if !s.trim().is_empty() => core.type_ = Some(s.to_string()),
-                Some(_) => core.fail(path, line, "SOKF_FORMAT_19", "`type` is empty"),
-                None => core.fail(path, line, "SOKF_FORMAT_19", "`type` must be a string"),
-            },
-            "id" => {
-                // A scalar that isn't a string still gives the document its
-                // id, so that the other checks can name the document.
-                if let Some(s) = value.scalar_text() {
-                    core.id = Some(s);
-                }
-                if value.as_str().is_none() {
-                    core.fail(path, line, "SOKF_FORMAT_32", "`id` must be a string");
-                }
-            }
-            "title" => match value.as_str() {
-                Some(s) => core.title = Some(s.to_string()),
-                None => core.fail(path, line, "SOKF_FORMAT_26", "`title` must be a string"),
-            },
-            "description" => match value.as_str() {
-                Some(s) => core.description = Some(s.to_string()),
-                None => core.fail(
-                    path,
-                    line,
-                    "SOKF_FORMAT_26",
-                    "`description` must be a string",
-                ),
-            },
-            "tags" => match value.as_seq().map(|items| {
-                items
-                    .iter()
-                    .map(|i| i.as_str().map(str::to_string))
-                    .collect::<Option<Vec<_>>>()
-            }) {
-                Some(Some(tags)) => core.tags = Some(tags),
-                _ => core.fail(
-                    path,
-                    line,
-                    "SOKF_FORMAT_27",
-                    "`tags` must be a list of strings",
-                ),
-            },
-            "resource" => match resource(value) {
-                Some(r) => core.resource = Some(r),
-                None => core.fail(
-                    path,
-                    line,
-                    "SOKF_FORMAT_29",
-                    "`resource` must be a `/` path or a URL, or a list of them",
-                ),
-            },
-            "status" => match value.as_str() {
-                Some("draft") => core.status = Some(Status::Draft),
-                Some("stable") => core.status = Some(Status::Stable),
-                Some("deprecated") => core.status = Some(Status::Deprecated),
-                _ => core.fail(
-                    path,
-                    line,
-                    "SOKF_FORMAT_28",
-                    "`status` must be `draft`, `stable`, or `deprecated`",
-                ),
-            },
-            "sources" => sources(&mut core, value, path),
-            "links" => links(&mut core, value, path),
-            "verified" => verified(&mut core, value, path),
-            _ => core.extra.push((key.value.clone(), value.clone())),
-        }
+        core_key(&mut core, key, value, path);
     }
     core
+}
+
+/// `core_key` reads the frontmatter key `key`, with its `value`, into
+/// `core`: a core key into its field, and any other key into `extra`. It
+/// records the key's line, and a finding when the value has the wrong shape.
+// sokf-implements: SOKF_FORMAT_19
+// sokf-implements: SOKF_FORMAT_26
+// sokf-implements: SOKF_FORMAT_27
+// sokf-implements: SOKF_FORMAT_28
+// sokf-implements: SOKF_FORMAT_29
+// sokf-implements: SOKF_FORMAT_32
+// sokf-implements: SOKF_FORMAT_37
+// sokf-implements: SOKF_FORMAT_38
+// sokf-implements: SOKF_FORMAT_42
+// sokf-implements: SOKF_FORMAT_43
+// sokf-implements: SOKF_FORMAT_44
+// sokf-implements: SOKF_FORMAT_50
+// sokf-implements: SOKF_FORMAT_51
+fn core_key(core: &mut CoreFields, key: &Spanned<String>, value: &Spanned, path: &RepoPath) {
+    core.lines.insert(key.value.clone(), key.line);
+    let line = Some(value.line);
+    match key.value.as_str() {
+        "type" => match value.as_str() {
+            Some(s) if !s.trim().is_empty() => core.type_ = Some(s.to_string()),
+            Some(_) => core.fail(path, line, "SOKF_FORMAT_19", "`type` is empty"),
+            None => core.fail(path, line, "SOKF_FORMAT_19", "`type` must be a string"),
+        },
+        "id" => {
+            // A scalar that isn't a string still gives the document its
+            // id, so that the other checks can name the document.
+            if let Some(s) = value.scalar_text() {
+                core.id = Some(s);
+            }
+            if value.as_str().is_none() {
+                core.fail(path, line, "SOKF_FORMAT_32", "`id` must be a string");
+            }
+        }
+        "title" => match value.as_str() {
+            Some(s) => core.title = Some(s.to_string()),
+            None => core.fail(path, line, "SOKF_FORMAT_26", "`title` must be a string"),
+        },
+        "description" => match value.as_str() {
+            Some(s) => core.description = Some(s.to_string()),
+            None => core.fail(
+                path,
+                line,
+                "SOKF_FORMAT_26",
+                "`description` must be a string",
+            ),
+        },
+        "tags" => match value.as_seq().map(|items| {
+            items
+                .iter()
+                .map(|i| i.as_str().map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+        }) {
+            Some(Some(tags)) => core.tags = Some(tags),
+            _ => core.fail(
+                path,
+                line,
+                "SOKF_FORMAT_27",
+                "`tags` must be a list of strings",
+            ),
+        },
+        "resource" => match resource(value) {
+            Some(r) => core.resource = Some(r),
+            None => core.fail(
+                path,
+                line,
+                "SOKF_FORMAT_29",
+                "`resource` must be a `/` path or a URL, or a list of them",
+            ),
+        },
+        "status" => match value.as_str() {
+            Some("draft") => core.status = Some(Status::Draft),
+            Some("stable") => core.status = Some(Status::Stable),
+            Some("deprecated") => core.status = Some(Status::Deprecated),
+            _ => core.fail(
+                path,
+                line,
+                "SOKF_FORMAT_28",
+                "`status` must be `draft`, `stable`, or `deprecated`",
+            ),
+        },
+        "sources" => sources(core, value, path),
+        "links" => links(core, value, path),
+        "verified" => verified(core, value, path),
+        _ => core.extra.push((key.value.clone(), value.clone())),
+    }
 }
 
 /// `resource` reads `value` as a `resource`, and returns `None` when it isn't
@@ -488,7 +495,7 @@ fn verified(core: &mut CoreFields, value: &Spanned, path: &RepoPath) {
     for item in items {
         let line = Some(item.line);
         let by = item.get("by").and_then(|b| b.as_str());
-        let at = item.get("at").and_then(|a| a.scalar_text());
+        let at = item.get("at").and_then(Spanned::scalar_text);
         let (Some(by), Some(at)) = (by, at) else {
             let key = if by.is_none() {
                 "SOKF_FORMAT_43"
@@ -526,6 +533,8 @@ fn verified(core: &mut CoreFields, value: &Spanned, path: &RepoPath) {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use super::*;
     use crate::yaml;
 
@@ -589,9 +598,12 @@ mod tests {
             );
         }
         assert_eq!(c.id.as_deref(), Some("3"));
-        assert!(c.sources.is_empty());
-        assert!(c.links.is_empty());
-        assert!(c.verified.is_empty());
+        assert_eq!(c.sources, [] as [crate::model::frontmatter::SourceEntry; 0]);
+        assert_eq!(c.links, [] as [crate::model::frontmatter::LinkEntry; 0]);
+        assert_eq!(
+            c.verified,
+            [] as [crate::model::frontmatter::VerifiedEntry; 0]
+        );
         let e = fields("type: ''\nsources: 1\nlinks: 1\nverified: 1\n");
         assert!(
             e.problems
@@ -657,7 +669,10 @@ mod tests {
             before in 0usize..4,
             name in "[a-z][a-z0-9]{0,5}",
         ) {
-            let pad: String = (0..before).map(|i| format!("k{i}: v\n")).collect();
+            let pad = (0..before).fold(String::new(), |mut out, i| {
+                let _ = writeln!(out, "k{i}: v");
+                out
+            });
             let line = before + 1;
             proptest::prop_assert_eq!(
                 yaml::parse(&format!("{pad}a: &{name} 1\n"), 1).unwrap_err(),

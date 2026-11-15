@@ -14,7 +14,7 @@ mod view;
 
 pub use outputs::{AdditionalRow, AssetRow, CitationRow, CitedFact, SchemaRow};
 pub use rows::DocRow;
+pub(crate) use store::ensure_dir;
 pub use store::{CACHE_DIR, Cache, CacheMode, STORE_FILE, STORE_FORMAT};
-pub use view::StoreView;
-
 pub use sync::{FileState, SyncStats};
+pub use view::StoreView;

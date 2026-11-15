@@ -8,7 +8,6 @@ mod info;
 mod init;
 mod locate;
 mod new;
-mod pack;
 mod validate;
 
 pub use graph::graph;
@@ -17,5 +16,4 @@ pub use info::info;
 pub use init::init;
 pub use locate::locate;
 pub use new::new;
-pub use pack::pack;
 pub use validate::validate;

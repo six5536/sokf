@@ -75,7 +75,7 @@ impl DocRow {
                 }
                 None => h.update(&[0]),
             }
-            h.update(&[0xff]);
+            h.update(&[0xFF]);
         }
         h.update(&[u8::from(self.broken)]);
         h.update(&self.visible.to_le_bytes());
@@ -101,13 +101,13 @@ impl Cache {
                 [path.as_str()],
                 |r| {
                     Ok(DocRow {
-                        knowledge: r.get::<_, i64>(0)? as usize,
+                        knowledge: r.get::<_, usize>(0)?,
                         id: r.get(1)?,
                         type_name: r.get(2)?,
                         title: r.get(3)?,
                         description: r.get(4)?,
                         broken: r.get::<_, i64>(5)? != 0,
-                        visible: r.get::<_, i64>(6)? as u64,
+                        visible: r.get::<_, i64>(6)?.cast_unsigned(),
                         scalars: r.get(7)?,
                     })
                 },
@@ -138,10 +138,10 @@ impl Cache {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)?,
+                    r.get::<_, usize>(2)?,
                     r.get::<_, Option<String>>(3)?,
                     r.get::<_, String>(4)?,
-                    r.get::<_, i64>(5)?,
+                    r.get::<_, usize>(5)?,
                     r.get::<_, Option<String>>(6)?,
                 ))
             }) else {
@@ -157,13 +157,13 @@ impl Cache {
                 index.add(KeyEntry {
                     key,
                     path,
-                    line: line as usize,
+                    line,
                     heading_slug,
                     scope: match scope.as_str() {
                         "document" => KeyScope::Document,
                         host => KeyScope::Host(host.to_string()),
                     },
-                    knowledge: knowledge as usize,
+                    knowledge,
                     rule_id,
                 });
             }
@@ -173,7 +173,7 @@ impl Cache {
 
     /// `commit_rows` writes the rows and ids of the run inside the commit's
     /// transaction.
-    pub(super) fn commit_rows(&self, conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
+    pub(super) fn commit_rows(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut delete_doc = conn.prepare("DELETE FROM documents WHERE path = ?1")?;
         let mut delete_ids = conn.prepare("DELETE FROM ids WHERE path = ?1")?;
         let mut insert_doc = conn.prepare(
@@ -198,17 +198,17 @@ impl Cache {
             delete_ids.execute([path.as_str()])?;
             insert_doc.execute(params![
                 path.as_str(),
-                row.knowledge as i64,
+                row.knowledge,
                 row.id,
                 row.type_name,
                 row.title,
                 row.description,
                 i64::from(row.broken),
-                row.visible as i64,
+                row.visible.cast_signed(),
                 row.scalars,
             ])?;
             if let Some(id) = &row.id {
-                insert_id.execute(params![row.knowledge as i64, id, path.as_str()])?;
+                insert_id.execute(params![row.knowledge, id, path.as_str()])?;
             }
         }
         Ok(())

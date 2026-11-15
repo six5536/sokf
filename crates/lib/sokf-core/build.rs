@@ -10,12 +10,6 @@
 //! copies exist, the script uses the workspace copy, so the files at the
 //! repository root remain the only ones anyone edits.
 //!
-//! The script also embeds every directory under `/packs/` that holds a
-//! `pack.sokf.yaml`, the packs that `sokf pack sync builtin:<NAME>` copies
-//! (D-23 of design-pack). It copies each file of each pack into `OUT_DIR`
-//! and writes `OUT_DIR/packs.rs`, the list of the packs and their files. A
-//! build without `/packs/` embeds no pack.
-//!
 //! The script also sets `SOKF_BUILD_FINGERPRINT`, a hash of what decides the
 //! results of a check: the crate's sources, the embedded files, and the
 //! workspace's `Cargo.lock`, which pins the tramlines engine and every other
@@ -49,7 +43,7 @@ fn main() {
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));
     let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
     let workspace = manifest.join("../../..");
-    let mut hash = Fnv(0xcbf2_9ce4_8422_2325);
+    let mut hash = Fnv(0xCBF2_9CE4_8422_2325);
     for rel in FILES {
         let source = [workspace.join(rel), manifest.join(rel)]
             .into_iter()
@@ -78,7 +72,6 @@ fn main() {
         hash.update(rel.as_bytes());
         hash.update(text.as_bytes());
     }
-    embed_packs(&workspace, &manifest, &out);
     let lock = workspace.join("Cargo.lock");
     if lock.is_file() {
         println!("cargo:rerun-if-changed={}", lock.display());
@@ -115,59 +108,6 @@ fn main() {
         hash.update(&fs::read(&file).expect("read source file"));
     }
     println!("cargo:rustc-env=SOKF_BUILD_FINGERPRINT={:016x}", hash.0);
-}
-
-/// `embed_packs` copies each pack under `/packs/` into `OUT_DIR/packs/` and
-/// writes `OUT_DIR/packs.rs`, an array of `EmbeddedPack` values. The packs
-/// come from the workspace, or else from the crate's own `packs/`.
-fn embed_packs(workspace: &Path, manifest: &Path, out: &Path) {
-    let packs = [workspace.join("packs"), manifest.join("packs")]
-        .into_iter()
-        .find(|p| p.is_dir());
-    let mut code = String::from("&[\n");
-    if let Some(packs) = packs {
-        println!("cargo:rerun-if-changed={}", packs.display());
-        let mut dirs: Vec<PathBuf> = fs::read_dir(&packs)
-            .expect("read packs directory")
-            .map(|e| e.expect("read packs directory entry").path())
-            .filter(|p| p.join("pack.sokf.yaml").is_file())
-            .collect();
-        dirs.sort();
-        for dir in dirs {
-            let name = dir
-                .file_name()
-                .expect("a pack directory has a name")
-                .to_string_lossy()
-                .into_owned();
-            let mut files = Vec::new();
-            sources(&dir, &mut files);
-            files.sort();
-            code.push_str(&format!(
-                "    crate::pack::EmbeddedPack {{ dir: {name:?}, files: &[\n"
-            ));
-            for file in files {
-                let rel = file
-                    .strip_prefix(&dir)
-                    .expect("a pack file lies under its pack")
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                let text = fs::read_to_string(&file)
-                    .expect("read pack file")
-                    .replace("\r\n", "\n");
-                let target = out.join("packs").join(&name).join(&rel);
-                fs::create_dir_all(target.parent().expect("a pack file has a parent"))
-                    .expect("create OUT_DIR subdirectory");
-                fs::write(&target, text).expect("write pack file");
-                code.push_str(&format!(
-                    "        ({rel:?}, include_str!({:?})),\n",
-                    target.display().to_string()
-                ));
-            }
-            code.push_str("    ] },\n");
-        }
-    }
-    code.push(']');
-    fs::write(out.join("packs.rs"), code).expect("write packs.rs");
 }
 
 /// `patched_crates` returns the directory of each crate that a `path` entry
@@ -273,10 +213,10 @@ impl Fnv {
     fn update(&mut self, bytes: &[u8]) {
         for b in bytes {
             self.0 ^= u64::from(*b);
-            self.0 = self.0.wrapping_mul(0x0100_0000_01b3);
+            self.0 = self.0.wrapping_mul(0x0100_0000_01B3);
         }
         // A separator keeps two inputs from reading as one.
-        self.0 ^= 0xff;
-        self.0 = self.0.wrapping_mul(0x0100_0000_01b3);
+        self.0 ^= 0xFF;
+        self.0 = self.0.wrapping_mul(0x0100_0000_01B3);
     }
 }

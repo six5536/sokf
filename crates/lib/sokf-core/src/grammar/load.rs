@@ -7,7 +7,7 @@ use super::SokfSchema;
 use crate::{Finding, RepoPath, Spanned, markdown::SOKF};
 
 /// `SOKF_TYPES` holds the types that SOKF defines. No layer can redefine
-/// them (TL_29). The writer of a schema writes a reference as a placeholder
+/// them (`TL_29`). The writer of a schema writes a reference as a placeholder
 /// of one of these types, and the tool matches the placeholder with that
 /// type's pattern.
 pub const SOKF_TYPES: [(&str, &str); 2] = [

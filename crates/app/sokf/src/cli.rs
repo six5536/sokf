@@ -64,9 +64,6 @@ pub enum Command {
     Init(InitArgs),
     /// Install the integration of an agent harness, or show its state.
     Harness(HarnessArgs),
-    /// Copy a schema pack into a knowledge store, keep it current, and show
-    /// its state.
-    Pack(PackArgs),
     /// Check the knowledge stores and the other files that their schemas govern, and repair them with --fix.
     Validate(ValidateArgs),
     /// Print the schema language or the format registry that the validator uses.
@@ -102,7 +99,11 @@ impl Command {
             Command::New(a) => a.json_schema.then_some(Output::New),
             Command::Graph(a) => a.json_schema.then_some(Output::Graph),
             Command::Locate(a) => a.json_schema.then_some(Output::Locate),
-            Command::Info(_) | Command::Pack(_) | Command::Completions(_) | Command::Man => None,
+            Command::Info(a) => match &a.what {
+                InfoCommand::Formats(a) => a.json_schema.then_some(Output::InfoFormats),
+                InfoCommand::Grammar => None,
+            },
+            Command::Completions(_) | Command::Man => None,
         }
     }
 }
@@ -411,157 +412,11 @@ pub struct LocateArgs {
 }
 // sokf:end locate
 
-// sokf:begin pack
-/// `PackArgs` holds the arguments of `pack` (CLI-13).
-#[derive(Debug, Args)]
-pub struct PackArgs {
-    /// What to do.
-    #[command(subcommand)]
-    pub what: PackCommand,
-}
-
-/// `PackCommand` lists the subcommands of `pack`.
-#[derive(Debug, Subcommand)]
-pub enum PackCommand {
-    /// Sync each pack that `/.sokf/config.toml` declares: merge each
-    /// upstream change with your edits, and remove each pack that no entry
-    /// declares.
-    Sync(PackSyncArgs),
-    /// Declare the pack of a source at the end of the `[[pack]]` list of
-    /// `/.sokf/config.toml`, and sync it.
-    Add(PackAddArgs),
-    /// Print each pack in the lock that is stale, and each of its files that
-    /// is edited, conflicted, deleted, or accepted. It writes nothing and
-    /// uses no network.
-    Status(PackStatusArgs),
-    /// Record that the project keeps your edit or deletion of a pack's file
-    /// on purpose, with the reason, so that `pack status --check` passes on
-    /// it while the file holds what you accepted. It writes only the lock.
-    Accept(PackAcceptArgs),
-    /// Print the packs that the binary embeds, and mark those in the lock.
-    List,
-    /// Delete the pack's `[[pack]]` entry and the files of the pack that you
-    /// haven't edited, keep the edited ones, and drop the pack from the lock.
-    Remove(PackNameArgs),
-    /// Print your edits of a pack's files as a patch against the recorded
-    /// bases, which `git apply` applies in the pack's repository.
-    Diff(PackDiffArgs),
-    /// Write an embedded pack to a new directory, in the layout of a pack.
-    Export(PackExportArgs),
-}
-
-/// `PackSyncArgs` holds the arguments of `pack sync`.
-#[derive(Debug, Args)]
-pub struct PackSyncArgs {
-    /// The name of one declared pack to sync. Default: every pack that
-    /// `/.sokf/config.toml` declares.
-    #[arg(value_name = "NAME")]
-    pub name: Option<String>,
-
-    /// Keep each existing file that a file of a pack lands on, and record
-    /// it as your edit of the pack's version. Delete a file first to take
-    /// the pack's version of it.
-    #[arg(long)]
-    pub keep_existing: bool,
-}
-
-/// `PackAddArgs` holds the arguments of `pack add`.
-#[derive(Debug, Args)]
-pub struct PackAddArgs {
-    /// The pack's source: a git URL or path, `builtin:NAME`, or the NAME of
-    /// an embedded pack alone.
-    #[arg(value_name = "SOURCE")]
-    pub source: String,
-
-    /// The branch, tag, or commit of a git source. Default: the source's
-    /// default branch.
-    #[arg(long = "ref", value_name = "REF")]
-    pub git_ref: Option<String>,
-
-    /// The pack's directory in a git source. Default: the repository's root.
-    #[arg(long, value_name = "DIR")]
-    pub path: Option<String>,
-
-    /// The knowledge root that receives the pack's schemas and documents.
-    /// Default: `/knowledge`.
-    #[arg(long, value_name = "ROOT")]
-    pub store: Option<PathBuf>,
-
-    /// Keep each existing file that a file of the pack lands on, and record
-    /// it as your edit of the pack's version. Delete a file first to take
-    /// the pack's version of it.
-    #[arg(long)]
-    pub keep_existing: bool,
-}
-
-/// `PackStatusArgs` holds the arguments of `pack status`.
-#[derive(Debug, Args)]
-pub struct PackStatusArgs {
-    /// Exit with code 1 when a file of a pack is edited, conflicted, or
-    /// deleted and doesn't hold its accepted version, so that a check fails
-    /// on an edit that nobody has reviewed.
-    #[arg(long)]
-    pub check: bool,
-}
-
-/// `PackAcceptArgs` holds the arguments of `pack accept`.
-#[derive(Debug, Args)]
-pub struct PackAcceptArgs {
-    /// The edited or deleted files of packs to accept.
-    #[arg(value_name = "PATH", required = true)]
-    pub paths: Vec<String>,
-
-    /// Why the project keeps the edit. Required, unless `--withdraw` is
-    /// given; `pack status` prints it.
-    #[arg(long, value_name = "TEXT", conflicts_with = "withdraw")]
-    pub note: Option<String>,
-
-    /// Withdraw the acceptance of each file instead.
-    #[arg(long)]
-    pub withdraw: bool,
-}
-
-/// `PackDiffArgs` holds the arguments of `pack diff`.
-#[derive(Debug, Args)]
-pub struct PackDiffArgs {
-    /// The pack's name, as `pack status` prints it.
-    #[arg(value_name = "NAME")]
-    pub name: String,
-
-    /// Also print each edit that the project accepted.
-    #[arg(long)]
-    pub accepted: bool,
-
-    /// Add each file of the project that the pack doesn't hold yet to the
-    /// patch, as a new file at its place in the pack.
-    #[arg(long, value_name = "PATH", num_args = 1..)]
-    pub new: Vec<String>,
-}
-
-/// `PackNameArgs` holds the name of a pack in the lock.
-#[derive(Debug, Args)]
-pub struct PackNameArgs {
-    /// The pack's name, as `pack status` prints it.
-    #[arg(value_name = "NAME")]
-    pub name: String,
-}
-
-/// `PackExportArgs` holds the arguments of `pack export`.
-#[derive(Debug, Args)]
-pub struct PackExportArgs {
-    /// The name of an embedded pack, as `pack list` prints it.
-    #[arg(value_name = "NAME")]
-    pub name: String,
-
-    /// The directory to write the pack to. It must be absent or empty.
-    #[arg(value_name = "DIR")]
-    pub dir: PathBuf,
-}
-// sokf:end pack
-
 // `--layer` conflicts with `--schema`: clap refuses the two together, and the
-// tool exits with code 2.
+// tool exits with code 2. `--query` requires `--json`, so clap refuses
+// `--query` alone too.
 // sokf-implements: CLI-5_AC-9
+// sokf-implements: CLI-5_AC-41
 // sokf:begin info
 /// `InfoArgs` holds the arguments of `info` (CLI-5).
 #[derive(Debug, Args)]
@@ -596,10 +451,23 @@ pub struct InfoFormatsArgs {
     /// ID taking precedence over its entries.
     #[arg(long, value_name = "ID")]
     pub schema: Option<String>,
+
+    /// Print the registry as one JSON object to stdout instead of YAML.
+    /// `--json-schema` prints its schema.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Print the JSON Schema of the `--json` output, and exit.
+    #[arg(long, exclusive = true)]
+    pub json_schema: bool,
+
+    /// Apply a JMESPath expression to the JSON object. Requires --json.
+    #[arg(long, value_name = "EXPR", requires = "json")]
+    pub query: Option<String>,
 }
 
 /// `Layer` lists the values of `--layer` of `info formats` (CLI-5_AC-4,
-/// CLI-5_AC-5, CLI-5_AC-7).
+/// CLI-5_AC-5, CLI-5_AC-7, CLI-5_AC-42).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Layer {
     /// Only the formats built into the tool. sokf builds this layer from the
@@ -607,11 +475,12 @@ pub enum Layer {
     Embedded,
     /// Only the formats in `/.sokf/formats.yaml`.
     Repo,
-    /// Only the formats in the `formats.yaml` of each pack in
-    /// `/.sokf/packs.lock`.
-    Pack,
+    /// Only the formats in the files `*.yaml` at any depth below
+    /// `/.sokf/formats.d/`.
+    #[value(name = "formats.d")]
+    FormatsD,
     /// The layers merged, with the entries of `/.sokf/formats.yaml` taking
-    /// precedence over those of the packs, and those of the packs over the
+    /// precedence over those of `/.sokf/formats.d/`, and those over the
     /// embedded ones.
     Effective,
 }

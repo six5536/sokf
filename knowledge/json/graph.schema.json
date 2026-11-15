@@ -30,12 +30,7 @@
       "$ref": "#/$defs/Summary"
     }
   },
-  "required": [
-    "start",
-    "nodes",
-    "edges",
-    "summary"
-  ],
+  "required": ["start", "nodes", "edges", "summary"],
   "$defs": {
     "Node": {
       "description": "One node. Its parent is the parent of its path.",
@@ -65,10 +60,7 @@
               "const": "root"
             }
           },
-          "required": [
-            "kind",
-            "path"
-          ]
+          "required": ["kind", "path"]
         },
         {
           "description": "A directory in a root, with a document, an additional file, or an asset somewhere beneath it. A directory that a start points to is a directory node too.",
@@ -83,10 +75,7 @@
               "const": "directory"
             }
           },
-          "required": [
-            "kind",
-            "path"
-          ]
+          "required": ["kind", "path"]
         },
         {
           "description": "A document, including a schema.",
@@ -114,21 +103,14 @@
             },
             "reason": {
               "description": "Why the document is broken.",
-              "enum": [
-                "frontmatter does not parse",
-                "no id"
-              ]
+              "enum": ["frontmatter does not parse", "no id"]
             },
             "kind": {
               "type": "string",
               "const": "document"
             }
           },
-          "required": [
-            "kind",
-            "path",
-            "status"
-          ]
+          "required": ["kind", "path", "status"]
         },
         {
           "description": "An additional file.",
@@ -147,10 +129,7 @@
               "const": "additional"
             }
           },
-          "required": [
-            "kind",
-            "path"
-          ]
+          "required": ["kind", "path"]
         },
         {
           "description": "An asset.",
@@ -169,10 +148,7 @@
               "const": "asset"
             }
           },
-          "required": [
-            "kind",
-            "path"
-          ]
+          "required": ["kind", "path"]
         },
         {
           "description": "A repository file or directory as the target of an edge. A repository file that a start points to is a file node too.",
@@ -187,10 +163,7 @@
               "const": "file"
             }
           },
-          "required": [
-            "kind",
-            "path"
-          ]
+          "required": ["kind", "path"]
         },
         {
           "description": "A key that a start identifies.",
@@ -215,12 +188,7 @@
               "const": "key"
             }
           },
-          "required": [
-            "kind",
-            "path",
-            "key",
-            "line"
-          ]
+          "required": ["kind", "path", "key", "line"]
         },
         {
           "description": "A target that resolves to nothing.",
@@ -235,10 +203,7 @@
               "const": "missing"
             }
           },
-          "required": [
-            "kind",
-            "target"
-          ]
+          "required": ["kind", "target"]
         }
       ]
     },
@@ -294,12 +259,7 @@
           "const": true
         }
       },
-      "required": [
-        "kind",
-        "from",
-        "to",
-        "rel"
-      ]
+      "required": ["kind", "from", "to", "rel"]
     },
     "EdgeKind": {
       "description": "The kinds of edge.",
@@ -349,10 +309,7 @@
           "$ref": "#/$defs/Count"
         }
       },
-      "required": [
-        "documents",
-        "archived"
-      ]
+      "required": ["documents", "archived"]
     },
     "Count": {
       "description": "What the graph printed, out of what the whole view holds.",
@@ -371,10 +328,7 @@
           "minimum": 0
         }
       },
-      "required": [
-        "shown",
-        "total"
-      ]
+      "required": ["shown", "total"]
     }
   }
 }

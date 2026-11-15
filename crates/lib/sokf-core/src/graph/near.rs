@@ -99,7 +99,7 @@ pub(crate) fn edges_near(
     for start in starts {
         match start {
             Start::Container(_) | Start::Outside(_) if query.layout_edges => return store.every(),
-            Start::Container(_) => {}
+            Start::Container(_) | Start::Node(NodeKey::Missing(_)) => {}
             Start::Outside(dir) => {
                 out.extend(store.under(dir));
                 frontier.insert(dir.clone());
@@ -117,7 +117,6 @@ pub(crate) fn edges_near(
             Start::Node(key @ NodeKey::Key(_)) => {
                 second.extend(graph.edges_from(key).filter_map(|e| e.to.path().cloned()));
             }
-            Start::Node(NodeKey::Missing(_)) => {}
         }
     }
     if query.depth == 0 {

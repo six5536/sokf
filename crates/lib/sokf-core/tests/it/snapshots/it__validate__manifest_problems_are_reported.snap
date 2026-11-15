@@ -1,0 +1,35 @@
+---
+source: crates/lib/sokf-core/tests/it/validate.rs
+assertion_line: 34
+expression: json(&report)
+---
+{
+  "errors": [
+    {
+      "path": "/knowledge/manifest.sokf.yaml",
+      "message": "the manifest declares no `scope`. The scope names the store's owner as a slug: lower-case letters and digits joined by single hyphens. The store's identity is `<scope>/<name>` (SOKF_FORMAT_10)"
+    },
+    {
+      "path": "/knowledge/manifest.sokf.yaml",
+      "line": 1,
+      "message": "the manifest declares sokf `0.5`. This tool implements `0.6` (SOKF_VALIDATION_3)"
+    },
+    {
+      "path": "/knowledge/manifest.sokf.yaml",
+      "line": 2,
+      "message": "the manifest declares no `name` (SOKF_FORMAT_10)"
+    },
+    {
+      "path": "/knowledge/manifest.sokf.yaml",
+      "line": 3,
+      "message": "the manifest contains `generated`, a key that sokf adds only when it publishes the store. The key must not appear in the working tree (SOKF_FORMAT_16)"
+    }
+  ],
+  "warnings": [],
+  "fixes": [],
+  "summary": {
+    "errors": 4,
+    "warnings": 0,
+    "fixes": 0
+  }
+}

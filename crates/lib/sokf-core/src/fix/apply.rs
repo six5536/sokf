@@ -104,7 +104,7 @@ mod tests {
             refused: vec![],
         };
         let (ops, refused) = apply(&root, plan).unwrap();
-        assert!(refused.is_empty());
+        assert_eq!(refused, [] as [tramlines_md::Finding; 0]);
         assert_eq!(
             ops,
             vec![

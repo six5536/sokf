@@ -1,8 +1,8 @@
 //! This module holds the files that the documents plan: the repository paths
 //! that a planning section of a document links while the document is in the
-//! states of its plan (SOKF_SCHEMA_53). A check accepts a planned path that
+//! states of its plan (`SOKF_SCHEMA_53`). A check accepts a planned path that
 //! doesn't exist yet, and every path under a planned directory
-//! (SOKF_SCHEMA_55).
+//! (`SOKF_SCHEMA_55`).
 
 use std::collections::{BTreeMap, BTreeSet};
 

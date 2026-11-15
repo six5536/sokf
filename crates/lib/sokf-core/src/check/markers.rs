@@ -19,7 +19,6 @@ use crate::{
 // sokf-implements: SOKF_FORMAT_152
 // sokf-implements: SOKF_FORMAT_153
 // sokf-implements: SOKF_VALIDATION_51
-// sokf-implements: SOKF_VALIDATION_52
 // sokf-implements: CONF-7_AC-1
 // sokf-implements: CONF-7_AC-2
 // sokf-implements: EXT-9_AC-6
@@ -54,6 +53,11 @@ pub fn check(
                         ),
                         "SOKF_VALIDATION_51",
                     );
+                }
+                // A marker that names a broken store waits until the store
+                // mends, as the store's own files do (FORMAT-5_AC-13).
+                if crate::markers::names_broken_store(ctx.model, target) {
+                    continue;
                 }
                 match resolve(ctx.model, ctx.keys, target) {
                     Ok(r) => citations.add(
@@ -94,15 +98,6 @@ pub fn check(
                     "`{tag}` has a rel that isn't kebab case. Write the rel as lowercase words of letters and digits joined by `-`, such as `sokf-implements:`"
                 ),
                 "SOKF_FORMAT_143",
-            ),
-            RowKind::Case(tag) => push(
-                line,
-                failure,
-                format!(
-                    "`{tag}` matches a marker tag only when case is ignored. Write `{}`",
-                    tag.to_lowercase()
-                ),
-                "SOKF_VALIDATION_52",
             ),
             RowKind::Ignore(fault) => {
                 let (message, key) = match fault {

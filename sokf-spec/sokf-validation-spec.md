@@ -58,7 +58,6 @@ The validator runs one deterministic check, the document check, on the working t
 - <a id="sokf_validation_13"></a>SOKF_VALIDATION_13 [ubiquitous]: the validator SHALL write no scaffold into a Schema document.
 - <a id="sokf_validation_50"></a>SOKF_VALIDATION_50 [ubiquitous]: the validator SHALL read for markers each repository file outside every knowledge store, except a git-ignored or excluded file, or one with a NUL byte in its first 8 KB.
 - <a id="sokf_validation_51"></a>SOKF_VALIDATION_51 [unwanted]: IF a marker uses a custom relationship, THEN the validator SHALL report a warning.
-- <a id="sokf_validation_52"></a>SOKF_VALIDATION_52 [unwanted]: IF the first word of a line matches the tag of a marker only when the comparison ignores case, THEN the validator SHALL report a failure.
 - <a id="sokf_validation_57"></a>SOKF_VALIDATION_57 [unwanted]: IF a `sokf:` body link cites a document whose `status` is `deprecated`, or a key of such a document, THEN the validator SHALL report a warning at the line of the link.
 - <a id="sokf_validation_58"></a>SOKF_VALIDATION_58 [unwanted]: IF a marker cites a document whose `status` is `deprecated`, or a key of such a document, THEN the validator SHALL report a warning at the file and line of the marker.
 - <a id="sokf_validation_59"></a>SOKF_VALIDATION_59 [unwanted]: IF the target of an include block is a document whose `status` is `deprecated`, THEN the validator SHALL report a warning at the line of the include block's opening comment.

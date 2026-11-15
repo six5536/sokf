@@ -1,0 +1,46 @@
+{
+  "name": "@six5536/sokf",
+  "version": "0.6.0",
+  "description": "A Superdev Open Knowledge Format (SOKF) knowledge store is a set of Markdown documents with YAML frontmatter. sokf checks each document in a store against that document's schema.",
+  "keywords": [
+    "cli",
+    "command-line",
+    "rust"
+  ],
+  "homepage": "https://github.com/six5536/sokf#readme",
+  "bugs": {
+    "url": "https://github.com/six5536/sokf/issues"
+  },
+  "license": "Elastic-2.0",
+  "author": "six5536 <10079653+six5536@users.noreply.github.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/six5536/sokf.git",
+    "directory": "packages/cli"
+  },
+  "bin": {
+    "sokf": "bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "lib/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "optionalDependencies": {
+    "@six5536/sokf-darwin-arm64": "0.6.0",
+    "@six5536/sokf-darwin-x64": "0.6.0",
+    "@six5536/sokf-linux-arm64": "0.6.0",
+    "@six5536/sokf-linux-x64": "0.6.0",
+    "@six5536/sokf-win32-x64": "0.6.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

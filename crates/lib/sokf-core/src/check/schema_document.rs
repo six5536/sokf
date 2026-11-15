@@ -96,12 +96,12 @@ fn markers_off(
 }
 
 /// `check_typed` checks one document against the one schema of its type
-/// (SOKF_SCHEMA_13, SOKF_SCHEMA_14).
+/// (`SOKF_SCHEMA_13`, `SOKF_SCHEMA_14`).
 // sokf-implements: SOKF_FORMAT_2
 // sokf-implements: SOKF_SCHEMA_13
 // sokf-implements: SOKF_SCHEMA_14
 // sokf-implements: SOKF_VALIDATION_41
-pub fn check_typed(knowledge: &Knowledge, doc: &Document, ctx: &Ctx<'_>) -> Vec<Finding> {
+pub fn check_typed(doc: &Document, ctx: &Ctx<'_>) -> Vec<Finding> {
     let mut findings = Vec::new();
     let Some(k) = ctx.knowledge else {
         return findings;
@@ -118,12 +118,8 @@ pub fn check_typed(knowledge: &Knowledge, doc: &Document, ctx: &Ctx<'_>) -> Vec<
         ));
         return findings;
     }
-    ctx.model.note(crate::model::Query::Schema {
-        knowledge: k,
-        key: type_name.to_string(),
-    });
-    let claimants = knowledge.schemas_for(type_name);
-    match claimants {
+    let claimants = ctx.model.claimants(k, type_name);
+    match claimants.as_slice() {
         [] => {
             findings.push(Finding::error(
                 doc.path.clone(),
@@ -133,21 +129,15 @@ pub fn check_typed(knowledge: &Knowledge, doc: &Document, ctx: &Ctx<'_>) -> Vec<
             ));
             findings.extend(stray_anchors(doc));
         }
-        [one] => {
-            let r = SchemaRef {
-                knowledge: k,
-                index: *one,
-            };
-            match ctx.compiled.schema(r) {
-                Some(schema) => findings.extend(check_document(doc, schema, r, ctx)),
-                None => findings.push(Finding::error(
-                    doc.path.clone(),
-                    doc.core.line_of("type"),
-                    "SOKF_VALIDATION_41",
-                    format!("the schema of `{type_name}` ({}) breaks the grammar, so sokf doesn't check the document", knowledge.schemas[*one].doc.path),
-                )),
-            }
-        }
+        [r] => match ctx.compiled.for_ref(k, *r) {
+            Some(schema) => findings.extend(check_document(doc, schema, *r, ctx)),
+            None => findings.push(Finding::error(
+                doc.path.clone(),
+                doc.core.line_of("type"),
+                "SOKF_VALIDATION_41",
+                format!("the schema of `{type_name}` ({}) breaks the grammar, so sokf doesn't check the document", ctx.model.schema(*r).doc.path),
+            )),
+        },
         many => findings.push(Finding::error(
             doc.path.clone(),
             doc.core.line_of("type"),
@@ -160,7 +150,7 @@ pub fn check_typed(knowledge: &Knowledge, doc: &Document, ctx: &Ctx<'_>) -> Vec<
 
 /// `stray_anchors` reports each anchor of a document that no schema governs:
 /// only a schema captures keys, so no anchor of such a document names one
-/// (SOKF_FORMAT_83). The fix leaves the anchors, because the writer may yet
+/// (`SOKF_FORMAT_83`). The fix leaves the anchors, because the writer may yet
 /// give the document a schema whose keys they name.
 // sokf-implements: SOKF_FORMAT_83
 fn stray_anchors(doc: &Document) -> Vec<Finding> {

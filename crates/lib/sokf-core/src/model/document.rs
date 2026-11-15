@@ -242,7 +242,7 @@ impl SchemaDocument {
         let fence = doc.body.blocks.iter().find(|b| b.kind == BlockKind::Code);
         match fence {
             Some(block) => {
-                let text = block.units.first().map(|u| u.text.as_str()).unwrap_or("");
+                let text = block.units.first().map_or("", |u| u.text.as_str());
                 match yaml::parse(text, block.line + 1) {
                     Ok(y) => schema_yaml = Some(y),
                     Err(e) => {
@@ -268,7 +268,7 @@ impl SchemaDocument {
             schema_yaml
                 .as_ref()
                 .and_then(|c| c.get(key))
-                .and_then(|a| a.as_str_or_list())
+                .and_then(Spanned::as_str_or_list)
                 .unwrap_or_default()
         };
         let (globs, asset_globs) = (list("additional-files"), list("asset-files"));
@@ -277,7 +277,7 @@ impl SchemaDocument {
             .and_then(|c| c.get("frontmatter"))
             .and_then(|f| f.get("type"))
             .and_then(|t| t.get("const"))
-            .and_then(|c| c.scalar_text());
+            .and_then(Spanned::scalar_text);
         let uses = crate::grammar::schema_uses(&doc.source.text);
         let archived = schema_yaml
             .as_ref()
@@ -299,13 +299,16 @@ impl SchemaDocument {
     /// `id` returns the schema's `id`, or its file name without `.md` when it
     /// has no `id`.
     pub fn id(&self) -> String {
-        self.doc.id().map(str::to_string).unwrap_or_else(|| {
-            self.doc
-                .path
-                .file_name()
-                .trim_end_matches(".md")
-                .to_string()
-        })
+        self.doc.id().map_or_else(
+            || {
+                self.doc
+                    .path
+                    .file_name()
+                    .trim_end_matches(".md")
+                    .to_string()
+            },
+            str::to_string,
+        )
     }
 }
 
@@ -360,13 +363,13 @@ impl Asset {
 }
 
 /// `sidecar_path` returns the path of the sidecar for an asset at `path`
-/// (SOKF_FORMAT_4).
+/// (`SOKF_FORMAT_4`).
 pub fn sidecar_path(path: &RepoPath) -> RepoPath {
     RepoPath::parse(&format!("{path}.md")).expect("a path plus `.md` is a path")
 }
 
 /// An `IndexFile` is an `index.md` file, held as text only. The tool
-/// generates its whole content (SOKF_FORMAT_97), so the tool does not parse
+/// generates its whole content (`SOKF_FORMAT_97`), so the tool does not parse
 /// it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndexFile {

@@ -3,12 +3,12 @@
 
 use std::collections::BTreeSet;
 
-use crate::{
-    Cache, Compiled, Model, RepoPath, RepoRoot, Result, include,
-    model::{KeyIndex, Loader, ParseMode},
-};
-
 use super::load::{CachedLoader, ensure_not_missed};
+use crate::{
+    Cache, Compiled, Model, RepoPath, RepoRoot, Result, Segments, include,
+    markdown::{IncludeTarget, Link, LinkTarget},
+    model::{CoreFields, KeyIndex, Loader, ParseMode, frontmatter::Resource},
+};
 
 /// `admit_for_check` reads in full what the checks of `paths` read: the
 /// files among `paths`, the documents that they read, and the schemas that
@@ -121,9 +121,8 @@ pub(super) fn admit_schemas_for(
         match model.by_path(path) {
             Some(crate::Located::Document(k, doc)) => {
                 if let Some(t) = doc.type_name() {
-                    let knowledge = &model.knowledges[k];
-                    for &i in knowledge.schemas_for(t) {
-                        wanted.insert(knowledge.schemas[i].doc.path.clone());
+                    for r in model.claimants(k, t) {
+                        wanted.insert(model.schema(r).doc.path.clone());
                     }
                 }
             }
@@ -273,7 +272,6 @@ pub(super) fn admit_closure(
 /// `references` returns the paths that the checks of a file might look up,
 /// and, among them, the documents whose bodies the file includes.
 fn references(model: &Model, path: &RepoPath) -> (BTreeSet<RepoPath>, BTreeSet<RepoPath>) {
-    use crate::markdown::{IncludeTarget, LinkTarget};
     let mut paths: BTreeSet<RepoPath> = BTreeSet::new();
     let mut includes: BTreeSet<RepoPath> = BTreeSet::new();
     if let Some(rows) = model.markers.get(path) {
@@ -297,90 +295,135 @@ fn references(model: &Model, path: &RepoPath) -> (BTreeSet<RepoPath>, BTreeSet<R
         ),
         _ => return (paths, includes),
     };
-    let by_id = |paths: &mut BTreeSet<RepoPath>, store: Option<&str>, id: &str| {
-        let Some(k) = k else { return };
+    let lookup = Lookup {
+        model,
+        knowledge: k,
+    };
+    lookup.link_references(path, links, &mut paths);
+    if let Some(core) = core {
+        lookup.frontmatter_references(core, &mut paths);
+    }
+    lookup.include_references(segments, &mut paths, &mut includes);
+    (paths, includes)
+}
+
+/// A `Lookup` finds the files that the references of one file lead to.
+struct Lookup<'a> {
+    /// The model.
+    model: &'a Model,
+    /// The knowledge store of the file, if it lies in one.
+    knowledge: Option<usize>,
+}
+
+impl Lookup<'_> {
+    /// `by_id` adds to `paths` each document of the id `id` in the store
+    /// `store`, or in the store of the file when `store` is `None`.
+    fn by_id(&self, paths: &mut BTreeSet<RepoPath>, store: Option<&str>, id: &str) {
+        let Some(k) = self.knowledge else { return };
         let kn = match store {
             None => Some(k),
-            Some(s) => model.store(k, s).map(|h| h.knowledge),
+            Some(s) => self.model.store(k, s).map(|h| h.knowledge),
         };
         if let Some(kn) = kn {
-            paths.extend(model.ids(kn, id));
+            paths.extend(self.model.ids(kn, id));
         }
-    };
-    let by_path = |paths: &mut BTreeSet<RepoPath>, p: RepoPath| {
-        if let Some((_, asset)) = model.asset_at(&p) {
+    }
+
+    /// `by_path` adds `p` to `paths`, and the sidecar of the asset at `p`
+    /// when there is one.
+    fn by_path(&self, paths: &mut BTreeSet<RepoPath>, p: RepoPath) {
+        if let Some((_, asset)) = self.model.asset_at(&p) {
             paths.insert(asset.sidecar_path());
         }
         paths.insert(p);
-    };
-    for link in links {
-        match &link.target {
-            LinkTarget::Host(_) => {
-                if let Some(label) = crate::model::keys::Label::of(&link.target)
-                    && let Some(id) = label.id
-                {
-                    by_id(&mut paths, label.store, id);
+    }
+
+    /// `link_references` adds to `paths` the target of each of `links`, the
+    /// links of the body of the file at `path`.
+    fn link_references(&self, path: &RepoPath, links: &[Link], paths: &mut BTreeSet<RepoPath>) {
+        for link in links {
+            match &link.target {
+                LinkTarget::Host(_) => {
+                    if let Some(label) = crate::model::keys::Label::of(&link.target)
+                        && let Some(id) = label.id
+                    {
+                        self.by_id(paths, label.store, id);
+                    }
                 }
-            }
-            LinkTarget::Repo { path: p, .. } => by_path(&mut paths, p.clone()),
-            LinkTarget::Relative { target, .. } => {
-                if let Some(p) = path.resolve_relative(target) {
-                    by_path(&mut paths, p);
+                LinkTarget::Repo { path: p, .. } => self.by_path(paths, p.clone()),
+                LinkTarget::Relative { target, .. } => {
+                    if let Some(p) = path.resolve_relative(target) {
+                        self.by_path(paths, p);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
     }
-    if let Some(core) = core {
+
+    /// `frontmatter_references` adds to `paths` the target of each `links`
+    /// entry of `core`, each of its resources, and the resource of each of
+    /// its sources.
+    fn frontmatter_references(&self, core: &CoreFields, paths: &mut BTreeSet<RepoPath>) {
         for entry in &core.links {
             if entry.to.starts_with('/') {
                 if let Some(p) = RepoPath::parse(&entry.to) {
-                    by_path(&mut paths, p);
+                    self.by_path(paths, p);
                 }
             } else {
                 let (store, id) = crate::model::split_store(&entry.to);
-                by_id(&mut paths, store, id);
+                self.by_id(paths, store, id);
             }
         }
-        for r in core.resource.iter().flat_map(|r| r.entries()) {
+        for r in core.resource.iter().flat_map(Resource::entries) {
             if let Some(p) = RepoPath::parse(r) {
-                by_path(&mut paths, p);
+                self.by_path(paths, p);
             }
         }
         for s in &core.sources {
             if let Some(p) = RepoPath::parse(&s.resource) {
-                by_path(&mut paths, p);
+                self.by_path(paths, p);
             }
         }
     }
-    for region in &segments.regions {
-        match IncludeTarget::parse(&region.target) {
-            IncludeTarget::Document {
-                store,
-                id,
-                fragment,
-            } => {
-                let mut targets = BTreeSet::new();
-                by_id(&mut targets, store.as_deref(), &id);
-                if fragment.as_deref().is_none_or(str::is_empty) {
-                    includes.extend(targets.iter().cloned());
+
+    /// `include_references` adds to `paths` the target of each include
+    /// marker of `segments`. It also adds to `includes` each document whose
+    /// whole body a marker includes.
+    fn include_references(
+        &self,
+        segments: &Segments,
+        paths: &mut BTreeSet<RepoPath>,
+        includes: &mut BTreeSet<RepoPath>,
+    ) {
+        for region in &segments.regions {
+            match IncludeTarget::parse(&region.target) {
+                IncludeTarget::Document {
+                    store,
+                    id,
+                    fragment,
+                } => {
+                    let mut targets = BTreeSet::new();
+                    self.by_id(&mut targets, store.as_deref(), &id);
+                    if fragment.as_deref().is_none_or(str::is_empty) {
+                        includes.extend(targets.iter().cloned());
+                    }
+                    paths.extend(targets);
                 }
-                paths.extend(targets);
-            }
-            IncludeTarget::File { path: p, .. } => {
-                if let Some(p) = RepoPath::parse(&p) {
-                    by_path(&mut paths, p);
+                IncludeTarget::File { path: p, .. } => {
+                    if let Some(p) = RepoPath::parse(&p) {
+                        self.by_path(paths, p);
+                    }
                 }
             }
         }
     }
-    (paths, includes)
 }
 
 /// `marker_references` adds to `paths` the path of each document that one of
 /// `rows` refers to by id. It looks in the store that the reference
 /// specifies, or in every store when the reference specifies none
-/// (SOKF_FORMAT_148).
+/// (`SOKF_FORMAT_148`).
 fn marker_references(
     model: &Model,
     rows: &[crate::markers::MarkerRow],

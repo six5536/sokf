@@ -65,6 +65,9 @@ pub struct Cache {
     /// `missed` records that this run, with a hint, read a file that it took
     /// from the store and found the file removed.
     pub(super) missed: Cell<bool>,
+    /// `formatter` holds what the runs on this cache share of the formatter:
+    /// the forms of the texts that they formatted.
+    formatter: crate::formatter::Session,
 }
 
 impl Cache {
@@ -88,13 +91,12 @@ impl Cache {
             },
             CacheMode::Off => (memory(), None),
         };
-        let (conn, synced_at, file) = match ensure_schema(conn, &version) {
-            Ok((conn, synced_at)) => (conn, synced_at, file),
-            Err(_) => {
-                let (conn, synced_at) =
-                    ensure_schema(memory(), &version).unwrap_or_else(|_| (memory(), None));
-                (conn, synced_at, None)
-            }
+        let (conn, synced_at, file) = if let Ok((conn, synced_at)) = ensure_schema(conn, &version) {
+            (conn, synced_at, file)
+        } else {
+            let (conn, synced_at) =
+                ensure_schema(memory(), &version).unwrap_or_else(|_| (memory(), None));
+            (conn, synced_at, None)
         };
         Cache {
             conn: Conn::new(conn, Rc::new(Cell::new(0))),
@@ -105,7 +107,13 @@ impl Cache {
             state: RefCell::new(SyncState::default()),
             hint: RefCell::new(None),
             missed: Cell::new(false),
+            formatter: crate::formatter::Session::new(root, mode == CacheMode::On),
         }
+    }
+
+    /// `formatter` returns the formatter's session of this cache.
+    pub(crate) fn formatter(&self) -> &crate::formatter::Session {
+        &self.formatter
     }
 
     /// `is_on` returns whether the cache is on.
@@ -173,18 +181,79 @@ impl std::fmt::Debug for Cache {
 /// among them, so a build that checks differently never reads the results of
 /// another. The configuration is part of the version because it determines
 /// the order in which sokf finds the stores when it walks the repository.
-/// That order sets the number each store gets. When any of the four differs,
-/// the run rebuilds the store (CACHE-1_AC-7).
+/// That order sets the number each store gets. The formatter that the
+/// repository reveals is part of it because the formatter decides which
+/// generated blocks are current. When any of them differs, the run rebuilds
+/// the store (CACHE-1_AC-7).
 // sokf-implements: CACHE-1_AC-6
 fn version(root: &RepoRoot) -> String {
     let config = fs::read(root.as_path().join(".sokf/config.toml"))
-        .map(|bytes| crate::source::fnv1a64(&bytes))
-        .unwrap_or(0);
+        .map_or(0, |bytes| crate::source::fnv1a64(&bytes));
+    // The detected formatter decides which blocks are current, so a new
+    // formatter, or new plugins of dprint, rebuild the store.
+    let formatter = crate::formatter::fingerprint(root);
+    let stores = stores_fingerprint(root);
     format!(
-        "{}+store.{STORE_FORMAT}+build.{}+config.{config:016x}",
+        "{}+store.{STORE_FORMAT}+build.{}+config.{config:016x}+stores.{stores:016x}+format.{formatter:016x}",
         env!("CARGO_PKG_VERSION"),
         env!("SOKF_BUILD_FINGERPRINT")
     )
+}
+
+/// `stores_fingerprint` returns a hash of what sets the stores of a run and
+/// how they relate: the name and the bytes of each file of
+/// `/.sokf/roots.d/`, and for each root, the `unique` and the `extends` of
+/// its manifest, with its identities where a store extends another. A registered root changes the number
+/// of each store after it, and a cap or an `extends` changes the scope of
+/// every key and the schema of every document of a store, so a change of
+/// any of them rebuilds the store (CACHE-1_AC-95, CACHE-1_AC-96).
+// sokf-implements: CACHE-1_AC-95
+// sokf-implements: CACHE-1_AC-96
+fn stores_fingerprint(root: &RepoRoot) -> u64 {
+    let mut bytes: Vec<u8> = Vec::new();
+    for file in crate::config::registry_files_lenient(root) {
+        bytes.extend(file.as_str().as_bytes());
+        bytes.push(0);
+        bytes.extend(fs::read(file.to_fs(root)).unwrap_or_default());
+        bytes.push(0);
+    }
+    let roots = crate::config::read_lenient(root)
+        .map(|c| c.roots.into_iter().chain(c.registered).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let manifests: Vec<(RepoPath, crate::model::Manifest)> = roots
+        .into_iter()
+        .filter_map(|r| {
+            let path = r.join("manifest.sokf.yaml")?;
+            let text = fs::read_to_string(path.to_fs(root)).ok()?;
+            Some((
+                r,
+                crate::model::manifest(crate::yaml::parse(&text, 1), &path),
+            ))
+        })
+        .collect();
+    // An `extends` resolves through the identities of the stores, so where
+    // one store extends another, a rename can break or mend a store, whose
+    // files the run then checks or skips (FORMAT-5_AC-10). Elsewhere a
+    // rename dirties only the documents that name the store (CACHE-1_AC-16).
+    let chains = manifests.iter().any(|(_, m)| m.extends.is_some());
+    for (r, m) in &manifests {
+        let former: Vec<&str> = m.renamed_from.iter().map(|(f, _)| f.as_str()).collect();
+        let mut fields = vec![
+            r.as_str().to_string(),
+            m.unique.clone().unwrap_or_else(|| "-".into()),
+            m.extends.clone().unwrap_or_else(|| "-".into()),
+        ];
+        if chains {
+            fields.push(m.scope.clone().unwrap_or_default());
+            fields.push(m.name.clone().unwrap_or_default());
+            fields.push(former.join(","));
+        }
+        for f in fields {
+            bytes.extend(f.as_bytes());
+            bytes.push(0);
+        }
+    }
+    crate::source::fnv1a64(&bytes)
 }
 
 fn now() -> i64 {

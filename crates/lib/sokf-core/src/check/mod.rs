@@ -21,12 +21,12 @@ mod markers;
 mod plans;
 mod schema_document;
 mod unit_types;
+mod verified;
 mod warnings;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use config::check_config;
-pub use conflicts::{conflict_lines, pack_files as pack_file_conflicts};
+pub use config::{check_config, leftover_packs};
 pub use coverage::{Citation, Citations};
 pub use generated::asset_include;
 pub use host::{SchemaHost, SokfHost, check_against};
@@ -38,8 +38,7 @@ pub use tramlines_md::check::{
 };
 
 use crate::{
-    Body, Compiled, Expected, Finding, Indexes, Knowledge, Locator, Model, RepoPath, Segments,
-    Spanned,
+    Body, Compiled, Expected, Finding, Indexes, Locator, Model, RepoPath, Segments, Spanned,
     grammar::{KeyScope, SokfSchema, States},
     model::{CoreFields, KeyEntry, KeyIndex, Query},
 };
@@ -156,19 +155,33 @@ pub fn capture_keys_of(
             Locator::schema(""),
         );
         model.unwatch();
+        let capped = model.knowledges[k].capped();
         for c in out.captures {
             keys.add(KeyEntry {
                 key: c.key,
                 path: doc.path.clone(),
                 line: c.line,
                 heading_slug: c.heading_slug,
-                scope: c.scope,
+                scope: cap(c.scope, capped),
                 knowledge: k,
                 rule_id: c.rule_id,
             });
         }
     }
     keys
+}
+
+/// `cap` returns `scope` capped at the store when the store's manifest
+/// declares `unique: knowledge`: a key of repository scope is then unique
+/// only within its store (`SOKF_FORMAT_208`).
+// sokf-implements: SOKF_FORMAT_69
+// sokf-implements: SOKF_FORMAT_208
+// sokf-implements: FORMAT-5_AC-1
+fn cap(scope: KeyScope, capped: bool) -> KeyScope {
+    match scope {
+        KeyScope::Host(h) if capped && h == "repository" => KeyScope::Host("knowledge".into()),
+        other => other,
+    }
 }
 
 /// `doc_view` returns a document as a check sees it.
@@ -271,26 +284,17 @@ pub fn run_units(
     fresh: bool,
 ) -> RunOutput {
     let mut out = RunOutput::default();
-    let checked = |path: &RepoPath| units.is_none_or(|u| u.contains(path));
-    let ctx = |knowledge: Option<usize>| Ctx::new(model, compiled, expected, keys, knowledge);
-    // A compile problem of a schema goes in that schema's output. A compile
-    // problem that belongs to no schema, such as one in the grammar
-    // itself, goes in the findings that every run makes afresh.
-    let schema_paths: BTreeSet<&RepoPath> = model
-        .knowledges
-        .iter()
-        .flat_map(|k| k.schemas.iter().map(|s| &s.doc.path))
+    // The run checks no file of a store whose `extends` is broken, and
+    // checks every other store as usual (FORMAT-5_AC-10).
+    // sokf-implements: FORMAT-5_AC-10
+    let broken: Vec<bool> = (0..model.knowledges.len())
+        .map(|k| model.broken(k).is_some())
         .collect();
+    let checked =
+        |path: &RepoPath| units.is_none_or(|u| u.contains(path)) && !model.in_broken_store(path);
+    let ctx = |knowledge: Option<usize>| Ctx::new(model, compiled, expected, keys, knowledge);
     if fresh {
-        out.fresh.extend(model.problems.iter().cloned());
-        out.fresh.extend(
-            compiled
-                .problems
-                .iter()
-                .filter(|p| !schema_paths.contains(&p.path))
-                .cloned(),
-        );
-        out.fresh.extend(manifest::check_identities(model));
+        out.fresh.extend(repository_findings(model, compiled));
     }
     // The link check keeps every citation that it resolves, and the
     // coverage pass reads them after the run checks every document. The
@@ -301,14 +305,27 @@ pub fn run_units(
         let ctx = ctx(Some(k));
         if fresh {
             out.fresh.extend(manifest::check(knowledge));
-            out.fresh.extend(assets::check_assets(knowledge));
+            if !broken[k] {
+                out.fresh.extend(assets::check_assets(model, knowledge));
+            }
         }
         for doc in &knowledge.documents {
+            // A document of a broken store gets no findings, but its links
+            // still cite the documents of other stores, whose coverage
+            // counts them (FORMAT-5_AC-11).
+            // sokf-implements: FORMAT-5_AC-11
+            if broken[k] && units.is_none_or(|u| u.contains(&doc.path)) {
+                check_unit(model, &mut out, &mut citations, &doc.path, |c| {
+                    let _ = links::check_document(doc_view(doc), &ctx, c);
+                    Vec::new()
+                });
+                continue;
+            }
             if !checked(&doc.path) {
                 continue;
             }
             check_unit(model, &mut out, &mut citations, &doc.path, |c| {
-                check_document(knowledge, k, doc, &ctx, c)
+                check_document(k, doc, &ctx, c)
             });
         }
         // A schema document is a unit, as a document is. The run checks it
@@ -319,19 +336,7 @@ pub fn run_units(
                 continue;
             }
             check_unit(model, &mut out, &mut citations, &schema.doc.path, |c| {
-                let mut findings: Vec<Finding> = compiled
-                    .problems
-                    .iter()
-                    .filter(|p| p.path == schema.doc.path)
-                    .cloned()
-                    .collect();
-                findings.extend(conflicts::check(&schema.doc));
-                findings.extend(schema_document::check_schema(knowledge, i, &ctx));
-                findings.extend(frontmatter::check_core(&schema.doc));
-                findings.extend(frontmatter::check_ids(model, k, &schema.doc));
-                findings.extend(links::check_document(doc_view(&schema.doc), &ctx, c));
-                findings.extend(generated::check(doc_view(&schema.doc), &ctx, c));
-                findings
+                check_schema_unit(k, i, &ctx, c)
             });
         }
     }
@@ -339,18 +344,16 @@ pub fn run_units(
     // run, `indexes` holds only the touched directories. The run stores the
     // output of each index under its path, and the output is empty when the
     // index is current (CACHE-1_AC-19).
-    let index_findings = index::check_indexes(model, indexes);
+    // The warning that the formatter failed on an index lies at the
+    // formatter's configuration file, and belongs to the index's output.
+    let mut index_findings = index::check_indexes_by_index(model, indexes, &expected.layout);
     for path in indexes.expected.keys() {
         if !checked(path) {
             continue;
         }
         out.documents.insert(
             path.clone(),
-            index_findings
-                .iter()
-                .filter(|f| &f.path == path)
-                .cloned()
-                .collect(),
+            index_findings.remove(path).unwrap_or_default(),
         );
     }
     // An additional file is a unit, as a document is (CACHE-1_AC-20).
@@ -401,6 +404,67 @@ pub fn run_units(
     out
 }
 
+/// `repository_findings` returns the findings that every run makes afresh
+/// before it checks each knowledge: the problems of the model, the compile
+/// problems that belong to no schema, and the findings of the identities of
+/// the stores.
+fn repository_findings(model: &Model, compiled: &Compiled) -> Vec<Finding> {
+    // A compile problem of a schema goes in that schema's output. A compile
+    // problem that belongs to no schema, such as one in the grammar
+    // itself, goes in the findings that every run makes afresh.
+    let schema_paths: BTreeSet<&RepoPath> = model
+        .knowledges
+        .iter()
+        .flat_map(|k| k.schemas.iter().map(|s| &s.doc.path))
+        .collect();
+    // The problems of a file of a broken store are among the checks that
+    // the run skips (FORMAT-5_AC-10).
+    let mut findings: Vec<Finding> = model
+        .problems
+        .iter()
+        .filter(|p| {
+            model
+                .knowledge_of(&p.path)
+                .is_none_or(|k| model.broken(k).is_none())
+        })
+        .cloned()
+        .collect();
+    findings.extend(
+        compiled
+            .problems
+            .iter()
+            .filter(|p| !schema_paths.contains(&p.path))
+            .cloned(),
+    );
+    findings.extend(manifest::check_identities(model));
+    findings.extend(manifest::check_extends(model));
+    findings
+}
+
+/// `check_schema_unit` runs the checks of the schema document `i` of the
+/// knowledge `k`. It reports the schema's compile problems, then checks the
+/// document's conflicts, its schema, its frontmatter and ids, its links,
+/// and its generated blocks.
+fn check_schema_unit(k: usize, i: usize, ctx: &Ctx<'_>, citations: &mut Citations) -> Vec<Finding> {
+    let knowledge = &ctx.model.knowledges[k];
+    let schema = &knowledge.schemas[i];
+    let mut findings: Vec<Finding> = ctx
+        .compiled
+        .problems
+        .iter()
+        .filter(|p| p.path == schema.doc.path)
+        .cloned()
+        .collect();
+    findings.extend(conflicts::check(&schema.doc));
+    findings.extend(schema_document::check_schema(knowledge, i, ctx));
+    findings.extend(frontmatter::check_core(&schema.doc));
+    findings.extend(frontmatter::check_ids(ctx.model, k, &schema.doc));
+    findings.extend(links::check_document(doc_view(&schema.doc), ctx, citations));
+    findings.extend(generated::check(doc_view(&schema.doc), ctx, citations));
+    findings.extend(verified::check(&schema.doc, ctx));
+    findings
+}
+
 /// `check_unit` runs `check` on the unit at `path`. The model records the
 /// reads of the check against `path`. `check_unit` adds the findings of the
 /// check, and the citations that the check resolves, to the unit's output.
@@ -427,11 +491,10 @@ fn check_unit(
 
 /// `check_document` runs the checks of one document. These checks need no
 /// result from another check. They check the document's frontmatter and
-/// ids, its schema, its asset, its links, its generated blocks, and its
-/// `rel` values.
+/// ids, its schema, its asset, its links, its generated blocks, its `rel`
+/// values, and whether its `verified` entries have lapsed.
 // sokf-implements: FORMAT-1_AC-2
 pub fn check_document(
-    knowledge: &Knowledge,
     k: usize,
     doc: &crate::Document,
     ctx: &Ctx<'_>,
@@ -439,11 +502,12 @@ pub fn check_document(
 ) -> Vec<Finding> {
     let mut findings = frontmatter::check(k, doc, ctx);
     findings.extend(conflicts::check(doc));
-    findings.extend(schema_document::check_typed(knowledge, doc, ctx));
-    findings.extend(assets::check_document(knowledge, doc, ctx));
+    findings.extend(schema_document::check_typed(doc, ctx));
+    findings.extend(assets::check_document(doc, ctx));
     findings.extend(links::check_document(doc_view(doc), ctx, citations));
     findings.extend(generated::check(doc_view(doc), ctx, citations));
     findings.extend(warnings::check(doc));
+    findings.extend(verified::check(doc, ctx));
     findings
 }
 
@@ -486,11 +550,14 @@ fn uniqueness_of(model: &Model, keys: &KeyIndex, doc: &crate::Document) -> Vec<F
                 keys.knowledge
                     .get(&(e.knowledge, s))
                     .map(Vec::as_slice)
-                    .unwrap_or(&[])
+                    .unwrap_or_default()
             }
             KeyScope::Host(scope) if scope == "repository" => {
                 model.note(Query::KeyRepository(s.clone()));
-                keys.repository.get(&s).map(Vec::as_slice).unwrap_or(&[])
+                keys.repository
+                    .get(&s)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default()
             }
             _ => continue,
         };

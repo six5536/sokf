@@ -1,0 +1,19 @@
+---
+source: crates/lib/sokf-core/tests/it/validate.rs
+expression: json(&report)
+---
+{
+  "errors": [
+    {
+      "path": "/knowledge/manifest.sokf.yaml",
+      "message": "the manifest is missing (SOKF_FORMAT_1)"
+    }
+  ],
+  "warnings": [],
+  "fixes": [],
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "fixes": 0
+  }
+}

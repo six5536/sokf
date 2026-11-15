@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::{Finding, RepoPath, Spanned, YamlError};
 
-/// The stamped keys of the manifest (SOKF_FORMAT_16): keys that sokf writes
+/// The stamped keys of the manifest (`SOKF_FORMAT_16`): keys that sokf writes
 /// itself.
 pub const STAMPED_MANIFEST_KEYS: &[&str] = &["producer", "generated", "counts"];
 
@@ -21,18 +21,33 @@ pub struct Manifest {
     pub sokf: Option<String>,
     /// `name`.
     pub name: Option<String>,
-    /// `scope`, the owner of the store (SOKF_FORMAT_10).
+    /// `scope`, the owner of the store (`SOKF_FORMAT_10`).
     pub scope: Option<String>,
     /// `renamed-from`, the store's former identities, each with its line.
     pub renamed_from: Vec<(String, usize)>,
     /// `description`.
     pub description: Option<String>,
+    /// `unique`, the cap on the scope of the store's keys, as its scalar
+    /// text, or empty for a value that isn't a scalar (`SOKF_FORMAT_205`).
+    pub unique: Option<String>,
+    /// `extends`, the identity of the store whose schemas the store
+    /// inherits, as its scalar text, or empty for a value that isn't a
+    /// scalar (`SOKF_FORMAT_206`).
+    pub extends: Option<String>,
     /// The stamped keys that the manifest has, each with its line.
     pub stamped_present: Vec<(String, usize)>,
     /// The line of every key.
     pub line_of: HashMap<String, usize>,
     /// The findings that the parser records about the manifest.
     pub problems: Vec<Finding>,
+}
+
+impl Manifest {
+    /// `capped` returns whether the manifest caps the scope of the store's
+    /// keys at the store, with `unique: knowledge` (`SOKF_FORMAT_208`).
+    pub fn capped(&self) -> bool {
+        self.unique.as_deref() == Some("knowledge")
+    }
 }
 
 /// `manifest` parses a manifest.
@@ -90,6 +105,8 @@ pub fn manifest(yaml: Result<Spanned, YamlError>, path: &RepoPath) -> Manifest {
                 }
             }
             "description" => m.description = value.as_str().map(str::to_string),
+            "unique" => m.unique = Some(value.scalar_text().unwrap_or_default()),
+            "extends" => m.extends = Some(value.scalar_text().unwrap_or_default()),
             k if STAMPED_MANIFEST_KEYS.contains(&k) => {
                 m.stamped_present.push((k.to_string(), key.line));
             }
@@ -125,7 +142,7 @@ mod tests {
         assert_eq!(m.sokf.as_deref(), Some("0.6"));
         // A scalar is not a list, so the parser reports it, not drops it.
         let m = manifest(yaml::parse("renamed-from: test/old\n", 1), &path);
-        assert!(m.renamed_from.is_empty());
+        assert_eq!(m.renamed_from, [] as [(std::string::String, usize); 0]);
         assert_eq!(m.problems.len(), 1, "{:?}", m.problems);
         assert_eq!(m.problems[0].criterion, "SOKF_FORMAT_11");
         assert_eq!(m.problems[0].line, Some(1));

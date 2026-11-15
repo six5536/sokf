@@ -261,7 +261,8 @@ impl From<&Node> for NodeJson {
                     .fields
                     .get("line")
                     .and_then(Value::as_u64)
-                    .unwrap_or_default() as usize,
+                    .and_then(|n| usize::try_from(n).ok())
+                    .unwrap_or_default(),
             },
             NodeKind::Missing => NodeJson::Missing {
                 target: node.key.as_str().to_string(),
@@ -357,6 +358,8 @@ pub fn bounded(graph: &Graph, result: &GraphResult) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use serde_json::json;
 
     use super::*;
@@ -458,7 +461,7 @@ mod tests {
             rows: vec![],
             nodes: vec![key("/a.md"), key("/b.md"), key("/gone.md")],
             edges: vec![0],
-            folded: Default::default(),
+            folded: BTreeMap::default(),
             summary: crate::graph::Summary {
                 documents: crate::graph::Count { shown: 2, total: 5 },
                 archived: crate::graph::Count { shown: 0, total: 3 },

@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "agent-harness-adapter-core"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e72259c0fdc306ec6f6ebd6238e186b2ebf8294d9a5084d4d6da26833eca960"
+checksum = "0e07652e4d67fb672820117370255338b31e571a987d3ab71af914b517c295ba"
 dependencies = [
  "schemars",
  "serde",
@@ -1302,7 +1302,7 @@ checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "sokf"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "agent-harness-adapter-core",
  "assert_cmd",
@@ -1316,12 +1316,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sokf-core",
- "toml",
 ]
 
 [[package]]
 name = "sokf-core"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "agent-harness-adapter-core",
  "dunce",

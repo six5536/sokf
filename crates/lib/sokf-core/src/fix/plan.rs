@@ -52,7 +52,7 @@ pub struct FixPlan {
     /// `rewrites` lists the files to rewrite.
     pub rewrites: Vec<Rewrite>,
     /// `creates` lists the indexes to create, with LF line endings
-    /// (SOKF_VALIDATION_36).
+    /// (`SOKF_VALIDATION_36`).
     pub creates: Vec<Rewrite>,
     /// `moves` lists the documents to move.
     pub moves: Vec<Move>,
@@ -68,18 +68,12 @@ pub struct FixPlan {
 /// loads the documents that the plan reads (CACHE-3_AC-1). `plan` computes the expected indexes from the
 /// planned moves, so they describe the tree that the plan leaves.
 // sokf-implements: SOKF_VALIDATION_14
-// sokf-implements: SOKF_VALIDATION_17
-// sokf-implements: SOKF_VALIDATION_54
-// sokf-implements: SOKF_VALIDATION_18
 // sokf-implements: SOKF_VALIDATION_19
-// sokf-implements: SOKF_VALIDATION_20
-// sokf-implements: SOKF_VALIDATION_21
 // sokf-implements: SOKF_VALIDATION_22
 // sokf-implements: SOKF_VALIDATION_24
 // sokf-implements: SOKF_VALIDATION_32
 // sokf-implements: SOKF_VALIDATION_33
 // sokf-implements: CLI-4_AC-5
-// sokf-implements: CLI-4_AC-23
 // sokf-implements: CLI-4_AC-34
 pub fn plan(
     model: &Model,
@@ -90,12 +84,104 @@ pub fn plan(
     only: Option<&std::collections::BTreeSet<RepoPath>>,
 ) -> Result<FixPlan> {
     let mut out = FixPlan::default();
-    let mut remap: HashMap<RepoPath, RepoPath> = HashMap::new();
-    let mut targets: BTreeSet<RepoPath> = BTreeSet::new();
-    let planned = |path: &RepoPath| scope.contains(path) && only.is_none_or(|o| o.contains(path));
-
     // Plan the moves first, because they change the paths that definition
     // blocks link to.
+    let remap = plan_moves(&mut out, model, compiled, scope, only);
+
+    let ctx = |knowledge: Option<usize>| Ctx::new(model, compiled, expected, keys, knowledge);
+    // A fix touches no file of a store whose `extends` is broken
+    // (FORMAT-5_AC-12).
+    // sokf-implements: FORMAT-5_AC-12
+    for (k, doc) in model.documents() {
+        if only.is_some_and(|o| !o.contains(&doc.path)) || model.in_broken_store(&doc.path) {
+            continue;
+        }
+        let schema = compiled.for_doc(model, k, doc).map(|(_, c)| c);
+        let states = schema
+            .map(|c| check::states_of(doc.frontmatter.as_ref(), c))
+            .unwrap_or_default();
+        let view = check::doc_view(doc);
+        plan_file(
+            &mut out,
+            view,
+            schema,
+            &states,
+            &ctx(Some(k)),
+            doc.source.eol,
+            scope,
+            &remap,
+        )?;
+    }
+    for (k, knowledge) in model.knowledges.iter().enumerate() {
+        for schema in &knowledge.schemas {
+            // A schema that the run didn't read is a placeholder from the
+            // cache store, with no text, so the plan never rewrites it.
+            if !schema.loaded
+                || only.is_some_and(|o| !o.contains(&schema.doc.path))
+                || model.in_broken_store(&schema.doc.path)
+            {
+                continue;
+            }
+            let view = check::doc_view(&schema.doc);
+            plan_file(
+                &mut out,
+                view,
+                Some(&compiled.schema_document),
+                &States::default(),
+                &ctx(Some(k)),
+                schema.doc.source.eol,
+                scope,
+                &remap,
+            )?;
+        }
+    }
+    for file in &model.additional {
+        let schema = file.schema.and_then(|r| compiled.schema(r));
+        let view = check::additional_view(file);
+        let k = include::knowledge_of_additional(model, file);
+        plan_file(
+            &mut out,
+            view,
+            schema,
+            &States::default(),
+            &ctx(k),
+            file.source.eol,
+            scope,
+            &remap,
+        )?;
+    }
+    plan_indexes(&mut out, model, expected, scope, only);
+    out.rewrites.sort_by(|a, b| a.path.cmp(&b.path));
+    out.creates.sort_by(|a, b| a.path.cmp(&b.path));
+    out.moves.sort_by(|a, b| a.from.cmp(&b.from));
+    Ok(out)
+}
+
+/// `plan_moves` plans the move of each document in `scope`, and in `only`
+/// when it is given, whose schema places it in another directory. A sidecar
+/// moves with its asset. It adds each move to `out`, or a finding when a
+/// target is taken, and returns the new path of each moved file by its old
+/// path.
+// sokf-implements: SOKF_VALIDATION_17
+// sokf-implements: SOKF_VALIDATION_54
+// sokf-implements: SOKF_VALIDATION_18
+// sokf-implements: SOKF_VALIDATION_20
+// sokf-implements: SOKF_VALIDATION_21
+// sokf-implements: CLI-4_AC-23
+fn plan_moves(
+    out: &mut FixPlan,
+    model: &Model,
+    compiled: &Compiled,
+    scope: &Scope,
+    only: Option<&std::collections::BTreeSet<RepoPath>>,
+) -> HashMap<RepoPath, RepoPath> {
+    let mut remap: HashMap<RepoPath, RepoPath> = HashMap::new();
+    let mut targets: BTreeSet<RepoPath> = BTreeSet::new();
+    let planned = |path: &RepoPath| {
+        scope.contains(path)
+            && only.is_none_or(|o| o.contains(path))
+            && !model.in_broken_store(path)
+    };
     for (k, doc) in model.documents() {
         if !planned(&doc.path) {
             continue;
@@ -153,72 +239,11 @@ pub fn plan(
             out.moves.push(Move { from, to });
         }
     }
-
-    let ctx = |knowledge: Option<usize>| Ctx::new(model, compiled, expected, keys, knowledge);
-    for (k, doc) in model.documents() {
-        if only.is_some_and(|o| !o.contains(&doc.path)) {
-            continue;
-        }
-        let schema = compiled.for_doc(model, k, doc).map(|(_, c)| c);
-        let states = schema
-            .map(|c| check::states_of(doc.frontmatter.as_ref(), c))
-            .unwrap_or_default();
-        let view = check::doc_view(doc);
-        plan_file(
-            &mut out,
-            view,
-            schema,
-            &states,
-            &ctx(Some(k)),
-            doc.source.eol,
-            scope,
-            &remap,
-        )?;
-    }
-    for (k, knowledge) in model.knowledges.iter().enumerate() {
-        for schema in &knowledge.schemas {
-            // A schema that the run didn't read is a placeholder from the
-            // cache store, with no text, so the plan never rewrites it.
-            if !schema.loaded || only.is_some_and(|o| !o.contains(&schema.doc.path)) {
-                continue;
-            }
-            let view = check::doc_view(&schema.doc);
-            plan_file(
-                &mut out,
-                view,
-                Some(&compiled.schema_document),
-                &States::default(),
-                &ctx(Some(k)),
-                schema.doc.source.eol,
-                scope,
-                &remap,
-            )?;
-        }
-    }
-    for file in &model.additional {
-        let schema = file.schema.and_then(|r| compiled.schema(r));
-        let view = check::additional_view(file);
-        let k = include::knowledge_of_additional(model, file);
-        plan_file(
-            &mut out,
-            view,
-            schema,
-            &States::default(),
-            &ctx(k),
-            file.source.eol,
-            scope,
-            &remap,
-        )?;
-    }
-    plan_indexes(&mut out, model, scope, only);
-    out.rewrites.sort_by(|a, b| a.path.cmp(&b.path));
-    out.creates.sort_by(|a, b| a.path.cmp(&b.path));
-    out.moves.sort_by(|a, b| a.from.cmp(&b.from));
-    Ok(out)
+    remap
 }
 
 /// `reference_renames` returns each reference that `--fix` respells, as
-/// written and as rewritten (SOKF_VALIDATION_24, SOKF_VALIDATION_32):
+/// written and as rewritten (`SOKF_VALIDATION_24`, `SOKF_VALIDATION_32`):
 ///
 /// - `--fix` respells a fragment that refers to a key or a heading by its
 ///   text with its slug: `[sokf:#User]` to `[sokf:#user]`, `](#User)` to
@@ -234,6 +259,18 @@ pub fn plan(
 /// target as before.
 fn reference_renames(view: DocView<'_>, ctx: &Ctx<'_>) -> Vec<Rename> {
     let mut out = Vec::new();
+    link_renames(&mut out, view, ctx);
+    links_entry_renames(&mut out, view, ctx);
+    include_renames(&mut out, view, ctx);
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// `link_renames` adds to `out` each link of the body of `view` that
+/// `--fix` respells: a `sokf:` label, a path link, and a fragment that
+/// refers to a key by its text.
+fn link_renames(out: &mut Vec<Rename>, view: DocView<'_>, ctx: &Ctx<'_>) {
     for link in &view.body.links {
         match &link.target {
             LinkTarget::Host(_) => {
@@ -285,71 +322,79 @@ fn reference_renames(view: DocView<'_>, ctx: &Ctx<'_>) -> Vec<Rename> {
             _ => {}
         }
     }
-    if let (Some(k), Some(core)) = (ctx.knowledge, view.core) {
-        // An entry runs to the line before the next entry, and the last
-        // entry runs to the end of the frontmatter.
-        let mut starts: Vec<usize> = core.links.iter().map(|e| e.line).collect();
-        starts.sort_unstable();
-        let last_of = |line: usize| {
-            starts
-                .iter()
-                .find(|&&next| next > line)
-                .map_or(view.body_line.saturating_sub(1), |next| next - 1)
-        };
-        for entry in &core.links {
-            if let Some(Target::Document { id, knowledge, .. }) =
-                resolve_to(ctx.model, k, &entry.to)
-                && let Some(canonical) = ctx.model.canonical_include(k, knowledge, &id, None)
-                && canonical != entry.to
-            {
-                // The value can be written plain, in double quotes, or in
-                // single quotes, so the plan tries each spelling.
-                for written in [
-                    entry.to.clone(),
-                    format!("\"{}\"", entry.to),
-                    format!("'{}'", entry.to),
-                ] {
-                    out.push((
-                        Some((entry.line, last_of(entry.line))),
-                        format!("to: {written}"),
-                        format!("to: {canonical}"),
-                    ));
-                }
-            }
-        }
-    }
-    if let Some(k) = ctx.knowledge {
-        for block in &view.segments.regions {
-            let written = block.target.clone();
-            let canonical = match &IncludeTarget::parse(&block.target) {
-                IncludeTarget::Document {
-                    store,
-                    id,
-                    fragment,
-                } => ctx
-                    .model
-                    .document_in(k, store.as_deref(), id)
-                    .and_then(|(target, _)| {
-                        ctx.model
-                            .canonical_include(k, target, id, fragment.as_deref())
-                    }),
-                IncludeTarget::File { path, region } => RepoPath::parse(path)
-                    .and_then(|rp| check::asset_include(ctx.model, k, &rp, region.as_deref())),
-            };
-            if let Some(canonical) = canonical
-                && canonical != written
-            {
+}
+
+/// `links_entry_renames` adds to `out` the `to` of each `links` entry of
+/// `view` that `--fix` respells as its canonical id.
+fn links_entry_renames(out: &mut Vec<Rename>, view: DocView<'_>, ctx: &Ctx<'_>) {
+    let (Some(k), Some(core)) = (ctx.knowledge, view.core) else {
+        return;
+    };
+    // An entry runs to the line before the next entry, and the last
+    // entry runs to the end of the frontmatter.
+    let mut starts: Vec<usize> = core.links.iter().map(|e| e.line).collect();
+    starts.sort_unstable();
+    let last_of = |line: usize| {
+        starts
+            .iter()
+            .find(|&&next| next > line)
+            .map_or(view.body_line.saturating_sub(1), |next| next - 1)
+    };
+    for entry in &core.links {
+        if let Some(Target::Document { id, knowledge, .. }) = resolve_to(ctx.model, k, &entry.to)
+            && let Some(canonical) = ctx.model.canonical_include(k, knowledge, &id, None)
+            && canonical != entry.to
+        {
+            // The value can be written plain, in double quotes, or in
+            // single quotes, so the plan tries each spelling.
+            for written in [
+                entry.to.clone(),
+                format!("\"{}\"", entry.to),
+                format!("'{}'", entry.to),
+            ] {
                 out.push((
-                    Some((block.open_line, block.open_line)),
-                    format!("sokf:include {written} -->"),
-                    format!("sokf:include {canonical} -->"),
+                    Some((entry.line, last_of(entry.line))),
+                    format!("to: {written}"),
+                    format!("to: {canonical}"),
                 ));
             }
         }
     }
-    out.sort();
-    out.dedup();
-    out
+}
+
+/// `include_renames` adds to `out` each include marker of `view` that
+/// `--fix` respells with its canonical target.
+fn include_renames(out: &mut Vec<Rename>, view: DocView<'_>, ctx: &Ctx<'_>) {
+    let Some(k) = ctx.knowledge else {
+        return;
+    };
+    for block in &view.segments.regions {
+        let written = block.target.clone();
+        let canonical = match &IncludeTarget::parse(&block.target) {
+            IncludeTarget::Document {
+                store,
+                id,
+                fragment,
+            } => ctx
+                .model
+                .document_in(k, store.as_deref(), id)
+                .and_then(|(target, _)| {
+                    ctx.model
+                        .canonical_include(k, target, id, fragment.as_deref())
+                }),
+            IncludeTarget::File { path, region } => RepoPath::parse(path)
+                .and_then(|rp| check::asset_include(ctx.model, k, &rp, region.as_deref())),
+        };
+        if let Some(canonical) = canonical
+            && canonical != written
+        {
+            out.push((
+                Some((block.open_line, block.open_line)),
+                format!("sokf:include {written} -->"),
+                format!("sokf:include {canonical} -->"),
+            ));
+        }
+    }
 }
 
 /// `value_end` returns the number of the line after the value of the
@@ -379,6 +424,7 @@ fn value_end(text: &str, line: usize) -> usize {
 fn plan_indexes(
     out: &mut FixPlan,
     model: &Model,
+    expected: &Expected,
     scope: &Scope,
     only: Option<&std::collections::BTreeSet<RepoPath>>,
 ) {
@@ -393,7 +439,7 @@ fn plan_indexes(
     let indexes = index::expected_for(model, &out.moves, dirs.as_ref());
     for (path, text) in indexes.expected {
         let wanted = scope.contains(&path) || path.parent().is_some_and(|d| touched.contains(&d));
-        if !wanted {
+        if !wanted || model.in_broken_store(&path) {
             continue;
         }
         let held: Option<(Cow<'_, str>, LineEnding)> = match model.by_path(&path) {
@@ -412,7 +458,7 @@ fn plan_indexes(
             // reports it (SOKF_VALIDATION_56).
             // sokf-implements: SOKF_VALIDATION_56
             Some((current, eol)) => {
-                if current != text.as_str() && index::is_generated(&current) {
+                if !expected.layout.same("md", &text, &current) && index::is_generated(&current) {
                     out.rewrites.push(Rewrite { path, text, eol });
                 }
             }
@@ -424,6 +470,25 @@ fn plan_indexes(
             }),
         }
     }
+}
+
+/// `include_edits` returns the edits that rewrite each stale include block
+/// of `view` with its expected interior. A block that the formatter gives
+/// the form of its expected text stays as it is, and a stale one gets its
+/// source's text as the source holds it (CLI-4_AC-50, CLI-4_AC-51).
+// sokf-implements: CLI-4_AC-50
+// sokf-implements: CLI-4_AC-51
+fn include_edits(view: DocView<'_>, expected: &Expected) -> Vec<Edit> {
+    let path = view.path;
+    view.segments
+        .regions
+        .iter()
+        .filter_map(|block| {
+            let interior = expected.include(path, block.open_line)?;
+            (expected.include_current(path, block.open_line, &block.content) == Some(false))
+                .then(|| include_edit(block.open_line, block.close_line, interior))
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -464,13 +529,7 @@ fn plan_file(
         None
     };
     if in_scope {
-        for block in &view.segments.regions {
-            if let Some(interior) = expected.include(path, block.open_line)
-                && interior != block.content
-            {
-                includes.push(include_edit(block.open_line, block.close_line, interior));
-            }
-        }
+        includes = include_edits(view, expected);
         let renames = reference_renames(view, ctx);
         let checked =
             schema.map(|c| check::check_against(view, c, states, ctx, Locator::schema("")));
@@ -507,7 +566,12 @@ fn plan_file(
             let current = view.segments.definition.as_ref();
             let differs = match current {
                 None => !rendered.is_empty(),
-                Some(d) => d.trailing || d.text.trim_end() != rendered.trim_end(),
+                Some(d) => {
+                    d.trailing
+                        || !expected
+                            .layout
+                            .same("md", rendered.trim_end(), d.text.trim_end())
+                }
             };
             differs.then(|| definition_edit(view.text, current.map(|d| d.line), &rendered))
         });
@@ -545,7 +609,9 @@ mod tests {
     use std::{fs, path::Path};
 
     use super::*;
-    use crate::{Cache, CacheMode, RepoRoot, api::load_repository, config, grammar};
+    use crate::{
+        Cache, CacheMode, RepoRoot, api::load_repository, config, config::RepoFormats, grammar,
+    };
 
     /// `fixture` copies the `indexes` fixture to a directory, named for
     /// `name`, under the temp directory, and returns its path.
@@ -575,7 +641,7 @@ mod tests {
         let grammar = grammar::load_grammar().unwrap();
         let cache = Cache::open(&root, CacheMode::Off);
         let loaded =
-            load_repository(&root, &config, &grammar, &Default::default(), &cache).unwrap();
+            load_repository(&root, &config, &grammar, &RepoFormats::default(), &cache).unwrap();
         plan(
             &loaded.model,
             &loaded.compiled,
@@ -677,7 +743,7 @@ mod tests {
         let mut scope = Scope::default();
         scope.add(p("/knowledge/issues/open/issue-001-move.md"));
         let out = plan_on(&dir, &scope);
-        assert!(out.moves.is_empty());
+        assert_eq!(out.moves, [] as [crate::fix::plan::Move; 0]);
         assert_eq!(out.refused.len(), 1);
         assert!(out.creates.is_empty() && out.rewrites.is_empty(), "{out:?}");
         fs::remove_dir_all(&dir).unwrap();

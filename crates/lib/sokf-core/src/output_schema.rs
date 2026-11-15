@@ -7,7 +7,8 @@ use schemars::{JsonSchema, Schema, generate::SchemaSettings, transform::Recursiv
 use serde_json::Value;
 
 use crate::{
-    GraphJson, HarnessReport, InitResult, LocateReport, NewResult, ValidateReport, harness,
+    FormatsJson, GraphJson, HarnessReport, InitResult, LocateReport, NewResult, ValidateReport,
+    harness,
 };
 
 /// `Output` names each JSON output that the tool prints or writes.
@@ -27,11 +28,13 @@ pub enum Output {
     Locate,
     /// The report of `new --json`.
     New,
+    /// The registry of `info formats --json`.
+    InfoFormats,
 }
 
 impl Output {
     /// `ALL` lists every output, in the order of `output_schemas`.
-    pub const ALL: [Output; 7] = [
+    pub const ALL: [Output; 8] = [
         Output::Validate,
         Output::Graph,
         Output::Init,
@@ -39,6 +42,7 @@ impl Output {
         Output::HarnessHookAnswer,
         Output::Locate,
         Output::New,
+        Output::InfoFormats,
     ];
 
     /// `file` returns the name of the output's schema file in `/knowledge/json/`.
@@ -51,6 +55,7 @@ impl Output {
             Output::HarnessHookAnswer => "harness-hook-answer.schema.json",
             Output::Locate => "locate-report.schema.json",
             Output::New => "new-report.schema.json",
+            Output::InfoFormats => "info-formats-registry.schema.json",
         }
     }
 
@@ -64,6 +69,7 @@ impl Output {
             Output::HarnessHookAnswer => schema::<harness::HookAnswer>(),
             Output::Locate => schema::<LocateReport>(),
             Output::New => schema::<NewResult>(),
+            Output::InfoFormats => schema::<FormatsJson>(),
         }
     }
 

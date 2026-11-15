@@ -1,0 +1,5 @@
+quarter,rate
+# sokf:begin q3
+q3,0.25
+# sokf:end q3
+q4,0.27

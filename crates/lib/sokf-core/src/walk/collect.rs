@@ -6,14 +6,14 @@ use std::{
     fs,
     io::ErrorKind,
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
 };
 
 use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use ignore::{DirEntry, ParallelVisitor, ParallelVisitorBuilder, WalkBuilder, WalkState};
 
 use super::{Tree, WalkedDir, WalkedFile, innermost};
-use crate::{Config, Error, RepoPath, RepoRoot, Result, Stat, cache::CACHE_DIR, pack::PACKS_DIR};
+use crate::{Config, Error, RepoPath, RepoRoot, Result, Stat, cache::CACHE_DIR};
 
 /// A `Keep` limits the walk outside the knowledge roots to the paths for
 /// which it returns true. The walk descends into a directory only when
@@ -42,7 +42,9 @@ pub fn collect(root: &RepoRoot, config: &Config) -> Result<Tree> {
         walk_under_root(root, &roots, knowledge, &mut seen, &mut files, &mut dirs)?;
     }
     files.extend(walk_outside(root, config, None)?);
-    Ok(Tree::new(root.clone(), roots, files, dirs))
+    let mut tree = Tree::new(root.clone(), roots, files, dirs);
+    tree.registered_count = config.registered_count;
+    Ok(tree)
 }
 
 /// `walk_under_root` lists `dir`, which is a knowledge root or lies under
@@ -185,13 +187,9 @@ pub(crate) fn walk_outside(
             // The walk skips the cache, which belongs to the tool: sokf
             // rebuilds an unreadable cache and doesn't report it
             // (CLI-4_AC-19).
-            // The walk also skips the packs' directories, whose base copies
-            // repeat the packs' documents (CONF-8_AC-5).
             // sokf-implements: CACHE-2_AC-1
-            // sokf-implements: CONF-8_AC-5
             Some(rp) => {
                 rp.relative() != CACHE_DIR
-                    && rp.relative() != PACKS_DIR
                     && !exclude.is_match(rp.relative())
                     && keep.as_ref().is_none_or(|keep| keep(&rp))
             }
@@ -211,11 +209,14 @@ pub(crate) fn walk_outside(
     if let Some(e) = shared
         .failed
         .into_inner()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(PoisonError::into_inner)
     {
         return Err(Error::io(&root_fs, std::io::Error::other(e)));
     }
-    Ok(shared.files.into_inner().unwrap_or_else(|e| e.into_inner()))
+    Ok(shared
+        .files
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner))
 }
 
 /// `Shared` holds what the threads of the walk share: the files they
@@ -234,7 +235,7 @@ struct Visitor<'s, 'a> {
     found: Vec<WalkedFile>,
 }
 
-impl<'s, 'a> ParallelVisitorBuilder<'s> for &'s Shared<'a> {
+impl<'s> ParallelVisitorBuilder<'s> for &'s Shared<'_> {
     fn build(&mut self) -> Box<dyn ParallelVisitor + 's> {
         Box::new(Visitor {
             shared: self,
@@ -251,7 +252,7 @@ impl ParallelVisitor for Visitor<'_, '_> {
                 self.shared
                     .failed
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(PoisonError::into_inner)
                     .get_or_insert(e);
                 return WalkState::Quit;
             }
@@ -270,7 +271,7 @@ impl Drop for Visitor<'_, '_> {
         self.shared
             .files
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .append(&mut self.found);
     }
 }
@@ -301,7 +302,7 @@ fn walk_dir(dir: &Path, visit: &mut dyn FnMut(&Path, bool)) -> Result<()> {
         .map_err(|e| Error::io(dir, e))?
         .collect::<std::result::Result<_, _>>()
         .map_err(|e| Error::io(dir, e))?;
-    entries.sort_by_key(|e| e.path());
+    entries.sort_by_key(fs::DirEntry::path);
     for entry in entries {
         let path = entry.path();
         let ty = entry.file_type().map_err(|e| Error::io(&path, e))?;

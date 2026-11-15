@@ -1,7 +1,7 @@
 //! This module builds the edits that SOKF makes to a file: they rewrite the
 //! interior of an include, the definition block, and the `resource` field of
 //! a sidecar. SOKF applies them together with the engine's edits, in one pass
-//! (SOKF_VALIDATION_14, SOKF_VALIDATION_22).
+//! (`SOKF_VALIDATION_14`, `SOKF_VALIDATION_22`).
 
 use std::ops::Range;
 
@@ -10,7 +10,7 @@ use tramlines_md::edit::{AnchorEdit, Edit, apply, line_edits};
 use crate::{Result, check::Repair, markdown::Segments};
 
 /// `include_edit` regenerates the interior of an include block: it replaces
-/// the lines between the block's markers with `interior` (SOKF_FORMAT_85).
+/// the lines between the block's markers with `interior` (`SOKF_FORMAT_85`).
 pub fn include_edit(open: usize, close: usize, interior: &str) -> Edit {
     let new: Vec<String> = interior.lines().map(str::to_string).collect();
     Edit::replace(open + 1..close, &new)
@@ -21,7 +21,7 @@ pub fn include_edit(open: usize, close: usize, interior: &str) -> Edit {
 /// `marker` line to the end of the text, with one blank line and `tail`. The
 /// replaced lines include the blank lines before the marker. When the text
 /// has no marker, the edit replaces the blank lines at the end of the text,
-/// so `tail` follows the last line that isn't blank (SOKF_VALIDATION_43).
+/// so `tail` follows the last line that isn't blank (`SOKF_VALIDATION_43`).
 pub fn definition_edit(text: &str, marker: Option<usize>, tail: &str) -> Edit {
     let lines: Vec<&str> = text.lines().collect();
     let end = lines.len() + 1;
@@ -40,10 +40,10 @@ pub fn definition_edit(text: &str, marker: Option<usize>, tail: &str) -> Edit {
 }
 
 /// A `ResourceEdit` sets the `resource` field of a sidecar to the path of
-/// its asset (SOKF_VALIDATION_22). It replaces the lines of the `resource`
+/// its asset (`SOKF_VALIDATION_22`). It replaces the lines of the `resource`
 /// key and its value when the frontmatter has them, and otherwise inserts a
 /// `resource` line after the `id` line, or after the line that opens the
-/// frontmatter. No other line of the frontmatter changes (SOKF_VALIDATION_23).
+/// frontmatter. No other line of the frontmatter changes (`SOKF_VALIDATION_23`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResourceEdit {
     /// `lines` are the numbers of the `resource` line and of the lines that

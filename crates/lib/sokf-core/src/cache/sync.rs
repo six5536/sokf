@@ -63,6 +63,10 @@ pub struct SyncStats {
 
 /// `Row` is one row of the `files` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "each field keeps the name of its column in the `files` table"
+)]
 pub(super) struct Row {
     kind: u8,
     root: Option<usize>,
@@ -383,20 +387,19 @@ impl Cache {
         // row. Second, the commit then writes nothing that the store already
         // has.
         let held = self.state.borrow().known.get(path).cloned();
-        let known = match held {
-            Some(known) => known,
-            None => {
-                let row = if self.is_walked(path) {
-                    self.file_row(path)
-                } else {
-                    None
-                };
-                self.state
-                    .borrow_mut()
-                    .known
-                    .insert(path.clone(), row.clone());
-                row
-            }
+        let known = if let Some(known) = held {
+            known
+        } else {
+            let row = if self.is_walked(path) {
+                self.file_row(path)
+            } else {
+                None
+            };
+            self.state
+                .borrow_mut()
+                .known
+                .insert(path.clone(), row.clone());
+            row
         };
         let mut state = self.state.borrow_mut();
         let found = match &known {
@@ -589,7 +592,7 @@ impl Cache {
             let mut put_dir =
                 conn.prepare("INSERT OR REPLACE INTO dirs (path, root) VALUES (?1, ?2)")?;
             for (path, root) in &state.dirs_added {
-                put_dir.execute(params![path.as_str(), *root as i64])?;
+                put_dir.execute(params![path.as_str(), *root])?;
             }
             let mut upsert = conn.prepare(
                 "INSERT OR REPLACE INTO files (path, kind, root, len, mtime, hash, row_hash) \
@@ -599,11 +602,11 @@ impl Cache {
                 upsert.execute(params![
                     path.as_str(),
                     row.kind,
-                    row.root.map(|r| r as i64),
-                    row.stat.len as i64,
+                    row.root,
+                    row.stat.len,
                     row.stat.mtime,
-                    row.hash.map(|h| h as i64),
-                    row.row_hash.map(|h| h as i64),
+                    row.hash.map(u64::cast_signed),
+                    row.row_hash.map(u64::cast_signed),
                 ])
             };
             for (path, row) in &state.walked {
@@ -631,12 +634,12 @@ impl Cache {
                 };
                 put(path, &row)?;
             }
-            self.commit_rows(conn, state)?;
-            self.commit_outputs(conn, state)?;
-            self.commit_markers(conn, state)?;
-            self.commit_plans(conn, state)?;
-            conn.put_meta("synced_at", self.now())?;
-            conn.put_meta("generation", next)?;
+            Self::commit_rows(conn, state)?;
+            Self::commit_outputs(conn, state)?;
+            Self::commit_markers(conn, state)?;
+            Self::commit_plans(conn, state)?;
+            conn.put_meta("synced_at", &self.now())?;
+            conn.put_meta("generation", &next)?;
             Ok::<(), rusqlite::Error>(())
         })();
         match result {
@@ -677,7 +680,7 @@ impl Cache {
             )
             .ok()
             .flatten()
-            .map(|h| h as u64)
+            .map(i64::cast_unsigned)
     }
 }
 
@@ -686,13 +689,13 @@ impl Cache {
 fn row_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     Ok(Row {
         kind: r.get::<_, u8>(1)?,
-        root: r.get::<_, Option<i64>>(2)?.map(|v| v as usize),
+        root: r.get::<_, Option<usize>>(2)?,
         stat: Stat {
-            len: r.get::<_, i64>(3)? as u64,
+            len: r.get::<_, u64>(3)?,
             mtime: r.get::<_, Option<i64>>(4)?,
         },
-        hash: r.get::<_, Option<i64>>(5)?.map(|h| h as u64),
-        row_hash: r.get::<_, Option<i64>>(6)?.map(|h| h as u64),
+        hash: r.get::<_, Option<i64>>(5)?.map(i64::cast_unsigned),
+        row_hash: r.get::<_, Option<i64>>(6)?.map(i64::cast_unsigned),
     })
 }
 

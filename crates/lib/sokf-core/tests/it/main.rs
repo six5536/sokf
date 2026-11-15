@@ -1,0 +1,52 @@
+//! This file gathers all the integration tests of the crate into one
+//! binary, so the crate links once instead of once for each test file.
+//! Each module is one file of tests.
+
+mod anchors;
+mod cache;
+mod cited_by;
+mod claim;
+mod common;
+mod config;
+mod conformance;
+mod deprecated;
+mod derivation;
+mod derive;
+mod example_lists;
+mod fix;
+mod graph;
+mod graph_cache;
+mod group_reasons;
+mod harness;
+mod harness_hook;
+mod harness_parts;
+mod heading_levels;
+mod incremental;
+mod incremental_hint;
+mod incremental_lookup;
+mod incremental_property;
+mod init;
+mod json_schemas;
+mod layout;
+mod marker_coverage;
+mod markers;
+mod nesting;
+mod new;
+mod new_elsewhere;
+mod plans;
+mod properties;
+mod properties_assets;
+mod properties_grammar;
+mod properties_harness;
+mod properties_index;
+mod properties_init;
+mod properties_new;
+mod scale;
+mod scale_markers;
+mod stores;
+mod templates;
+mod unit_types;
+mod validate;
+mod validate_examples;
+mod validate_rules;
+mod validate_units;

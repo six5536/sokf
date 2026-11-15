@@ -217,13 +217,13 @@ fn row_marker(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<RawEdge>> {
     let (Some(source), Some(target)) = (RepoPath::parse(&source), RepoPath::parse(&target)) else {
         return Ok(None);
     };
-    let line: i64 = r.get(4)?;
+    let line: usize = r.get(4)?;
     Ok(Some(marker_edge(
         source,
         &target,
         r.get(2)?,
         r.get(3)?,
-        line as usize,
+        line,
     )))
 }
 
@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(shown(cache.touching(&at)), ["/a.md /b.md", "/c.md /a.md"]);
         assert_eq!(shown(cache.touching(&[p("/b.md")].into())), ["/a.md /b.md"]);
         assert_eq!(shown(cache.under(&p("/src"))), ["/d.md /src/x.rs"]);
-        assert!(cache.under(&p("/sr")).is_empty());
+        assert_eq!(cache.under(&p("/sr")), [] as [RawEdge; 0]);
         // Each query finds its rows through an index, and never scans a table.
         for (sql, args) in [
             (

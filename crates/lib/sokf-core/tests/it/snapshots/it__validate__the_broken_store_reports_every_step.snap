@@ -1,0 +1,384 @@
+---
+source: crates/lib/sokf-core/tests/it/validate.rs
+assertion_line: 26
+expression: json(&report)
+---
+{
+  "errors": [
+    {
+      "path": "/docs/guide.md",
+      "message": "the document has 6 lines; the limit is 3; split it (schema schema-docs) (TL_21)"
+    },
+    {
+      "path": "/docs/guide.md",
+      "line": 6,
+      "message": "the link refers to a file that doesn't exist: /docs/missing.md (SOKF_FORMAT_76)"
+    },
+    {
+      "path": "/knowledge/bad-yaml.md",
+      "line": 3,
+      "message": "frontmatter: YAML anchor at line 3: anchors are not read (SOKF_FORMAT_18)"
+    },
+    {
+      "path": "/knowledge/cycle-a.md",
+      "line": 2,
+      "message": "type `Overview` resolves to 2 schemas (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/cycle-a.md",
+      "line": 11,
+      "message": "`sokf:include cycle-b` lies on a cycle: /knowledge/cycle-a.md, /knowledge/cycle-b.md (SOKF_FORMAT_91)"
+    },
+    {
+      "path": "/knowledge/cycle-b.md",
+      "line": 2,
+      "message": "type `Overview` resolves to 2 schemas (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/cycle-b.md",
+      "line": 11,
+      "message": "`sokf:include cycle-a` lies on a cycle: /knowledge/cycle-a.md, /knowledge/cycle-b.md (SOKF_FORMAT_91)"
+    },
+    {
+      "path": "/knowledge/decisions/decision-single-binary.md",
+      "line": 3,
+      "message": "/knowledge/other/decision-single-binary.md also uses id `decision-single-binary` (SOKF_FORMAT_33)"
+    },
+    {
+      "path": "/knowledge/index.md",
+      "message": "the index is stale: it differs from the generated content (SOKF_FORMAT_97)"
+    },
+    {
+      "path": "/knowledge/issues/closed/issue-001-dupe.md",
+      "message": "the document sits in `/knowledge/issues/closed`, but its lifecycle states place it in `/knowledge/issues/open` (SOKF_SCHEMA_26)"
+    },
+    {
+      "path": "/knowledge/issues/closed/issue-001-dupe.md",
+      "line": 3,
+      "message": "/knowledge/issues/open/issue-001-retry.md also uses sequence number 1 (SOKF_SCHEMA_32)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-001-retry.md",
+      "line": 3,
+      "message": "/knowledge/issues/closed/issue-001-dupe.md also uses sequence number 1 (SOKF_SCHEMA_32)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-001-retry.md",
+      "line": 8,
+      "message": "`links` entry `to: decision-single-binary` resolves to nothing (SOKF_FORMAT_53)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-001-retry.md",
+      "line": 14,
+      "message": "more than one document has the id in `[sokf:decision-single-binary]` (SOKF_FORMAT_61)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-x-bad.md",
+      "line": 3,
+      "message": "id `issue-x-bad` does not match the template `issue-${:seq}-${:slug}` (schema schema-issue, key `id`) (TL_56)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-x-bad.md",
+      "line": 5,
+      "message": "`state` must be one of `open`, `closed`; `pending` is not (schema schema-issue) (TL_108)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-x-bad.md",
+      "line": 9,
+      "message": "heading `Right heading` must equal the frontmatter `title`: `Wrong heading` (schema schema-issue, section \"<title>\") (TLMD_165)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-x-bad.md",
+      "line": 15,
+      "message": "expected a numbered-list block; found a prose block (schema schema-issue, section \"Reproduction\" block 1) (TLMD_69)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-x-bad.md",
+      "line": 17,
+      "message": "heading `## Extra` is not declared (schema schema-issue) (TLMD_19)"
+    },
+    {
+      "path": "/knowledge/other/decision-single-binary.md",
+      "line": 3,
+      "message": "/knowledge/decisions/decision-single-binary.md also uses id `decision-single-binary` (SOKF_FORMAT_33)"
+    },
+    {
+      "path": "/knowledge/other/orphan.md",
+      "line": 2,
+      "message": "type `Orphan` has no schema (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/other/schema-here.md",
+      "line": 2,
+      "message": "a `Schema` document lives in `schemas/` at the knowledge root, nowhere else (SOKF_FORMAT_2)"
+    },
+    {
+      "path": "/knowledge/other/twin.md",
+      "line": 21,
+      "message": "heading `## Context` occurs more than once (schema schema-decision, section \"Context\") (TLMD_151)"
+    },
+    {
+      "path": "/knowledge/overview.md",
+      "line": 2,
+      "message": "type `Overview` resolves to 2 schemas (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/overview.md",
+      "line": 13,
+      "message": "`[sokf:#cli-1]` refers to a key that more than one document captures (SOKF_FORMAT_71)"
+    },
+    {
+      "path": "/knowledge/req-cli.md",
+      "line": 12,
+      "message": "key `CLI-1` is also captured by /knowledge/req-other.md (SOKF_FORMAT_69)"
+    },
+    {
+      "path": "/knowledge/req-other.md",
+      "line": 11,
+      "message": "key `CLI-1` is also captured by /knowledge/req-cli.md (SOKF_FORMAT_69)"
+    },
+    {
+      "path": "/knowledge/req-other.md",
+      "line": 17,
+      "message": "`OTHER-1_AC-1 [ubiquitous]: the system should reject this li…` does not match the `ubiquitous` form: it fails at column 32: expected a `text` (`.+`) then ` SHALL `, found `system should reject th…`; an item of this kind reads PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`. (schema schema-requirement, section \"Acceptance Criteria\" block 1) (TL_74)"
+    },
+    {
+      "path": "/knowledge/req-other.md",
+      "line": 18,
+      "message": "`CLI-1_AC-9 [bogus]: WHEN this THEN that` matches none of the forms `ubiquitous`, `event`, `state`, `unwanted`, `optional`, `complex-event`, `complex-unwanted`: each fails at column 13; an item of this kind reads PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`. or PLUMB-1_AC-1 [event]: WHEN a program writes a message to `/mnt/plumb/send`, the plumber SHALL deliver the message to the port that the first matching rule set names. or PLUMB-2_AC-2 [state]: WHILE a program's queue for the port is empty, the plumber SHALL delay its reply to the program's read until a message arrives. or PLUMB-1_AC-2 [unwanted]: IF no rule set matches and the message names no port, THEN the plumber SHALL fail the write with the error `no matching plumb rule`. or PLUMB-1_AC-4 [optional]: WHERE the message has a `click` attribute, the plumber SHALL replace the data with the text that the matching rule set's patterns match around the click position. or PLUMB-1_AC-3 [complex]: WHILE no program has the destination port open, WHEN a message for that port arrives, the plumber SHALL start the program that the rule set's `plumb client` action names. or PLUMB-3_AC-4 [complex]: WHILE a program has `/mnt/plumb/rules` open for writing, IF a second program opens it for writing, THEN the plumber SHALL fail the open with the error `file already open`. (schema schema-requirement, section \"Acceptance Criteria\" block 1) (TL_74)"
+    },
+    {
+      "path": "/knowledge/schemas/anchored.md",
+      "line": 9,
+      "message": "schema: YAML anchor at line 9: anchors are not read (SOKF_SCHEMA_2)"
+    },
+    {
+      "path": "/knowledge/schemas/faulty.md",
+      "line": 24,
+      "message": "the example `A draft of the one section.` is refused: `draft` is refused: The prose contains no draft. (schema schema-faulty, section \"Only\" block 1) (TL_64)"
+    },
+    {
+      "path": "/knowledge/schemas/globs.md",
+      "line": 7,
+      "message": "the `additional-files` glob `/knowledge/decisions/*.md` matches the document `/knowledge/decisions/decision-single-binary.md` (SOKF_SCHEMA_5)"
+    },
+    {
+      "path": "/knowledge/schemas/globs.md",
+      "line": 7,
+      "message": "the `additional-files` glob `/knowledge/decisions/*.md` matches the index `/knowledge/decisions/index.md` (SOKF_SCHEMA_5)"
+    },
+    {
+      "path": "/knowledge/schemas/globs.md",
+      "line": 9,
+      "message": "the schema declares both a `type` const and `additional-files`. Declare only one of them (SOKF_SCHEMA_3)"
+    },
+    {
+      "path": "/knowledge/schemas/globs.md",
+      "line": 15,
+      "message": "the schema declares `lifecycle` together with `additional-files`. Declare only one of them (SOKF_SCHEMA_4)"
+    },
+    {
+      "path": "/knowledge/schemas/overview.md",
+      "line": 7,
+      "message": "/knowledge/schemas/twice.md also claims type `Overview`. A type has one schema (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/schemas/refused.md",
+      "line": 10,
+      "message": "`root` is not a valid repository path: it must start with / and have no empty, `.`, or `..` segment (SOKF_SCHEMA_27)"
+    },
+    {
+      "path": "/knowledge/schemas/refused.md",
+      "line": 17,
+      "message": "template `Refused-${:seq}` admits a non-slug: `Refused-x` is not a slug (TL_122)"
+    },
+    {
+      "path": "/knowledge/schemas/twice.md",
+      "line": 7,
+      "message": "/knowledge/schemas/overview.md also claims type `Overview`. A type has one schema (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 3,
+      "message": "id `Shapes Not Slug` is not a slug (SOKF_FORMAT_32)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 4,
+      "message": "`title` must be a string (SOKF_FORMAT_26)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 5,
+      "message": "`tags` must be a list of strings (SOKF_FORMAT_27)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 6,
+      "message": "`status` must be `draft`, `stable`, or `deprecated` (SOKF_FORMAT_28)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 7,
+      "message": "`resource` must be a `/` path or a URL, or a list of them (SOKF_FORMAT_29)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 8,
+      "message": "`generated` is a field that export tooling writes when it publishes a store, and it mustn't appear in the working tree (SOKF_FORMAT_24)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 8,
+      "message": "frontmatter key `generated` is not declared (schema schema-decision) (TL_55)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 10,
+      "message": "a `sources` entry has no `resource` (SOKF_FORMAT_37)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 12,
+      "message": "`links` entry `to: nowhere` resolves to nothing (SOKF_FORMAT_53)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 12,
+      "message": "`rel: Depends On` is not lowercase kebab-case (SOKF_FORMAT_52)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 12,
+      "message": "the schema declares no `links` rule for `rel: Depends On` (schema schema-decision) (SOKF_SCHEMA_34)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 14,
+      "message": "`links` entry `to: decision-single-binary` resolves to nothing (SOKF_FORMAT_53)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 14,
+      "message": "the schema declares no `links` rule for `rel: custom-edge` (schema schema-decision) (SOKF_SCHEMA_34)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 17,
+      "message": "`verified[].by` must be a `human:` or `process:` actor (SOKF_FORMAT_43)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 24,
+      "message": "`[sokf:req-cli#nope]` refers to a fragment that is neither a captured key nor a heading (SOKF_FORMAT_71)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 24,
+      "message": "footnote `[^nope]` matches no `sources[].id` (SOKF_FORMAT_41)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 24,
+      "message": "reference-style link `[nope-label]` matches no definition (SOKF_FORMAT_74)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 24,
+      "message": "the link refers to a file that doesn't exist: /knowledge/gone.md (SOKF_FORMAT_76)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 24,
+      "message": "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:req-cli]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 30,
+      "message": "`TODO` is refused: A finished document contains no TODO. (schema schema-decision) (TL_75)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 34,
+      "message": "the image refers to a file that doesn't exist: /img/missing.png (SOKF_FORMAT_76)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 34,
+      "message": "the item's text reads as an image block (schema schema-decision, section \"Consequences\" block 1) (TLMD_162)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 36,
+      "message": "heading `## Context` occurs more than once (schema schema-decision, section \"Context\") (TLMD_151)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 2,
+      "message": "type `Overview` resolves to 2 schemas (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 8,
+      "message": "`links` entry `to: /src/main.rs` has no body link that mirrors it (SOKF_FORMAT_75)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 16,
+      "message": "`sokf:include req-cli` is stale. Run `sokf validate --fix` (SOKF_FORMAT_85)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 22,
+      "message": "`sokf:include /knowledge/req-cli.md` refers to a document by path. Include its body by id as `sokf:include req-cli`, or show its source in a code block (SOKF_FORMAT_88)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 26,
+      "message": "`sokf:include /src/main.rs#nope`: /src/main.rs has no region `nope` (SOKF_FORMAT_87)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 30,
+      "message": "`sokf:include /../outside.rs` points to a path outside the repository (SOKF_FORMAT_87)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 34,
+      "message": "`sokf:include missing-doc` resolves to no document (SOKF_FORMAT_87)"
+    },
+    {
+      "path": "/knowledge/stale.md",
+      "line": 38,
+      "message": "the definition block is stale. Run `sokf validate --fix` (SOKF_FORMAT_80)"
+    },
+    {
+      "path": "/knowledge/unclosed.md",
+      "line": 2,
+      "message": "type `Overview` resolves to 2 schemas (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/unclosed.md",
+      "line": 11,
+      "message": "the include block has no close marker (SOKF_FORMAT_86)"
+    }
+  ],
+  "warnings": [
+    {
+      "path": "/docs/guide.md",
+      "line": 3,
+      "message": "expected a prose block; found a bullet-list block (schema schema-docs, section \"Guide\" block 1) (TLMD_69)"
+    },
+    {
+      "path": "/knowledge/shapes.md",
+      "line": 14,
+      "message": "`rel: custom-edge` is outside the core set, so consumers read it as `relates-to` (SOKF_VALIDATION_4)"
+    }
+  ],
+  "fixes": [],
+  "summary": {
+    "errors": 72,
+    "warnings": 2,
+    "fixes": 0
+  }
+}

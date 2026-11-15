@@ -1,0 +1,64 @@
+---
+source: crates/lib/sokf-core/tests/it/fix.rs
+assertion_line: 158
+expression: "dump.replace(\"\\r\\n\", \"<CRLF>\\n\")"
+---
+==== knowledge/crlf/index.md
+# crlf<CRLF>
+<CRLF>
+- [C note][sokf:c]<CRLF>
+<CRLF>
+<!-- sokf:links --><CRLF>
+<CRLF>
+[sokf:c]: /knowledge/crlf/c.md<CRLF>
+==== knowledge/index.md
+# indexed
+
+- [crlf/](crlf/index.md)
+- [issues/](issues/index.md)
+- [none/](none/index.md)
+- [schemas/](schemas/index.md)
+- [sub/](sub/index.md)
+==== knowledge/issues/closed/index.md
+# closed
+
+- [Moves when fixed][sokf:issue-001-move]
+
+<!-- sokf:links -->
+
+[sokf:issue-001-move]: /knowledge/issues/closed/issue-001-move.md
+==== knowledge/issues/index.md
+# issues
+
+- [closed/](closed/index.md)
+- [open/](open/index.md)
+==== knowledge/issues/open/index.md
+# open
+==== knowledge/none/index.md
+# none
+
+- [B note][sokf:b]
+
+<!-- sokf:links -->
+
+[sokf:b]: /knowledge/none/b.md
+==== knowledge/schemas/index.md
+# schemas
+
+- [Glob schema][sokf:schema-glob] - A glob that governs an index. No glob is allowed to govern an index.
+- [Issue schema][sokf:schema-issue] - An issue tracked through its lifecycle.
+- [Note schema][sokf:schema-note] - A note.
+
+<!-- sokf:links -->
+
+[sokf:schema-glob]: /knowledge/schemas/glob.md
+[sokf:schema-issue]: /knowledge/schemas/issue.md
+[sokf:schema-note]: /knowledge/schemas/note.md
+==== knowledge/sub/index.md
+# sub
+
+- [A note][sokf:a] - Listed in a stale index.
+
+<!-- sokf:links -->
+
+[sokf:a]: /knowledge/sub/a.md

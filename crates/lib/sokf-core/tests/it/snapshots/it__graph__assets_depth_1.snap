@@ -1,0 +1,155 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+expression: "json(&tree, query(&[], 1))"
+---
+{
+  "start": [
+    "/knowledge"
+  ],
+  "nodes": [
+    {
+      "kind": "root",
+      "path": "/knowledge",
+      "name": "assets-knowledge",
+      "scope": "test"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/data"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/data/rates.csv.md",
+      "type": "Dataset",
+      "id": "rates",
+      "title": "Rates",
+      "description": "Quarterly rates.",
+      "resource": "/knowledge/data/rates.csv",
+      "status": "stable"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/media"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/media/draft"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/media/draft/flowers.png.md",
+      "type": "Image",
+      "id": "flowers",
+      "title": "Flowers",
+      "description": "Wild flowers on the ridge.",
+      "state": "draft",
+      "resource": "/knowledge/media/draft/flowers.png",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/media/draft/lonely.md",
+      "type": "Image",
+      "id": "lonely",
+      "title": "Lonely",
+      "state": "draft",
+      "resource": "/knowledge/media/draft/lonely.md",
+      "status": "stable"
+    },
+    {
+      "kind": "asset",
+      "path": "/knowledge/media/draft/orphan.png"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/media/draft/stale.png.md",
+      "type": "Image",
+      "id": "stale",
+      "title": "Stale",
+      "state": "draft",
+      "resource": "/knowledge/media/draft/old-name.png",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/media/draft/sunset.png.md",
+      "type": "Image",
+      "id": "sunset",
+      "title": "Sunset",
+      "state": "published",
+      "resource": "/knowledge/media/draft/sunset.png",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/media/draft/wrong.png.md",
+      "type": "Dataset",
+      "id": "wrong",
+      "title": "Wrong",
+      "resource": "/knowledge/media/draft/wrong.png",
+      "status": "stable"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/notes"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/notes/album.md",
+      "type": "Note",
+      "id": "album",
+      "title": "Album",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/notes/broken.md",
+      "type": "Note",
+      "id": "broken",
+      "title": "Broken",
+      "status": "stable"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/schemas"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/schemas/dataset.md",
+      "type": "Schema",
+      "id": "schema-dataset",
+      "title": "Dataset Schema",
+      "description": "A CSV file and its description.",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/schemas/image.md",
+      "type": "Schema",
+      "id": "schema-image",
+      "title": "Image Schema",
+      "description": "A picture in the media library.",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/schemas/note.md",
+      "type": "Schema",
+      "id": "schema-note",
+      "title": "Note Schema",
+      "description": "A note.",
+      "status": "stable"
+    }
+  ],
+  "edges": [],
+  "summary": {
+    "documents": {
+      "shown": 11,
+      "total": 11
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

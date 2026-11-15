@@ -23,11 +23,7 @@
       }
     }
   },
-  "required": [
-    "scope",
-    "harnesses",
-    "warnings"
-  ],
+  "required": ["scope", "harnesses", "warnings"],
   "$defs": {
     "Scope": {
       "description": "Where a harness integration is installed.",
@@ -79,12 +75,7 @@
           }
         }
       },
-      "required": [
-        "harness",
-        "parts",
-        "unsupported",
-        "notes"
-      ]
+      "required": ["harness", "parts", "unsupported", "notes"]
     },
     "Part": {
       "description": "One part of a harness.",
@@ -111,11 +102,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "part",
-        "state",
-        "path"
-      ]
+      "required": ["part", "state", "path"]
     },
     "State": {
       "description": "The state of a part.",

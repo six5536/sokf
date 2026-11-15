@@ -8,15 +8,14 @@ use std::{
 };
 
 use agent_harness_adapter_core::cli;
-use serde::Serialize;
-use sokf_core::{Error, RepoRoot, discover_root};
-
 // sokf:begin output
 /// `EXIT_OK` (0) is the exit code when the command finds no error,
 /// `EXIT_ERRORS` (1) the exit code when the command finds errors, and
 /// `EXIT_FAILURE` (2) the exit code for a usage or internal error, which the
 /// command reports on stderr.
 pub use agent_harness_adapter_core::cli::{EXIT_ERRORS, EXIT_FAILURE, EXIT_OK};
+use serde::Serialize;
+use sokf_core::{Error, Expr, RepoRoot, discover_root};
 
 /// `write_stdout` writes a fully rendered buffer to stdout and flushes it. The
 /// function flushes explicitly because, when the program exits, the runtime
@@ -34,9 +33,9 @@ pub fn stdout_err(e: io::Error) -> Error {
     Error::io("<stdout>", e)
 }
 
-/// `print_schema` writes the JSON Schema of `output` to stdout, as the file in
-/// `/knowledge/json/` holds it, and returns the exit code 0. It reads no
-/// repository.
+/// `print_schema` writes the JSON Schema of `output` to stdout, the schema
+/// that the file in `/knowledge/json/` holds, and returns the exit code 0.
+/// It reads no repository.
 // sokf-implements: CLI-1_AC-14
 // sokf-implements: CLI-1_AC-15
 pub fn print_schema(output: sokf_core::Output) -> sokf_core::Result<u8> {
@@ -47,6 +46,19 @@ pub fn print_schema(output: sokf_core::Output) -> sokf_core::Result<u8> {
 /// `json_line` serialises `value` as JSON on one line, ended with a newline.
 pub fn json_line(value: &impl Serialize) -> sokf_core::Result<Vec<u8>> {
     cli::json_line(value).map_err(|e| Error::Internal(e.to_string()))
+}
+
+/// `json_text` serialises `value` as JSON on one line, or, with `query`, the
+/// value that the JMESPath expression selects from it.
+pub fn json_text(value: &impl Serialize, query: Option<&Expr>) -> sokf_core::Result<String> {
+    let bytes = match query {
+        Some(q) => {
+            let value = serde_json::to_value(value).map_err(|e| Error::Internal(e.to_string()))?;
+            json_line(&q.eval(&value)?)?
+        }
+        None => json_line(value)?,
+    };
+    String::from_utf8(bytes).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// `cwd` returns the current directory.
@@ -70,9 +82,9 @@ pub fn required(value: Option<String>, name: &str) -> sokf_core::Result<String> 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use agent_harness_adapter_core::cli::is_broken_pipe;
+
+    use super::*;
 
     // `main` exits through `cli::finish`, which treats a broken pipe as a clean
     // exit. The test checks that a `sokf` error is a broken pipe only when it

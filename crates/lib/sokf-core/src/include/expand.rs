@@ -1,14 +1,18 @@
 //! This module computes the expected content of every include block and
-//! definition block (SOKF_VALIDATION_15). It expands each file after the
+//! definition block (`SOKF_VALIDATION_15`). It expands each file after the
 //! files that it includes, so each include block holds the expected content of
 //! its target, never the target's text on disk. `sokf validate --fix` writes
 //! this content into each block, and validation compares each block with it.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    fmt::Write as _,
+};
 
 use super::{fence, graph, region};
 use crate::{
     Body, Model, RepoPath, Segments,
+    formatter::{Layout, Pair},
     markdown::{self, IncludeTarget, Link, sokf_label},
     model::{KeyIndex, Query, keys},
     source,
@@ -33,6 +37,10 @@ pub struct Expected {
     /// by the line of its open marker. The value is `None` when the interior
     /// can't be regenerated.
     pub includes: HashMap<(RepoPath, usize), Option<String>>,
+    /// This map holds the extension of the source of each include block
+    /// that holds a file in a fence, keyed as `includes` is. An include
+    /// block of a document's body has no entry.
+    pub fences: HashMap<(RepoPath, usize), String>,
     /// This map holds the definition entries of each file. The list is empty
     /// when the file needs no block, and the value is `None` when a label
     /// doesn't resolve.
@@ -41,6 +49,9 @@ pub struct Expected {
     pub cycles: Vec<Vec<RepoPath>>,
     /// `on_cycle` holds every file that lies on an include cycle.
     pub on_cycle: HashSet<RepoPath>,
+    /// `layout` records which blocks that differ from their expected text
+    /// the formatter gives the same form (CLI-4_AC-45).
+    pub layout: Layout,
 }
 
 impl Expected {
@@ -51,6 +62,87 @@ impl Expected {
             .get(&(path.clone(), line))
             .and_then(|i| i.as_deref())
     }
+
+    /// `include_pair` returns the pair of texts that the formatter compares
+    /// for the include block that opens at `line` in `path` and holds
+    /// `content`, when the block differs from its expected interior. An
+    /// include of a file compares the code inside the fence, in the language
+    /// of the source's extension, and an include of a body compares the
+    /// whole interior as Markdown (CONF-10_AC-6). It returns `None` when the
+    /// block has no expected interior, holds it, or holds a fence of another
+    /// form.
+    // sokf-implements: CONF-10_AC-6
+    // sokf-implements: CLI-4_AC-47
+    pub fn include_pair(&self, path: &RepoPath, line: usize, content: &str) -> Option<Pair> {
+        let expected = self.include(path, line)?;
+        if expected == content {
+            return None;
+        }
+        let Some(ext) = self.fences.get(&(path.clone(), line)) else {
+            return Some(Pair {
+                path: path.clone(),
+                ext: "md".into(),
+                expected: expected.into(),
+                actual: content.into(),
+            });
+        };
+        let (open, close) = fence_ends(expected)?;
+        let code = |text: &str| -> Option<String> {
+            let inner = text.strip_prefix(open)?.strip_suffix(close)?;
+            Some(inner.to_string())
+        };
+        Some(Pair {
+            path: path.clone(),
+            ext: ext.clone(),
+            expected: code(expected)?,
+            actual: code(content)?,
+        })
+    }
+
+    /// `include_current` returns whether the include block that opens at
+    /// `line` in `path` and holds `content` is current: whether it holds its
+    /// expected interior, or the formatter gives the two the same form. It
+    /// returns `None` when the block has no expected interior.
+    // sokf-implements: CLI-4_AC-44
+    // sokf-implements: CLI-4_AC-45
+    pub fn include_current(&self, path: &RepoPath, line: usize, content: &str) -> Option<bool> {
+        let expected = self.include(path, line)?;
+        Some(
+            expected == content
+                || self
+                    .include_pair(path, line, content)
+                    .is_some_and(|p| self.layout.same(&p.ext, &p.expected, &p.actual)),
+        )
+    }
+
+    /// `include_warning` returns the warning that the formatter failed on
+    /// the texts of the include block that opens at `line` in `path` and
+    /// holds `content`, when it did.
+    pub fn include_warning(
+        &self,
+        path: &RepoPath,
+        line: usize,
+        content: &str,
+    ) -> Option<crate::Finding> {
+        let p = self.include_pair(path, line, content)?;
+        self.layout.warning(&p.ext, &p.expected, &p.actual)
+    }
+}
+
+/// `fence_ends` returns the line that opens the fence of an include
+/// interior, after the interior's first blank line, and the text that
+/// closes it, from the fence to the interior's end.
+fn fence_ends(interior: &str) -> Option<(&str, &str)> {
+    let rest = interior.strip_prefix('\n')?;
+    let ticks = rest.len() - rest.trim_start_matches('`').len();
+    let open_len = 1 + rest.find('\n')? + 1;
+    let close_len = ticks + 2;
+    (ticks >= 3 && open_len + close_len <= interior.len()).then(|| {
+        (
+            &interior[..open_len],
+            &interior[interior.len() - close_len..],
+        )
+    })
 }
 
 /// `interior` returns the text that goes between the markers of an include
@@ -74,7 +166,7 @@ pub fn render_definitions(entries: &[DefinitionEntry]) -> String {
     }
     let mut out = String::from("<!-- sokf:links -->\n\n");
     for e in entries {
-        out.push_str(&format!("[{}]: {}", e.label, e.path));
+        let _ = write!(out, "[{}]: {}", e.label, e.path);
         if let Some(slug) = &e.slug {
             out.push('#');
             out.push_str(slug);
@@ -95,7 +187,6 @@ pub fn expected(model: &Model, keys: &KeyIndex) -> Expected {
 /// include targets of those files too. It reads the body of a summarised
 /// document from the disk when a file that depends on it needs the body
 /// (CACHE-3_AC-1).
-// sokf-implements: SOKF_FORMAT_78
 // sokf-implements: SOKF_FORMAT_85
 // sokf-implements: SOKF_VALIDATION_15
 // sokf-implements: CACHE-3_AC-1
@@ -104,22 +195,49 @@ pub fn expected_for(model: &Model, keys: &KeyIndex, only: Option<&BTreeSet<RepoP
     // include, directly or through another file.
     let (g, needed) = graph::graph_for(model, only);
     let o = graph::order(&g);
-    let mut out = Expected {
-        cycles: o.cycles.clone(),
-        on_cycle: o.cycles.iter().flatten().cloned().collect(),
-        ..Expected::default()
+    let mut expander = Expander {
+        model,
+        keys,
+        out: Expected {
+            cycles: o.cycles.clone(),
+            on_cycle: o.cycles.iter().flatten().cloned().collect(),
+            ..Expected::default()
+        },
+        expansions: HashMap::new(),
     };
-    // This map holds the expanded body of each document by path, or `None`
-    // when the body can't be computed.
-    let mut expansions: HashMap<RepoPath, Option<String>> = HashMap::new();
     let cycle_nodes: Vec<usize> = (0..g.nodes.len())
-        .filter(|i| out.on_cycle.contains(&g.nodes[*i]))
+        .filter(|i| expander.out.on_cycle.contains(&g.nodes[*i]))
         .collect();
     for &node in o.sorted.iter().chain(cycle_nodes.iter()) {
         if needed.as_ref().is_some_and(|n| !n.contains(&node)) {
             continue;
         }
-        let path = &g.nodes[node];
+        expander.expand_file(&g.nodes[node]);
+    }
+    expander.add_definitions(only);
+    expander.out
+}
+
+/// An `Expander` holds what `expected_for` builds as it expands the files,
+/// each after the files that it includes.
+struct Expander<'a> {
+    /// The model.
+    model: &'a Model,
+    /// The captured keys.
+    keys: &'a KeyIndex,
+    /// The expected content so far.
+    out: Expected,
+    /// This map holds the expanded body of each document by path, or `None`
+    /// when the body can't be computed.
+    expansions: HashMap<RepoPath, Option<String>>,
+}
+
+impl Expander<'_> {
+    /// `expand_file` computes the expected interior of each include block of
+    /// the file at `path`, and the file's expanded body when the file is a
+    /// document.
+    fn expand_file(&mut self, path: &RepoPath) {
+        let model = self.model;
         model.watch(path);
         let (knowledge, segments, body, body_text, body_line, is_document) =
             match model.by_path(path) {
@@ -135,94 +253,122 @@ pub fn expected_for(model: &Model, keys: &KeyIndex, only: Option<&BTreeSet<RepoP
                 ),
                 _ => {
                     model.unwatch();
-                    continue;
+                    return;
                 }
             };
         let mut all_computable = true;
         for block in &segments.regions {
-            let expected = match &IncludeTarget::parse(&block.target) {
-                IncludeTarget::Document {
-                    store,
-                    id,
-                    fragment,
-                } => {
-                    let target = knowledge.and_then(|k| model.document_in(k, store.as_deref(), id));
-                    match target {
-                        None => None,
-                        Some((target_k, target))
-                            if graph::includes_body(model, &target.path, fragment.as_deref()) =>
-                        {
-                            Some(target)
-                                .filter(|t| !out.on_cycle.contains(&t.path))
-                                .and_then(|t| {
-                                    model.note(Query::Body(t.path.clone()));
-                                    expansions.get(&t.path).cloned().flatten()
-                                })
-                                .map(|body| match knowledge {
-                                    Some(k) if k != target_k => {
-                                        requalify(model, keys, target_k, k, &body)
-                                    }
-                                    _ => body,
-                                })
-                                .map(|body| interior(&body))
-                        }
-                        // Otherwise the block holds the content of the
-                        // sidecar's asset, whole or one region of it. An
-                        // include block with a path holds the content of a
-                        // file in the same way (FORMAT-2_AC-5). A plain
-                        // document has no asset, so its block has no
-                        // expected interior.
-                        // sokf-implements: FORMAT-2_AC-5
-                        Some((_, target)) => model
-                            .asset_of(&target.path)
-                            .and_then(|(_, a)| asset_interior(model, &a.path, fragment.as_deref())),
-                    }
-                }
-                IncludeTarget::File { path, region } => {
-                    file_interior(model, knowledge, path, region.as_deref())
-                }
-            };
+            let expected = self.block_interior(knowledge, &block.target);
             if expected.is_none() {
                 all_computable = false;
             }
-            out.includes
-                .insert((path.clone(), block.open_line), expected);
+            let key = (path.clone(), block.open_line);
+            let expected = expected.map(|(interior, ext)| {
+                if let Some(ext) = ext {
+                    self.out.fences.insert(key.clone(), ext);
+                }
+                interior
+            });
+            self.out.includes.insert(key, expected);
         }
         if is_document {
-            let expansion = if all_computable && !out.on_cycle.contains(path) {
-                Some(expand(body_text, body_line, segments, body, path, &out))
+            let expansion = if all_computable && !self.out.on_cycle.contains(path) {
+                Some(expand(
+                    body_text, body_line, segments, body, path, &self.out,
+                ))
             } else {
                 None
             };
-            expansions.insert(path.clone(), expansion);
+            self.expansions.insert(path.clone(), expansion);
         }
         model.unwatch();
     }
 
-    // Each definition block lists every resolved `sokf:` label in the body
-    // and in each include interior.
-    let documents = model
-        .documents_and_schemas()
-        .map(|(k, d)| (Some(k), &d.path, &d.body.links, &d.segments));
-    let additional = model.additional.iter().map(|f| {
-        (
-            graph::knowledge_of_additional(model, f),
-            &f.path,
-            &f.body.links,
-            &f.segments,
-        )
-    });
-    for (k, path, links, segments) in documents.chain(additional) {
-        let Some(k) = k else { continue };
-        if only.is_some_and(|o| !o.contains(path)) {
-            continue;
+    /// `block_interior` returns the expected interior of an include block
+    /// whose target is `target`, in a file of the knowledge `knowledge`, or
+    /// `None` when the interior can't be computed. With the interior, it
+    /// returns the extension of the file that a fence holds, or `None` for a
+    /// document's body.
+    fn block_interior(
+        &self,
+        knowledge: Option<usize>,
+        target: &str,
+    ) -> Option<(String, Option<String>)> {
+        let model = self.model;
+        match &IncludeTarget::parse(target) {
+            IncludeTarget::Document {
+                store,
+                id,
+                fragment,
+            } => {
+                let target = knowledge.and_then(|k| model.document_in(k, store.as_deref(), id));
+                match target {
+                    None => None,
+                    Some((target_k, target))
+                        if graph::includes_body(model, &target.path, fragment.as_deref()) =>
+                    {
+                        Some(target)
+                            .filter(|t| !self.out.on_cycle.contains(&t.path))
+                            .and_then(|t| {
+                                model.note(Query::Body(t.path.clone()));
+                                self.expansions.get(&t.path).cloned().flatten()
+                            })
+                            .map(|body| match knowledge {
+                                Some(k) if k != target_k => {
+                                    requalify(model, self.keys, target_k, k, &body)
+                                }
+                                _ => body,
+                            })
+                            .map(|body| (interior(&body), None))
+                    }
+                    // Otherwise the block holds the content of the
+                    // sidecar's asset, whole or one region of it. An
+                    // include block with a path holds the content of a
+                    // file in the same way (FORMAT-2_AC-5). A plain
+                    // document has no asset, so its block has no
+                    // expected interior.
+                    // sokf-implements: FORMAT-2_AC-5
+                    Some((_, target)) => model
+                        .asset_of(&target.path)
+                        .and_then(|(_, a)| asset_interior(model, &a.path, fragment.as_deref())),
+                }
+            }
+            IncludeTarget::File { path, region } => {
+                file_interior(model, knowledge, path, region.as_deref())
+            }
         }
-        model.watch(path);
-        let entries = definition_entries(model, keys, k, path, links, segments, &out);
-        model.unwatch();
-        out.definitions.insert(path.clone(), entries);
     }
-    out
+
+    /// `add_definitions` computes the definition entries of each document,
+    /// schema, and additional file in `only`, or of every file when `only`
+    /// is `None`.
+    // sokf-implements: SOKF_FORMAT_78
+    fn add_definitions(&mut self, only: Option<&BTreeSet<RepoPath>>) {
+        let model = self.model;
+        // Each definition block lists every resolved `sokf:` label in the body
+        // and in each include interior.
+        let documents = model
+            .documents_and_schemas()
+            .map(|(k, d)| (Some(k), &d.path, &d.body.links, &d.segments));
+        let additional = model.additional.iter().map(|f| {
+            (
+                graph::knowledge_of_additional(model, f),
+                &f.path,
+                &f.body.links,
+                &f.segments,
+            )
+        });
+        for (k, path, links, segments) in documents.chain(additional) {
+            let Some(k) = k else { continue };
+            if only.is_some_and(|o| !o.contains(path)) {
+                continue;
+            }
+            model.watch(path);
+            let entries = definition_entries(model, self.keys, k, path, links, segments, &self.out);
+            model.unwatch();
+            self.out.definitions.insert(path.clone(), entries);
+        }
+    }
 }
 
 /// `Parts` holds what the expansion of one file reads: its knowledge, its
@@ -247,7 +393,7 @@ fn parts_of(k: usize, doc: &crate::Document) -> Parts<'_> {
 ///
 /// - The path resolves to a repository file that is neither a document of
 ///   any store nor an additional file of the including file's `knowledge`
-///   (SOKF_FORMAT_88, SOKF_FORMAT_89).
+///   (`SOKF_FORMAT_88`, `SOKF_FORMAT_89`).
 /// - The region can be extracted from that file.
 ///
 /// Otherwise it returns `None`. A path that points to an asset still gets an
@@ -259,7 +405,7 @@ fn file_interior(
     knowledge: Option<usize>,
     path: &str,
     region: Option<&str>,
-) -> Option<String> {
+) -> Option<(String, Option<String>)> {
     let rp = RepoPath::parse(path)?;
     if model.id_at(&rp).is_some() || model.is_materialized_in(knowledge, &rp) {
         return None;
@@ -268,15 +414,20 @@ fn file_interior(
 }
 
 /// `asset_interior` returns the interior for the file at `path`, whole or one
-/// region of it, in a fenced code block.
-fn asset_interior(model: &Model, path: &RepoPath, region: Option<&str>) -> Option<String> {
+/// region of it, in a fenced code block, with the file's extension.
+fn asset_interior(
+    model: &Model,
+    path: &RepoPath,
+    region: Option<&str>,
+) -> Option<(String, Option<String>)> {
     if !model.exists(path) {
         return None;
     }
     model.note(Query::Body(path.clone()));
     let text = source::load_text(&model.tree.root, path).ok()?;
     let extraction = region::extract(&text, region).ok()??;
-    Some(interior(&fence::fenced(&extraction, path)))
+    let ext = path.extension().unwrap_or_default().to_string();
+    Some((interior(&fence::fenced(&extraction, path)), Some(ext)))
 }
 
 /// `expand` returns the expanded body of a document. It leaves out the
@@ -284,7 +435,7 @@ fn asset_interior(model: &Model, path: &RepoPath, region: Option<&str>) -> Optio
 /// replaces each include block with its expected interior. When the expected
 /// interior can't be computed, it keeps the interior on disk instead. Then it
 /// trims the blank lines at both ends. An anchor belongs to the document that
-/// captures its key, so a copy carries no anchors (SOKF_FORMAT_83).
+/// captures its key, so a copy carries no anchors (`SOKF_FORMAT_83`).
 fn expand(
     body_text: &str,
     body_line: usize,
@@ -348,8 +499,8 @@ fn expand(
 /// interior. It lists each entry as `--fix` writes it in the same pass: a
 /// fragment written as the text of a key becomes the key's slug, a label
 /// takes its canonical store prefix, and a path link to a document or an
-/// asset of any store becomes its canonical label (SOKF_VALIDATION_24,
-/// SOKF_VALIDATION_32). It returns `None` when a label doesn't resolve.
+/// asset of any store becomes its canonical label (`SOKF_VALIDATION_24`,
+/// `SOKF_VALIDATION_32`). It returns `None` when a label doesn't resolve.
 // sokf-implements: SOKF_FORMAT_80
 // sokf-implements: SOKF_FORMAT_81
 // sokf-implements: FORMAT-2_AC-2
@@ -411,9 +562,9 @@ fn definition_entries(
 /// when the link points to a document or an asset of any store. When the
 /// fragment is the text of a key, the label uses the key's slug instead. It
 /// also returns whether `--fix` writes the label. `--fix` writes the label of
-/// an inline link when the label resolves (SOKF_VALIDATION_24). It returns `None` for a
+/// an inline link when the label resolves (`SOKF_VALIDATION_24`). It returns `None` for a
 /// link to any other file, for a link that ends with `/`, which names only a
-/// directory (SOKF_FORMAT_157), and for an image link whose target is not an
+/// directory (`SOKF_FORMAT_157`), and for an image link whose target is not an
 /// asset.
 pub fn path_link_label(
     model: &Model,

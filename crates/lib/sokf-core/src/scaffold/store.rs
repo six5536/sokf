@@ -1,6 +1,8 @@
 //! This module builds the text of the manifest and the two indexes of a new
 //! store, which `sokf init` writes to disk.
 
+use std::fmt::Write as _;
+
 use crate::{
     RepoPath,
     index::{IndexEntry, render},
@@ -37,7 +39,7 @@ pub fn store(dir: &RepoPath, name: &str, scope: &str, description: Option<&str>)
     );
     // sokf-implements: CLI-2_AC-22
     if let Some(d) = description {
-        manifest.push_str(&format!("description: {}\n", scalar(d)));
+        let _ = writeln!(manifest, "description: {}", scalar(d));
     }
     let root_index = render(
         name,
@@ -87,7 +89,9 @@ fn scalar(text: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),
-            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if c.is_control() => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
             c => out.push(c),
         }
     }

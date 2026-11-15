@@ -24,10 +24,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "id",
-        "path"
-      ]
+      "required": ["id", "path"]
     }
   }
 }

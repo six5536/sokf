@@ -3,12 +3,16 @@
 //! `asset-files` globs, and reports each file that more than one schema
 //! matches.
 
-use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+};
 
 use globset::GlobMatcher;
 
 use super::{
-    AdditionalFile, Asset, Knowledge, Loader, Model, ParseMode, SchemaDocument, SchemaRef, manifest,
+    AdditionalFile, Asset, Knowledge, Loader, Model, ParseMode, PlanIndex, SchemaDocument,
+    SchemaRef, manifest,
 };
 use crate::{FileKind, Finding, RepoPath, Result, Tree, walk, yaml};
 
@@ -41,10 +45,51 @@ pub fn build_with(
         ));
     }
 
-    // Additional files: this pass matches each file of the tree against the
-    // `additional-files` globs of every schema. A file that matches is an
-    // additional file unless it is a document, a schema, an index, or a
-    // manifest.
+    let (additional, dispatch) = additional_pass(&tree, &knowledges, loader, &mut problems);
+
+    // Assets: an asset is a candidate file that matches the `asset-files`
+    // globs of exactly one schema in its knowledge. This pass pairs each asset
+    // with the `.md` file beside it (FORMAT-1_AC-1). It runs after the pass
+    // over the additional files, so that it can report a glob that matches an
+    // additional file. A store's chain of `extends` gives it the asset globs
+    // of the schemas that it inherits.
+    let chains = super::extends::Chains::of(&knowledges);
+    for k in 0..knowledges.len() {
+        let chain = &chains.chains[k];
+        let (assets, found) =
+            asset_pass(&tree, &knowledges, chain, &additional, fallback.as_deref());
+        problems.extend(found);
+        let knowledge = &mut knowledges[k];
+        for asset in assets {
+            let i = knowledge.assets.len();
+            knowledge.asset_by_path.insert(asset.path.clone(), i);
+            if asset.has_sidecar {
+                knowledge.asset_of_sidecar.insert(asset.sidecar_path(), i);
+            }
+            knowledge.assets.push(asset);
+        }
+    }
+
+    Ok(Model {
+        knowledges,
+        additional,
+        dispatch,
+        tree,
+        problems,
+        reads: RefCell::default(),
+        fallback,
+        markers: BTreeMap::default(),
+        marker_check: crate::MarkerCheck::Off,
+        plans: PlanIndex::default(),
+        chains,
+        history: std::cell::OnceCell::new(),
+    })
+}
+
+/// `additional_matchers` returns a matcher for each `additional-files` glob
+/// of every schema, with the schema that declares the glob and the glob as
+/// written.
+fn additional_matchers(knowledges: &[Knowledge]) -> Vec<(SchemaRef, String, GlobMatcher)> {
     let mut matchers: Vec<(SchemaRef, String, GlobMatcher)> = Vec::new();
     for (k, knowledge) in knowledges.iter().enumerate() {
         for (i, schema) in knowledge.schemas.iter().enumerate() {
@@ -62,6 +107,25 @@ pub fn build_with(
             }
         }
     }
+    matchers
+}
+
+/// `additional_pass` finds the additional files of `tree` and loads each
+/// one, and returns them with the schema that each file of the tree that a
+/// glob matches dispatches to. It adds to `problems` a finding for each glob
+/// that matches a document or an index, for each file that more than one
+/// schema matches, and for each additional file that fails to load.
+fn additional_pass(
+    tree: &Tree,
+    knowledges: &[Knowledge],
+    loader: &mut dyn Loader,
+    problems: &mut Vec<Finding>,
+) -> (Vec<AdditionalFile>, BTreeMap<RepoPath, Option<SchemaRef>>) {
+    // Additional files: this pass matches each file of the tree against the
+    // `additional-files` globs of every schema. A file that matches is an
+    // additional file unless it is a document, a schema, an index, or a
+    // manifest.
+    let matchers = additional_matchers(knowledges);
     let mut additional = Vec::new();
     let mut dispatch = std::collections::BTreeMap::new();
     for file in &tree.files {
@@ -136,38 +200,7 @@ pub fn build_with(
             Err(e) => problems.push(load_failure(&file.path, &e)),
         }
     }
-
-    // Assets: an asset is a candidate file that matches the `asset-files`
-    // globs of exactly one schema in its knowledge. This pass pairs each asset
-    // with the `.md` file beside it (FORMAT-1_AC-1). It runs after the pass
-    // over the additional files, so that it can report a glob that matches an
-    // additional file.
-    for k in 0..knowledges.len() {
-        let (assets, found) = asset_pass(&tree, &knowledges, k, &additional, fallback.as_deref());
-        problems.extend(found);
-        let knowledge = &mut knowledges[k];
-        for asset in assets {
-            let i = knowledge.assets.len();
-            knowledge.asset_by_path.insert(asset.path.clone(), i);
-            if asset.has_sidecar {
-                knowledge.asset_of_sidecar.insert(asset.sidecar_path(), i);
-            }
-            knowledge.assets.push(asset);
-        }
-    }
-
-    Ok(Model {
-        knowledges,
-        additional,
-        dispatch,
-        tree,
-        problems,
-        reads: Default::default(),
-        fallback,
-        markers: Default::default(),
-        marker_check: crate::MarkerCheck::Off,
-        plans: Default::default(),
-    })
+    (additional, dispatch)
 }
 
 /// `asset_pass` returns the assets of knowledge `k`, and the problems that
@@ -177,22 +210,31 @@ pub fn build_with(
 fn asset_pass(
     tree: &Tree,
     knowledges: &[Knowledge],
-    k: usize,
+    chain: &[usize],
     additional: &[AdditionalFile],
     fallback: Option<&dyn super::Fallback>,
 ) -> (Vec<Asset>, Vec<Finding>) {
+    let k = chain[0];
     let knowledge = &knowledges[k];
     let mut problems = Vec::new();
-    let mut matchers: Vec<(usize, String, GlobMatcher)> = Vec::new();
-    for (i, schema) in knowledge.schemas.iter().enumerate() {
-        for g in &schema.asset_globs {
+    let mut matchers: Vec<(SchemaRef, String, GlobMatcher)> = Vec::new();
+    // The store's own schemas come first, then the schemas that it inherits,
+    // whose globs move to the same place under the store (SOKF_SCHEMA_98).
+    let own = (0..knowledge.schemas.len()).map(|index| SchemaRef {
+        knowledge: k,
+        index,
+    });
+    for r in own.chain(super::extends::inherited_in(knowledges, chain)) {
+        let from = &knowledges[r.knowledge].root;
+        for g in &knowledges[r.knowledge].schemas[r.index].asset_globs {
             // The grammar reports a glob that lies outside the knowledge
             // (SOKF_SCHEMA_8), and this pass skips it, so the glob matches nothing.
-            if !crate::grammar::glob_inside(g, &knowledge.root) {
+            if !crate::grammar::glob_inside(g, from) {
                 continue;
             }
-            if let Ok(glob) = walk::repo_glob(g) {
-                matchers.push((i, g.clone(), glob.compile_matcher()));
+            let g = super::extends::rebase(g, from, &knowledge.root);
+            if let Ok(glob) = walk::repo_glob(&g) {
+                matchers.push((r, g, glob.compile_matcher()));
             }
         }
     }
@@ -202,7 +244,7 @@ fn asset_pass(
     let schemas_dir = knowledge.root.join("schemas");
     let mut assets = Vec::new();
     for file in tree.files.iter().filter(|f| f.root == Some(k)) {
-        let matches: Vec<&(usize, String, GlobMatcher)> = matchers
+        let matches: Vec<&(SchemaRef, String, GlobMatcher)> = matchers
             .iter()
             .filter(|(_, _, m)| m.is_match(file.path.relative()))
             .collect();
@@ -226,8 +268,8 @@ fn asset_pass(
             FileKind::Candidate => None,
         };
         if let Some(what) = refused {
-            for (i, g, _) in &matches {
-                let schema = &knowledge.schemas[*i];
+            for (r, g, _) in &matches {
+                let schema = &knowledges[r.knowledge].schemas[r.index];
                 problems.push(schema.finding(
                     "SOKF_SCHEMA_7",
                     format!("The `asset-files` glob `{g}` matches {what}: {}", file.path),
@@ -235,16 +277,16 @@ fn asset_pass(
             }
             continue;
         }
-        let mut claimants: Vec<usize> = matches.iter().map(|(i, _, _)| *i).collect();
+        let mut claimants: Vec<SchemaRef> = matches.iter().map(|(r, _, _)| *r).collect();
         claimants.sort_unstable();
         claimants.dedup();
         if claimants.len() > 1 {
             let names: Vec<String> = claimants
                 .iter()
-                .map(|&i| knowledge.schemas[i].id())
+                .map(|r| knowledges[r.knowledge].schemas[r.index].id())
                 .collect();
-            for &i in &claimants {
-                let schema = &knowledge.schemas[i];
+            for r in &claimants {
+                let schema = &knowledges[r.knowledge].schemas[r.index];
                 problems.push(schema.finding(
                     "SOKF_SCHEMA_9",
                     format!(
@@ -262,10 +304,7 @@ fn asset_pass(
             sidecar.is_some() || fallback.is_some_and(|f| f.is_document(&sidecar_path));
         assets.push(Asset {
             path: file.path.clone(),
-            schema: SchemaRef {
-                knowledge: k,
-                index: claimants[0],
-            },
+            schema: claimants[0],
             sidecar,
             has_sidecar,
         });
@@ -621,7 +660,7 @@ mod tests {
         assert_eq!(k.documents.len(), 2);
         assert_eq!(k.indexes.len(), 1);
         assert_eq!(k.schemas_for("Note").len(), 1);
-        assert!(k.schemas_for("Nope").is_empty());
+        assert_eq!(k.schemas_for("Nope"), [] as [usize; 0]);
         assert_eq!(k.documents_of("Note").count(), 2);
         // A duplicate id resolves to no document.
         assert!(k.document("a").is_none());

@@ -1,0 +1,69 @@
+---
+source: crates/lib/sokf-core/tests/it/validate.rs
+assertion_line: 472
+expression: json(&report)
+---
+{
+  "errors": [
+    {
+      "path": "/knowledge/media/draft/lonely.md",
+      "line": 2,
+      "message": "no asset sits beside this document. Type `Image` declares `asset-files`, so its documents are sidecars (SOKF_SCHEMA_11)"
+    },
+    {
+      "path": "/knowledge/media/draft/orphan.png",
+      "message": "the asset has no sidecar. Create `/knowledge/media/draft/orphan.png.md` with `type: Image` and an id (SOKF_FORMAT_4)"
+    },
+    {
+      "path": "/knowledge/media/draft/stale.png.md",
+      "line": 6,
+      "message": "`resource` is `/knowledge/media/draft/old-name.png`; a sidecar's `resource` is its asset's path, `/knowledge/media/draft/stale.png` (SOKF_FORMAT_31)"
+    },
+    {
+      "path": "/knowledge/media/draft/stale.png.md",
+      "line": 6,
+      "message": "`resource` refers to a file that doesn't exist: `/knowledge/media/draft/old-name.png` (SOKF_FORMAT_30)"
+    },
+    {
+      "path": "/knowledge/media/draft/sunset.png.md",
+      "message": "the document sits in `/knowledge/media/draft`, but its lifecycle states place it in `/knowledge/media/published` (SOKF_SCHEMA_26)"
+    },
+    {
+      "path": "/knowledge/media/draft/wrong.png.md",
+      "line": 2,
+      "message": "the sidecar of `/knowledge/media/draft/wrong.png` has type `Dataset`. The glob that matches the asset belongs to type `Image` (SOKF_SCHEMA_12)"
+    },
+    {
+      "path": "/knowledge/notes/broken.md",
+      "line": 10,
+      "message": "`[sokf:#]` resolves to no document (SOKF_FORMAT_66)"
+    },
+    {
+      "path": "/knowledge/notes/broken.md",
+      "line": 12,
+      "message": "image `[sokf:album]` refers to the document `/knowledge/notes/album.md`, which is not a sidecar. An image must refer to an asset through its sidecar's id (SOKF_FORMAT_67)"
+    },
+    {
+      "path": "/knowledge/notes/broken.md",
+      "line": 12,
+      "message": "the image `/knowledge/notes/album.md` does not match `^/knowledge/media/`; a target of this kind reads ![Flowers][sokf:flowers] (schema schema-note, section \"<title>\" block 2) (TLMD_163)"
+    },
+    {
+      "path": "/knowledge/notes/broken.md",
+      "line": 14,
+      "message": "`sokf:include /knowledge/data/rates.csv` refers to an asset by path; include it by its sidecar's id as `sokf:include rates`, which `--fix` writes (SOKF_FORMAT_88)"
+    },
+    {
+      "path": "/knowledge/notes/broken.md",
+      "line": 17,
+      "message": "`sokf:include album#x` has a fragment, but the document is not a sidecar. A fragment can only identify a region of an asset (SOKF_FORMAT_90)"
+    }
+  ],
+  "warnings": [],
+  "fixes": [],
+  "summary": {
+    "errors": 11,
+    "warnings": 0,
+    "fixes": 0
+  }
+}

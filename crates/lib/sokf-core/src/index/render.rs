@@ -1,6 +1,8 @@
 //! This module holds the only renderer of the text of an index (format
 //! specification §9.4).
 
+use std::fmt::Write as _;
+
 use crate::{RepoPath, include::DefinitionEntry};
 
 /// An `IndexEntry` is one entry of an index. The entries of an index render
@@ -61,7 +63,7 @@ pub fn render(heading: &str, entries: &[IndexEntry]) -> String {
                 path,
                 description,
             } => {
-                out.push_str(&format!("- [{}][sokf:{id}]", one_line(title)));
+                let _ = write!(out, "- [{}][sokf:{id}]", one_line(title));
                 if let Some(d) = description {
                     out.push_str(" - ");
                     out.push_str(&one_line(d));
@@ -73,9 +75,11 @@ pub fn render(heading: &str, entries: &[IndexEntry]) -> String {
                     slug: None,
                 });
             }
-            IndexEntry::File { name } => out.push_str(&format!("- [{name}]({name}.md)\n")),
+            IndexEntry::File { name } => {
+                let _ = writeln!(out, "- [{name}]({name}.md)");
+            }
             IndexEntry::Directory { name } => {
-                out.push_str(&format!("- [{name}/]({name}/index.md)\n"));
+                let _ = writeln!(out, "- [{name}/]({name}/index.md)");
             }
         }
     }

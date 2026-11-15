@@ -30,12 +30,7 @@
       "$ref": "#/$defs/Summary"
     }
   },
-  "required": [
-    "errors",
-    "warnings",
-    "fixes",
-    "summary"
-  ],
+  "required": ["errors", "warnings", "fixes", "summary"],
   "$defs": {
     "Finding": {
       "description": "One finding.",
@@ -56,10 +51,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "path",
-        "message"
-      ]
+      "required": ["path", "message"]
     },
     "Fix": {
       "description": "One repair that `--fix` made.",
@@ -81,11 +73,7 @@
               "const": "moved"
             }
           },
-          "required": [
-            "op",
-            "from",
-            "to"
-          ]
+          "required": ["op", "from", "to"]
         },
         {
           "description": "A file that `--fix` created, such as an index.",
@@ -100,10 +88,7 @@
               "const": "created"
             }
           },
-          "required": [
-            "op",
-            "path"
-          ]
+          "required": ["op", "path"]
         },
         {
           "description": "A file that `--fix` rewrote.",
@@ -118,10 +103,7 @@
               "const": "rewrote"
             }
           },
-          "required": [
-            "op",
-            "path"
-          ]
+          "required": ["op", "path"]
         }
       ]
     },
@@ -148,11 +130,7 @@
           "minimum": 0
         }
       },
-      "required": [
-        "errors",
-        "warnings",
-        "fixes"
-      ]
+      "required": ["errors", "warnings", "fixes"]
     }
   }
 }

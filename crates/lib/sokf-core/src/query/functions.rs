@@ -117,7 +117,7 @@ fn expr<'a>(arg: &Arg<'a>) -> &'a Ast {
 }
 
 fn array<'a>(arg: &'a Arg<'_>) -> &'a [Value] {
-    value(arg).as_array().map(Vec::as_slice).unwrap_or(&[])
+    value(arg).as_array().map(Vec::as_slice).unwrap_or_default()
 }
 
 fn f64s(arg: &Arg<'_>) -> Vec<f64> {
@@ -126,8 +126,15 @@ fn f64s(arg: &Arg<'_>) -> Vec<f64> {
 
 /// `call` calls the built-in function `name` with `args`, and returns its
 /// result or the failure that stopped it.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm for each built-in function of JMESPath"
+)]
 pub(super) fn call(name: &str, args: &[Arg<'_>]) -> Result<Value, Failure> {
-    use Type::*;
+    use Type::{
+        Any, Array, ArrayObjectOrString, ArrayOfNumbers, ArrayOfStrings, ArrayOrString, Expr,
+        Number, NumbersOrStrings, Object, String, StringOrArray,
+    };
     let a = args;
     Ok(match name {
         "abs" => {
@@ -147,7 +154,12 @@ pub(super) fn call(name: &str, args: &[Arg<'_>]) -> Result<Value, Failure> {
             if v.is_empty() {
                 Value::Null
             } else {
-                number(v.iter().sum::<f64>() / v.len() as f64)
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "an array's length is far below 2^52, so `f64` holds it exactly"
+                )]
+                let len = v.len() as f64;
+                number(v.iter().sum::<f64>() / len)
             }
         }
         "ceil" | "floor" => {
@@ -426,9 +438,12 @@ mod tests {
             ("to_number(' 1')", Value::Null),
             ("to_number('1 ')", Value::Null),
             ("to_number('x')", Value::Null),
-            ("abs(`-9007199254740993`)", json!(9007199254740993i64)),
-            ("abs(`-9223372036854775808`)", json!(9223372036854775808u64)),
-            ("ceil(`9007199254740993`)", json!(9007199254740993i64)),
+            ("abs(`-9007199254740993`)", json!(9_007_199_254_740_993_i64)),
+            (
+                "abs(`-9223372036854775808`)",
+                json!(9_223_372_036_854_775_808_u64),
+            ),
+            ("ceil(`9007199254740993`)", json!(9_007_199_254_740_993_i64)),
             ("floor(`-2`)", json!(-2)),
             ("to_number(neg)", json!(-1.5)),
             ("to_string(o)", json!("{\"k\":\"v\",\"j\":1}")),

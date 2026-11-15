@@ -2,14 +2,11 @@
 //! harness that is stale, so that an agent learns after an upgrade of sokf
 //! that its skill or its instructions are out of date (CLI-4).
 
-use std::path::PathBuf;
+use std::{fmt::Write as _, path::PathBuf};
 
-use agent_harness_adapter_core::{Item, Scope, State};
+use agent_harness_adapter_core::{Scope, State};
 
-use super::{
-    harness::{HarnessDirs, installed_status, shown, tool},
-    harness_packs::conflicted_fragments,
-};
+use super::harness::{HarnessDirs, installed_status, shown, tool};
 use crate::{
     Finding, RepoPath, RepoRoot,
     report::{ABSENT_PART, STALE_PART},
@@ -24,21 +21,18 @@ use crate::{
 /// project scope can read, as `harness install` reads them. An edited part
 /// gets no warning, because the edit is the user's choice. A harness whose
 /// state can't be read gets no warning either, because a check of the
-/// knowledge doesn't fail on the harness. While a pack's fragment holds a
-/// conflict, the warning at an instructions part says to resolve it first,
-/// because an install would copy the conflict into the block.
+/// knowledge doesn't fail on the harness.
 // sokf-implements: CLI-4_AC-40
 pub(crate) fn stale_parts(root: &RepoRoot, home: Option<PathBuf>) -> Vec<Finding> {
     let dirs = HarnessDirs {
         repo: Some(root.clone()),
         home,
     };
-    // The project and the local scopes read the same configuration and
-    // fragments, so one tool serves both.
+    // The project and the local scopes read the same configuration, so one
+    // tool serves both.
     let Ok(tool) = tool(&dirs, Scope::Project) else {
         return Vec::new();
     };
-    let mut conflicted: Option<Vec<String>> = None;
     let mut out = Vec::new();
     for scope in [Scope::Project, Scope::Local] {
         let Ok(Some(found)) = installed_status(&tool, scope) else {
@@ -74,23 +68,11 @@ pub(crate) fn stale_parts(root: &RepoRoot, home: Option<PathBuf>) -> Vec<Finding
                     ),
                     _ => continue,
                 };
-                let conflicts = if p.part == Item::Instructions.as_str() {
-                    conflicted
-                        .get_or_insert_with(|| conflicted_fragments(root).unwrap_or_default())
-                        .as_slice()
-                } else {
-                    &[]
-                };
-                if !conflicts.is_empty() {
-                    message.push_str(&format!(
-                        "resolve the conflict in {} first, then ",
-                        conflicts.join(", ")
-                    ));
-                }
-                message.push_str(&format!(
+                let _ = write!(
+                    message,
                     "run `sokf harness install {}{local}` to {verb} it",
                     h.harness
-                ));
+                );
                 out.push(Finding::warning(path, None, key, message));
             }
         }

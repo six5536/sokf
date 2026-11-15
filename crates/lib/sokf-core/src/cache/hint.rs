@@ -133,14 +133,16 @@ impl Cache {
         for d in found_dirs {
             dirs.insert(d.path, d.root);
         }
-        Ok(Tree::new(
+        let mut tree = Tree::new(
             root.clone(),
             roots,
             files,
             dirs.into_iter()
                 .map(|(path, root)| WalkedDir { path, root })
                 .collect(),
-        ))
+        );
+        tree.registered_count = config.registered_count;
+        Ok(tree)
     }
 
     /// `stored_files` returns the files that the store recorded, with their
@@ -163,20 +165,17 @@ impl Cache {
                 };
                 let (Ok(kind), Ok(owner), Ok(len), Ok(mtime)) = (
                     r.get::<_, u8>(1),
-                    r.get::<_, Option<i64>>(2),
-                    r.get::<_, i64>(3),
+                    r.get::<_, Option<usize>>(2),
+                    r.get::<_, u64>(3),
                     r.get::<_, Option<i64>>(4),
                 ) else {
                     continue;
                 };
                 files.push(WalkedFile {
                     path,
-                    root: owner.map(|r| r as usize),
+                    root: owner,
                     kind: kind_of(kind),
-                    stat: Stat {
-                        len: len as u64,
-                        mtime,
-                    },
+                    stat: Stat { len, mtime },
                 });
             }
         }
@@ -188,10 +187,10 @@ impl Cache {
     pub(super) fn stored_dirs(&self) -> BTreeMap<RepoPath, usize> {
         self.conn()
             .rows("SELECT path, root FROM dirs", [], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+                Ok((r.get::<_, String>(0)?, r.get::<_, usize>(1)?))
             })
             .into_iter()
-            .filter_map(|(path, owner)| Some((RepoPath::parse(&path)?, owner as usize)))
+            .filter_map(|(path, owner)| Some((RepoPath::parse(&path)?, owner)))
             .collect()
     }
 }

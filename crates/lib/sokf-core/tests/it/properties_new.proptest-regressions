@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fd1a8fcd7987dbb6619d3858c66388e9954d1de96ac38f0f3b780f843965b090 # shrinks to shapes = [Shape { gate: None, kind: "prose", shaped: false, example: false }]
+cc 6bb5333ae53e1b8b771cad688c40958774da6cc696925edb7acd5667343fd176 # shrinks to spec = Issue("open", "bug", "a")

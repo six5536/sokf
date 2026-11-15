@@ -1,6 +1,6 @@
 //! This module parses the two forms of `sokf:` reference: a label,
 //! `sokf:<store>:<id>#<fragment>` (sokf-format-spec), and the target of an
-//! include marker (SOKF_FORMAT_88).
+//! include marker (`SOKF_FORMAT_88`).
 
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +63,7 @@ pub fn sokf_label(link: &Link) -> Option<String> {
 }
 
 /// `IncludeTarget` is the target of an include marker, in one of its two
-/// forms (SOKF_FORMAT_88).
+/// forms (`SOKF_FORMAT_88`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IncludeTarget {
     /// `<!-- sokf:include <id>[#<fragment>] -->` includes a document by id.

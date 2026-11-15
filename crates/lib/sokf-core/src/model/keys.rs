@@ -34,7 +34,7 @@ pub struct KeyEntry {
 /// A `KeyIndex` holds the keys by the scope in which each key must be
 /// unique (the grammar's `unique`). It stores each key under its slug. The
 /// slug is the id of the key's anchor, and a fragment refers to a key by
-/// that slug (SOKF_FORMAT_72).
+/// that slug (`SOKF_FORMAT_72`).
 #[derive(Debug, Clone, Default)]
 pub struct KeyIndex {
     /// Every key of every document, by path and by slug.
@@ -100,12 +100,14 @@ pub struct Label<'a> {
 
 impl<'a> Label<'a> {
     /// `with_fragment` returns the label with `fragment` in place of its own.
+    #[must_use]
     pub fn with_fragment(self, fragment: Option<&'a str>) -> Self {
         Label { fragment, ..self }
     }
 
     /// `without_store` returns the label with no store, so that it resolves
     /// in the store that the caller chooses.
+    #[must_use]
     pub fn without_store(self) -> Self {
         Label {
             store: None,
@@ -127,7 +129,7 @@ pub struct Resolved {
 }
 
 /// An `Unresolved` states the reason that a `sokf:` label is a broken edge
-/// (SOKF_FORMAT_62).
+/// (`SOKF_FORMAT_62`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unresolved {
     /// The store matches no knowledge root, current or former. The variant
@@ -183,9 +185,9 @@ impl Unresolved {
 }
 
 /// `resolve_in` resolves a fragment against the headings and keys of one
-/// document, by slug (SOKF_FORMAT_71). The headings include each heading
+/// document, by slug (`SOKF_FORMAT_71`). The headings include each heading
 /// inside a quote or a list item, and each heading has the slug that the
-/// host gives it, so no two headings share one (SOKF_FORMAT_155). It returns the fragment itself, which the
+/// host gives it, so no two headings share one (`SOKF_FORMAT_155`). It returns the fragment itself, which the
 /// definition block appends. When the fragment matches only by its text,
 /// `resolve_in` returns `Unresolved::KeyForm` with the slug.
 // sokf-implements: SOKF_FORMAT_71
@@ -218,7 +220,7 @@ pub fn resolve_in(
 /// the label. If no key there matches, but a key of repository scope in
 /// another store does, the label resolves to that key, because that key is
 /// unique. The canonical form of the label then includes that other store
-/// (SOKF_FORMAT_65).
+/// (`SOKF_FORMAT_65`).
 // sokf-implements: SOKF_FORMAT_61
 // sokf-implements: SOKF_FORMAT_63
 // sokf-implements: SOKF_FORMAT_64
@@ -245,9 +247,8 @@ pub fn resolve(
         return Err(Unresolved::NoDocument);
     }
     match (label.id.filter(|i| !i.is_empty()), label.fragment) {
-        (None, None) => Err(Unresolved::NoDocument),
         // `sokf:#`, with no id and an empty fragment, refers to nothing (SOKF_FORMAT_66).
-        (None, Some("")) => Err(Unresolved::NoDocument),
+        (None, None | Some("")) => Err(Unresolved::NoDocument),
         (Some(id), fragment) => {
             let doc = match model.ids(target, id).len() {
                 0 => return Err(Unresolved::NoDocument),
@@ -328,7 +329,7 @@ fn bare(
         .repository
         .get(fragment)
         .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .unwrap_or_default();
     let own: Vec<&KeyEntry> = repo.iter().filter(|e| e.knowledge == knowledge).collect();
     match own.as_slice() {
         [one] => return Ok(found(one)),
@@ -339,7 +340,7 @@ fn bare(
         .knowledge
         .get(&(knowledge, fragment.to_string()))
         .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .unwrap_or_default();
     match local {
         [one] => Ok(found(one)),
         [] => {
@@ -370,6 +371,7 @@ fn bare(
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     fn p(s: &str) -> RepoPath {
@@ -426,8 +428,10 @@ mod tests {
 
 #[cfg(test)]
 mod fragment_tests {
+    use std::collections::BTreeMap;
+
     use super::*;
-    use crate::{Config, FsLoader, RepoRoot, collect};
+    use crate::{Config, FsLoader, RepoRoot, collect, config::MarkerCheck};
 
     // sokf-tests: FORMAT-2_AC-3
     #[test]
@@ -444,9 +448,11 @@ mod fragment_tests {
             &root,
             &Config {
                 roots: vec![RepoPath::parse("/knowledge").unwrap()],
+                registered_count: 0,
                 exclude: vec![],
-                declined: Default::default(),
-                markers: Default::default(),
+                declined: BTreeMap::default(),
+                markers: MarkerCheck::default(),
+                format: crate::config::FormatConfig::default(),
             },
         )
         .unwrap();

@@ -107,7 +107,7 @@ impl Knowledge {
         self.schemas_by_type
             .get(type_name)
             .map(Vec::as_slice)
-            .unwrap_or(&[])
+            .unwrap_or_default()
     }
 
     /// `is_document` reports whether `path` is a document of this knowledge
@@ -180,8 +180,14 @@ pub struct Model {
     pub markers: BTreeMap<RepoPath, Vec<crate::markers::MarkerRow>>,
     /// What the run does with markers. It is `Off` until a check sets it.
     pub marker_check: crate::MarkerCheck,
-    /// `plans` holds the files that the documents plan (SOKF_SCHEMA_53).
+    /// `plans` holds the files that the documents plan (`SOKF_SCHEMA_53`).
     pub plans: super::PlanIndex,
+    /// `chains` holds the chain of `extends` of each store, resolved when
+    /// the model is built (`SOKF_SCHEMA_96`).
+    pub chains: super::extends::Chains,
+    /// `history` holds the history of git, which the model opens when the
+    /// first check of a `verified` entry asks for it.
+    pub(crate) history: std::cell::OnceCell<crate::history::History>,
 }
 // sokf:end model
 
@@ -202,6 +208,13 @@ pub enum Located<'a> {
 }
 
 impl Model {
+    /// `history` returns the history of git of the repository, which it
+    /// opens on the first call of the run.
+    pub(crate) fn history(&self) -> &crate::history::History {
+        self.history
+            .get_or_init(|| crate::history::History::open(&self.tree.root))
+    }
+
     /// `watch` records every later read against `reader`.
     pub fn watch(&self, reader: &RepoPath) {
         self.reads.borrow_mut().watch(reader);
@@ -489,7 +502,7 @@ impl Model {
     /// `is_materialized_in` reports whether `path` is a document of
     /// `knowledge` or an additional file that its schemas match. An include
     /// block in a document of `knowledge` can't include such a file by path
-    /// (SOKF_FORMAT_89). `is_materialized_in` treats an additional file of
+    /// (`SOKF_FORMAT_89`). `is_materialized_in` treats an additional file of
     /// another knowledge store as an ordinary repository file, which such an
     /// include block can include. With no knowledge store given, the files of
     /// every knowledge store count. To reject an include block that refers by
@@ -536,8 +549,7 @@ impl Model {
     /// label without a fragment calls it.
     pub fn content_path(&self, document: &RepoPath) -> RepoPath {
         self.asset_of(document)
-            .map(|(_, a)| a.path.clone())
-            .unwrap_or_else(|| document.clone())
+            .map_or_else(|| document.clone(), |(_, a)| a.path.clone())
     }
 
     /// `schema` returns the schema at `r`.
@@ -575,7 +587,7 @@ impl Model {
 
     /// `is_marker_file` reports whether `path` is a file that the run reads
     /// for markers: a file of the walk outside every knowledge root, when the
-    /// run checks markers (SOKF_VALIDATION_50).
+    /// run checks markers (`SOKF_VALIDATION_50`).
     pub fn is_marker_file(&self, path: &RepoPath) -> bool {
         self.marker_check != crate::MarkerCheck::Off
             && self

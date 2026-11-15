@@ -1,0 +1,52 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+expression: "json(&tree, query(&[\"/knowledge/shared.md\"], 1))"
+---
+{
+  "start": [
+    "/knowledge/shared.md"
+  ],
+  "nodes": [
+    {
+      "kind": "document",
+      "path": "/knowledge/shared.md",
+      "type": "Note",
+      "id": "shared",
+      "title": "Shared (first)",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/other/only.md",
+      "type": "Note",
+      "id": "only",
+      "title": "Only here",
+      "status": "stable"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "links",
+      "from": "/knowledge/shared.md",
+      "to": "/other/only.md",
+      "rel": "references"
+    },
+    {
+      "kind": "links",
+      "from": "/other/only.md",
+      "to": "/knowledge/shared.md",
+      "rel": "referenced-by",
+      "synthesised": true
+    }
+  ],
+  "summary": {
+    "documents": {
+      "shown": 2,
+      "total": 2
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// `Reference` is the reference of a marker, classified by its spelling
-/// (SOKF_FORMAT_146).
+/// (`SOKF_FORMAT_146`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reference<'a> {
     /// A bare key, such as `CLI-1_AC-2`.
@@ -72,13 +72,21 @@ impl Unresolvable {
 // sokf-implements: SOKF_FORMAT_148
 // sokf-implements: SOKF_FORMAT_149
 // sokf-implements: SOKF_FORMAT_150
+// sokf-implements: SOKF_FORMAT_209
+// sokf-implements: FORMAT-5_AC-2
+// sokf-implements: FORMAT-5_AC-3
 pub fn resolve(model: &Model, keys: &KeyIndex, target: &str) -> Result<Resolved, Unresolvable> {
     match Reference::parse(target) {
         Reference::Key(key) => bare_key(model, keys, key),
         Reference::Label(label) => {
+            // A reference without a store resolves in every store except a
+            // capped one, which only a reference that names it reaches
+            // (SOKF_FORMAT_209).
             let stores = match label.store {
                 Some(store) => vec![store_named(model, store)?],
-                None => (0..model.knowledges.len()).collect(),
+                None => (0..model.knowledges.len())
+                    .filter(|&k| !model.knowledges[k].capped())
+                    .collect(),
             };
             match label.id {
                 Some(id) if !id.is_empty() => by_id(model, keys, &stores, label),
@@ -88,12 +96,31 @@ pub fn resolve(model: &Model, keys: &KeyIndex, target: &str) -> Result<Resolved,
     }
 }
 
+/// `names_broken_store` returns whether the reference `target` of a marker
+/// names a store whose `extends` is broken. Such a store has no schemas to
+/// capture its keys, and the run checks none of its files, so the marker
+/// check leaves such a marker alone (FORMAT-5_AC-13).
+// sokf-implements: FORMAT-5_AC-13
+pub fn names_broken_store(model: &Model, target: &str) -> bool {
+    match Reference::parse(target) {
+        Reference::Label(Label {
+            store: Some(store), ..
+        }) => store_named(model, store).is_ok_and(|k| model.broken(k).is_some()),
+        _ => false,
+    }
+}
+
 /// `bare_key` resolves a bare key to the only key in the repository with
 /// the same slug.
 fn bare_key(model: &Model, keys: &KeyIndex, key: &str) -> Result<Resolved, Unresolvable> {
     let s = slug(key);
     model.note(Query::KeyRepository(s.clone()));
-    match keys.repository.get(&s).map(Vec::as_slice).unwrap_or(&[]) {
+    match keys
+        .repository
+        .get(&s)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
         [one] => Ok(Resolved {
             knowledge: one.knowledge,
             path: one.path.clone(),
@@ -183,8 +210,14 @@ fn by_fragment(
 ) -> Result<Resolved, Unresolvable> {
     let mut found: Vec<Resolved> = Vec::new();
     let mut first_error = None;
+    let mut other_store = false;
     for &k in stores {
+        // A label without a store reaches a key of repository scope in
+        // another store too, but a marker reads each store on its own, so a
+        // marker that names a store reaches only a key of that store
+        // (FORMAT-5_AC-3).
         match in_store(model, keys, k, label.without_store()) {
+            Ok(r) if r.knowledge != k => other_store = true,
             Ok(r) => {
                 if !found.contains(&r) {
                     found.push(r);
@@ -197,6 +230,10 @@ fn by_fragment(
     }
     match found.len() {
         1 => Ok(found.remove(0)),
+        0 if other_store => Err(Unresolvable::new(
+            "refers to a key that only another store captures. A marker that names a store reaches only the keys of that store, so name the store that captures the key",
+            "SOKF_FORMAT_145",
+        )),
         0 => Err(first_error.unwrap_or_else(|| {
             Unresolvable::new("refers to no document and no key", "SOKF_FORMAT_145")
         })),
@@ -212,7 +249,7 @@ fn by_fragment(
 
 /// `in_store` resolves a label in store `k`. When the fragment has the
 /// form of a key, `in_store` resolves the label again with the fragment's
-/// slug (SOKF_FORMAT_150).
+/// slug (`SOKF_FORMAT_150`).
 fn in_store(
     model: &Model,
     keys: &KeyIndex,
@@ -254,10 +291,10 @@ fn reason(u: &Unresolved) -> String {
 /// in the store's identity, or, when it has no identity, its root path.
 fn store_name(model: &Model, k: usize) -> String {
     let knowledge = &model.knowledges[k];
-    knowledge
-        .identity()
-        .map(|i| format!("`{}`", i.name))
-        .unwrap_or_else(|| format!("the store at `{}`", knowledge.root))
+    knowledge.identity().map_or_else(
+        || format!("the store at `{}`", knowledge.root),
+        |i| format!("`{}`", i.name),
+    )
 }
 
 #[cfg(test)]

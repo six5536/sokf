@@ -121,28 +121,7 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         cwd: &opts.cwd,
     };
 
-    // sokf-implements: CLI-6_AC-51
-    if opts.dir.is_some() && opts.for_asset.is_some() {
-        return Err(Error::New(
-            "`--dir` can't be given with `--for`, because the asset's location determines the document's path".to_string(),
-        ));
-    }
-    // The location of a sidecar's asset determines the document's path, and
-    // the asset's filename supplies the default slug.
-    let asset = match (&opts.for_asset, schema.asset_files.is_empty(), knowledge) {
-        (Some(_), true, _) | (Some(_), _, None) => {
-            return Err(Error::New(format!(
-                "`--for` is given, but `{type_name}` declares no `asset-files`"
-            )));
-        }
-        (None, false, _) => {
-            return Err(Error::New(format!(
-                "`{type_name}` declares `asset-files`, so give `--for <PATH>` with the asset that the document describes"
-            )));
-        }
-        (Some(path), false, Some(k)) => Some(scaffold::asset(&site, k, type_name, path)?),
-        (None, true, _) => None,
-    };
+    let asset = sidecar_asset(&site, opts, knowledge, type_name)?;
     // sokf-implements: CLI-6_AC-15
     let stem_slug = asset.as_ref().and_then(|(a, _)| {
         let name = a.file_name();
@@ -156,7 +135,15 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         ));
     }
 
-    let id = resolve_id(&model, schema, knowledge, opts, slug.as_deref(), &states)?;
+    let id = resolve_id(
+        root,
+        &model,
+        schema,
+        knowledge,
+        opts,
+        slug.as_deref(),
+        &states,
+    )?;
     // `--id-only` loads and compiles the knowledge as a full `new` does,
     // because the id template is in the compiled schema.
     if opts.id_only {
@@ -212,31 +199,9 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         }
         scaffold::create_new(&fs_path, &document)?;
         created = true;
-        // The index of each directory that holds the document lists it, so
-        // the command writes them as `validate --fix` would, and a check
-        // after `new` finds no stale index that sokf itself left.
-        // sokf-implements: CLI-6_AC-73
-        // A failure here leaves an index stale, which `validate --fix`
-        // repairs, so it doesn't undo the document that the command wrote
-        // (CLI-9_AC-1), and the handler warns of it.
-        let dirs = holding_dirs(&model, &path);
+        // The store closes before `fix_indexes` opens it again.
         drop(cache);
-        if !dirs.is_empty() {
-            match super::validate::fix_indexes(root, opts.cache, &dirs) {
-                Ok(ops) => {
-                    indexes = ops
-                        .into_iter()
-                        .filter_map(|op| match op {
-                            crate::FixOp::Created { path } | crate::FixOp::Rewrote { path } => {
-                                Some(path)
-                            }
-                            crate::FixOp::Moved { .. } => None,
-                        })
-                        .collect();
-                }
-                Err(e) => index_error = Some(e.to_string()),
-            }
-        }
+        (indexes, index_error) = update_indexes(root, &model, opts.cache, &path);
     }
     Ok(NewResult {
         id,
@@ -246,6 +211,74 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         indexes,
         index_error,
     })
+}
+
+/// `sidecar_asset` returns the asset that `--for` names and the path of its
+/// sidecar, or `None` for a type that declares no `asset-files`. It refuses
+/// `--dir` with `--for`, `--for` for a type that declares no
+/// `asset-files`, and a type that declares them without `--for`.
+// sokf-implements: CLI-6_AC-51
+fn sidecar_asset(
+    site: &scaffold::Site,
+    opts: &NewOptions,
+    knowledge: Option<usize>,
+    type_name: &str,
+) -> Result<Option<(RepoPath, RepoPath)>> {
+    if opts.dir.is_some() && opts.for_asset.is_some() {
+        return Err(Error::New(
+            "`--dir` can't be given with `--for`, because the asset's location determines the document's path".to_string(),
+        ));
+    }
+    // The location of a sidecar's asset determines the document's path, and
+    // the asset's filename supplies the default slug.
+    match (
+        &opts.for_asset,
+        site.schema.asset_files.is_empty(),
+        knowledge,
+    ) {
+        (Some(_), true, _) | (Some(_), _, None) => Err(Error::New(format!(
+            "`--for` is given, but `{type_name}` declares no `asset-files`"
+        ))),
+        (None, false, _) => Err(Error::New(format!(
+            "`{type_name}` declares `asset-files`, so give `--for <PATH>` with the asset that the document describes"
+        ))),
+        (Some(path), false, Some(k)) => Ok(Some(scaffold::asset(site, k, type_name, path)?)),
+        (None, true, _) => Ok(None),
+    }
+}
+
+/// `update_indexes` brings up to date the index of each directory that
+/// holds the new document at `path`. It returns each
+/// index that it created or rewrote, or the error that stopped it.
+// sokf-implements: CLI-6_AC-73
+fn update_indexes(
+    root: &RepoRoot,
+    model: &Model,
+    mode: CacheMode,
+    path: &RepoPath,
+) -> (Vec<RepoPath>, Option<String>) {
+    // The index of each directory that holds the document lists it, so
+    // the command writes them as `validate --fix` would, and a check
+    // after `new` finds no stale index that sokf itself left.
+    // A failure here leaves an index stale, which `validate --fix`
+    // repairs, so it doesn't undo the document that the command wrote
+    // (CLI-9_AC-1), and the handler warns of it.
+    let dirs = holding_dirs(model, path);
+    if dirs.is_empty() {
+        return (Vec::new(), None);
+    }
+    match super::validate::fix_indexes(root, mode, &dirs) {
+        Ok(ops) => (
+            ops.into_iter()
+                .filter_map(|op| match op {
+                    crate::FixOp::Created { path } | crate::FixOp::Rewrote { path } => Some(path),
+                    crate::FixOp::Moved { .. } => None,
+                })
+                .collect(),
+            None,
+        ),
+        Err(e) => (Vec::new(), Some(e.to_string())),
+    }
 }
 
 /// `holding_dirs` returns each directory that holds `path`, from its own
@@ -295,9 +328,7 @@ fn chosen_store(
         .and_then(|p| p.to_str())
         .and_then(|p| PathArg(p).resolve_new(root, &opts.cwd))
         .and_then(|p| model.knowledge_of(&p))
-        .filter(|&k| {
-            type_name == "Schema" || !model.knowledges[k].schemas_for(type_name).is_empty()
-        });
+        .filter(|&k| type_name == "Schema" || model.declares(k, type_name));
     match (named, located) {
         (Some(n), Some(l)) if n != l => Err(Error::New(format!(
             "`{store}:{type_name}` names the store in {}, but the path of `{option}` lies in {}",
@@ -319,6 +350,7 @@ fn chosen_store(
 // sokf-implements: CLI-6_AC-18
 // sokf-implements: CLI-6_AC-33
 fn resolve_id(
+    root: &RepoRoot,
     model: &crate::Model,
     schema: &SokfSchema,
     knowledge: Option<usize>,
@@ -327,50 +359,50 @@ fn resolve_id(
     states: &crate::grammar::States,
 ) -> Result<String> {
     let type_name = split_store(opts.type_name.as_str()).1;
-    match (schema.core.core.id_template(), knowledge) {
-        (Some(template), Some(k)) => {
-            if let Some(given) = &opts.id {
-                return Err(Error::New(format!(
-                    "`--id {given}` is given, but `{type_name}` has an id template, so use `--slug`"
-                )));
-            }
-            let seq = match (template.seq_width(), opts.seq) {
-                (Some(_), Some(given)) => {
-                    scaffold::given_seq(model, k, type_name, template, given)?
-                }
-                (Some(_), None) => scaffold::next_seq(model, k, type_name, template)?,
-                (None, Some(given)) => {
-                    return Err(Error::New(format!(
-                        "`--seq {given}` is given, but the id template of `{type_name}` has no `seq` placeholder"
-                    )));
-                }
-                (None, None) => 0,
-            };
-            scaffold::render_id(template, seq, slug, states)
+    if let (Some(template), Some(k)) = (schema.core.core.id_template(), knowledge) {
+        if let Some(given) = &opts.id {
+            return Err(Error::New(format!(
+                "`--id {given}` is given, but `{type_name}` has an id template, so use `--slug`"
+            )));
         }
-        _ => {
-            if let Some(given) = opts.seq {
+        let at = scaffold::Where {
+            root,
+            knowledge: k,
+            type_root: schema.type_root(),
+        };
+        let seq = match (template.seq_width(), opts.seq) {
+            (Some(_), Some(given)) => scaffold::given_seq(model, &at, type_name, template, given)?,
+            (Some(_), None) => scaffold::next_seq(model, &at, type_name, template)?,
+            (None, Some(given)) => {
                 return Err(Error::New(format!(
-                    "`--seq {given}` is given, but `{type_name}` has no id template"
+                    "`--seq {given}` is given, but the id template of `{type_name}` has no `seq` placeholder"
                 )));
             }
-            if opts.id_only {
-                return Err(Error::New(format!(
-                    "`{type_name}` has no id template, so give the id with `--id`"
-                )));
-            }
-            if let Some(s) = &opts.slug {
-                return Err(Error::New(format!(
-                    "`--slug {s}` is given, but `{type_name}` has no id template, so use `--id`"
-                )));
-            }
-            match &opts.id {
-                Some(id) if is_slug(id) => Ok(id.clone()),
-                Some(id) => Err(Error::New(format!("`{id}` is not a slug"))),
-                None => Err(Error::New(format!(
-                    "`{type_name}` has no id template, so `--id` is required"
-                ))),
-            }
+            (None, None) => 0,
+        };
+        scaffold::render_id(template, seq, slug, states)
+    } else {
+        if let Some(given) = opts.seq {
+            return Err(Error::New(format!(
+                "`--seq {given}` is given, but `{type_name}` has no id template"
+            )));
+        }
+        if opts.id_only {
+            return Err(Error::New(format!(
+                "`{type_name}` has no id template, so give the id with `--id`"
+            )));
+        }
+        if let Some(s) = &opts.slug {
+            return Err(Error::New(format!(
+                "`--slug {s}` is given, but `{type_name}` has no id template, so use `--id`"
+            )));
+        }
+        match &opts.id {
+            Some(id) if is_slug(id) => Ok(id.clone()),
+            Some(id) => Err(Error::New(format!("`{id}` is not a slug"))),
+            None => Err(Error::New(format!(
+                "`{type_name}` has no id template, so `--id` is required"
+            ))),
         }
     }
 }

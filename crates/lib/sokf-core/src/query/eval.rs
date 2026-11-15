@@ -146,6 +146,10 @@ pub(super) fn equal(a: &Value, b: &Value) -> bool {
 /// `number` turns a numeric result into a value. A whole number that an
 /// `f64` holds exactly becomes an integer, so that `1` prints as `1`, not
 /// `1.0`. A number that JSON can't represent, such as NaN, becomes `null`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the cast is exact: the guard admits only whole numbers below 2^53"
+)]
 pub(super) fn number(f: f64) -> Value {
     if f.fract() == 0.0 && f.abs() < 9_007_199_254_740_992.0 {
         Value::from(f as i64)
@@ -155,6 +159,7 @@ pub(super) fn number(f: f64) -> Value {
 }
 
 /// `eval` evaluates `ast` against `data`.
+#[expect(clippy::too_many_lines, reason = "one arm for each kind of expression")]
 pub(super) fn eval(ast: &Ast, data: &Value) -> Result<Value, Failure> {
     match ast {
         Ast::Identity { .. } => Ok(data.clone()),
@@ -166,10 +171,11 @@ pub(super) fn eval(ast: &Ast, data: &Value) -> Result<Value, Failure> {
         Ast::Literal { value, .. } => Ok(serde_json::to_value(&**value).unwrap_or(Value::Null)),
         Ast::Index { idx, .. } => Ok(match data.as_array() {
             Some(a) => {
+                let n = idx.unsigned_abs() as usize;
                 let i = if *idx >= 0 {
-                    *idx as usize
+                    n
                 } else {
-                    match a.len().checked_sub(idx.unsigned_abs() as usize) {
+                    match a.len().checked_sub(n) {
                         Some(i) => i,
                         None => return Ok(Value::Null),
                     }
@@ -312,6 +318,12 @@ fn compare(comparator: &Comparator, left: &Value, right: &Value) -> Value {
 /// the semantics of a Python slice, and with the endpoints clamped to the
 /// array. It does the arithmetic in `i64`, so that a step near `i32::MAX`
 /// can't overflow.
+#[expect(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    reason = "the casts are exact: an array holds fewer than `i64::MAX` items, and each index stays within `0..len`"
+)]
 fn slice(array: &[Value], start: Option<i32>, stop: Option<i32>, step: i32) -> Vec<Value> {
     let len = array.len() as i64;
     let step = i64::from(step);
@@ -403,12 +415,12 @@ mod tests {
         assert_eq!(number(f64::NAN), Value::Null);
         assert!(equal(&json!(1), &json!(1.0)));
         assert!(!equal(
-            &json!(9007199254740993i64),
-            &json!(9007199254740992i64)
+            &json!(9_007_199_254_740_993_i64),
+            &json!(9_007_199_254_740_992_i64)
         ));
         assert!(equal(
-            &json!(9007199254740993i64),
-            &json!(9007199254740993i64)
+            &json!(9_007_199_254_740_993_i64),
+            &json!(9_007_199_254_740_993_i64)
         ));
         assert!(equal(
             &json!({"a": 1, "b": [1.0]}),

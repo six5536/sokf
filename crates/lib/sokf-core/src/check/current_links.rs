@@ -1,7 +1,7 @@
 //! This module checks the paragraphs that make a promise. A schema's
 //! `current-links` lists their patterns, and such a paragraph links no
 //! archived document, because the work that an archived document records is
-//! done or dropped (SOKF_SCHEMA_54).
+//! done or dropped (`SOKF_SCHEMA_54`).
 
 use tramlines_md::{
     check::{CheckOutput, DocView},

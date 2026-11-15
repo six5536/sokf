@@ -82,6 +82,20 @@ pub enum Query {
     /// A qualified id, a link to another store, or an include from another
     /// store resolves through them.
     Identities,
+    /// The query reads the form of a text that the formatter left
+    /// unsettled, such as one that it didn't start for. No stat records
+    /// the formatter, so every run checks the readers of this query again.
+    Unsettled,
+    /// The query reads the history of git, for the check of a `verified`
+    /// entry, with the commit that `HEAD` named, or an empty text where it
+    /// named none. No stat records the history, so a run whose `HEAD`
+    /// names another commit checks the readers of this query again
+    /// (CACHE-1_AC-97).
+    History(String),
+    /// The query reads what only the run decides, which no stat records:
+    /// the time of the run, against which an entry has yet to lapse, or a
+    /// `git` that failed. Every run checks the readers of this query again.
+    Run,
 }
 // sokf:end query
 
@@ -106,6 +120,9 @@ impl Query {
             Query::Schema { knowledge, key } => format!("{SCHEMA_PREFIX}{knowledge}:{key}"),
             Query::Planned(p) => format!("planned:{p}"),
             Query::Identities => "identities".to_string(),
+            Query::Unsettled => "unsettled".to_string(),
+            Query::History(head) => format!("{HISTORY_PREFIX}{head}"),
+            Query::Run => "run".to_string(),
         }
     }
 }
@@ -114,6 +131,11 @@ impl Query {
 /// schema formats change, one range scan finds every reader of any schema
 /// (CACHE-1_AC-17).
 pub const SCHEMA_PREFIX: &str = "schema:";
+
+/// `HISTORY_PREFIX` begins the key of every query of the history, so that
+/// one range scan finds each commit that a stored check read
+/// (CACHE-1_AC-97).
+pub const HISTORY_PREFIX: &str = "history:";
 
 /// `Reads` holds the reads of a run: the queries that each reader made.
 #[derive(Debug, Default)]

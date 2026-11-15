@@ -11,15 +11,23 @@ repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
+# The tests reach the public mirror and stay out of the published crate.
+exclude = [
+  "tests/",
+  "src/**/tests.rs",
+  "src/**/snapshots/",
+  "src/**/fixtures.rs",
+  "src/proptest_cases.rs",
+  "src/test_support.rs",
+  "src/query/compliance.rs",
+]
 
 [[bin]]
 name = "sokf"
 path = "src/main.rs"
 
-[lints.rust]
-# cargo-llvm-cov sets the `coverage_nightly` cfg in the nightly coverage job.
-# Declare it as expected, so that no toolchain warns that it is unknown.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+[lints]
+workspace = true
 
 [dependencies]
 sokf-core.workspace = true
@@ -36,4 +44,3 @@ insta = { workspace = true }
 boon = { workspace = true }
 dunce = { workspace = true }
 proptest = { workspace = true }
-toml = { workspace = true }

@@ -1,0 +1,54 @@
+---
+source: crates/lib/sokf-core/tests/it/fix.rs
+assertion_line: 24
+expression: json(&before)
+---
+{
+  "errors": [
+    {
+      "path": "/README.md",
+      "line": 7,
+      "message": "`sokf:include /src/main.rs#cli` is stale. Run `sokf validate --fix` (SOKF_FORMAT_85)"
+    },
+    {
+      "path": "/knowledge/decisions/decision-single-binary.md",
+      "line": 8,
+      "message": "heading `Ship one binary` is setext; write it as ATX (schema schema-decision) (TLMD_138)"
+    },
+    {
+      "path": "/knowledge/decisions/decision-single-binary.md",
+      "line": 11,
+      "message": "heading `Background` was renamed; it is now `Context` (schema schema-decision, section \"Context\") (TLMD_137)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-002-done.md",
+      "message": "the definition block is missing; run `sokf validate --fix` (SOKF_FORMAT_77)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-002-done.md",
+      "message": "the document sits in `/knowledge/issues/open`, but its lifecycle states place it in `/knowledge/issues/closed` (SOKF_SCHEMA_26)"
+    },
+    {
+      "path": "/knowledge/issues/open/issue-002-done.md",
+      "line": 9,
+      "message": "heading `Old title` must equal the frontmatter `title`: `Done` (schema schema-issue, section \"<title>\") (TLMD_165)"
+    },
+    {
+      "path": "/knowledge/overview.md",
+      "line": 15,
+      "message": "`sokf:include req-cli` is stale. Run `sokf validate --fix` (SOKF_FORMAT_85)"
+    },
+    {
+      "path": "/knowledge/overview.md",
+      "line": 21,
+      "message": "the definition block is stale. Run `sokf validate --fix` (SOKF_FORMAT_80)"
+    }
+  ],
+  "warnings": [],
+  "fixes": [],
+  "summary": {
+    "errors": 8,
+    "warnings": 0,
+    "fixes": 0
+  }
+}

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4524545f1af44a0464ca04ff63c03b4e25803a1ae1a5227befeda2eb29eafad3 # shrinks to p = Perturbation { stale_include: false, misplaced: false, setext: false, stale_definition: false, missing_index: false, stale_index: false, crlf: false }

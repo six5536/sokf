@@ -50,3 +50,13 @@ pub fn is_optional_mark(line: &str) -> bool {
 pub fn only_marker(line: &str) -> Option<BTreeMap<String, Vec<String>>> {
     SOKF.only_marker(line)
 }
+
+/// `is_markdown` returns whether the file at `path` is Markdown: whether
+/// its name ends in `.md`, as every check of sokf reads it.
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "only a name that ends in a lowercase `.md` is Markdown, so the comparison is case-sensitive on purpose"
+)]
+pub fn is_markdown(path: &crate::RepoPath) -> bool {
+    path.as_str().ends_with(".md")
+}

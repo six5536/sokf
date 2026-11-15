@@ -9,7 +9,7 @@ validator for Superdev Open Knowledge Format (SOKF) knowledge stores.
 > the binary can depend on a released version. The API isn't stable.
 
 - [What it does](#what-it-does)
-- [Licence](#licence)
+- [License](#license)
 
 ## What it does
 
@@ -74,7 +74,7 @@ The tramlines core grammar and the tramlines-md grammar come with the
 
 For the full reference, see the [sokf-core API documentation on docs.rs](https://docs.rs/sokf-core).
 
-## Licence
+## License
 
 `sokf-core` is released under the Elastic License 2.0. See the
 [LICENSE file](https://github.com/six5536/sokf/blob/main/LICENSE).

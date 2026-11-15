@@ -72,7 +72,6 @@ Each normative rule of this specification is a criterion in the EARS (Easy Appro
 - <a id="writer"></a>`writer` - An agent or a human that writes documents.
 - <a id="process"></a>`process` - A deterministic program that writes to the knowledge, such as a link checker.
 - <a id="consumer"></a>`consumer` - A program that reads a knowledge store to display, search, or export it, or to pass it to an agent.
-- <a id="schema-pack"></a>`schema pack` - A directory with the manifest `pack.sokf.yaml` that holds schemas, documents, and formats for a tool to copy into a knowledge store, and files for it to copy to fixed paths of a repository (§2).
 
 ## 2. SOKF knowledge store structure
 
@@ -119,6 +118,8 @@ name: example-knowledge
 scope: example-org
 description: Knowledge for the example project.
 renamed-from: [example-org/old-knowledge, other-org/example-knowledge]
+unique: knowledge
+extends: example-org/method
 ```
 
 - `sokf` - The version of this specification that the knowledge store targets.
@@ -126,6 +127,8 @@ renamed-from: [example-org/old-knowledge, other-org/example-knowledge]
 - `scope` - The owner of the store, such as an npm scope, a Maven group, or a GitHub owner.
 - `description` - A summary of the store.
 - `renamed-from` - The former identities of the store.
+- `unique` - The widest scope of the keys of the store. `knowledge` holds each key of the store unique only within the store, whatever its schema declares (§8.5).
+- `extends` - The identity of the store whose schemas the store inherits ([schema specification][sokf:sokf-schema-spec] §4).
 
 The store identity is `<scope>/<name>`, and documents in other stores use it to refer to this store (§8). A reference that uses a former identity still resolves, and the fix rewrites it to the current identity ([validation specification][sokf:sokf-validation-spec]).
 
@@ -139,37 +142,9 @@ The store identity is `<scope>/<name>`, and documents in other stores use it to 
 - <a id="sokf_format_14"></a>SOKF_FORMAT_14 [event]: WHEN a human changes a store identity, the human SHALL add the former identity to `renamed-from`.
 - <a id="sokf_format_15"></a>SOKF_FORMAT_15 [ubiquitous]: the agent SHALL leave the `name` and `scope` of the manifest unchanged.
 - <a id="sokf_format_16"></a>SOKF_FORMAT_16 [ubiquitous]: the manifest SHALL contain no `producer`, `generated`, or `counts` key in the working tree (§4).
-
-A schema pack is a directory that holds the method of a knowledge store, schemas, formats, and documents that a tool, such as `sokf pack sync`, copies into a store, and the other files that projects share, which the tool copies to fixed paths of a repository. The directory is the root of a repository or any directory inside one, so a project can publish its pack beside its code. A schema pack holds these files:
-
-- `pack.sokf.yaml` - The manifest of the pack, at its root.
-- `schemas/` - Schema documents, which a copy places in the `schemas/` directory of the store.
-- `documents/` - Documents, such as documentation standards, which a copy places at the same path relative to the store.
-- `formats.yaml` - The line formats and placeholder types of the pack, in the form of a formats file, which a tool adds to its lookup of formats.
-- `instructions.md` - A fragment of the instructions that an agent harness reads.
-- `files/` - Files outside any store, such as a formatter's configuration or a workflow, which a copy places at the same path relative to the root of the repository.
-
-The manifest describes the pack:
-
-```yaml
-name: method
-version: 1.2.0
-requires-sokf: 0.1.3
-description: The schemas and the documentation standards with which a team records its work.
-```
-
-- `name` - The name of the pack, which the copies of the pack in every store share.
-- `version` - The version of the pack, in semantic versioning.
-- `requires-sokf` - The oldest version of sokf that the pack works with.
-- `description` - A summary of the pack.
-- `depends` - The packs that the pack builds on, each with the oldest version that it works with. A pack overrides each file and each schema type of the packs that it depends on.
-
-A copy of a pack belongs to the store: the store's writers edit it, and a later copy merges the pack's own changes with those edits.
-
-- <a id="sokf_format_160"></a>SOKF_FORMAT_160 [ubiquitous]: the schema pack SHALL hold a manifest, `pack.sokf.yaml`, at its root.
-- <a id="sokf_format_161"></a>SOKF_FORMAT_161 [ubiquitous]: the schema pack SHALL declare in its manifest a slug `name`, a `version` and a `requires-sokf` of the form `MAJOR.MINOR.PATCH`, a `description`, and, optionally, `depends`, a map from the slug of each pack that the pack depends on to the oldest version of it, of the form `MAJOR.MINOR.PATCH`, and no other key.
-- <a id="sokf_format_162"></a>SOKF_FORMAT_162 [ubiquitous]: the schema pack SHALL hold only Schema documents in `schemas/`, and only documents in `documents/`.
-- <a id="sokf_format_163"></a>SOKF_FORMAT_163 [ubiquitous]: the schema pack SHALL hold in `files/` only text files whose paths, relative to `files/`, lie outside every knowledge root of the repository that receives them.
+- <a id="sokf_format_205"></a>SOKF_FORMAT_205 [ubiquitous]: the manifest SHALL give `unique`, when present, as `knowledge`.
+- <a id="sokf_format_206"></a>SOKF_FORMAT_206 [ubiquitous]: the manifest SHALL give `extends`, when present, as the current or a former identity `<scope>/<name>` of another knowledge store in the repository.
+- <a id="sokf_format_207"></a>SOKF_FORMAT_207 [ubiquitous]: the manifest SHALL name in `extends` no store whose own `extends`, followed from store to store, leads back to the store.
 
 ## 3. Documents
 
@@ -435,6 +410,8 @@ Each heading of a document has a slug of its own, as GitHub gives it. The headin
 
 A schema can declare a key unique beyond its document. Such a key also has a bare form: `sokf:#<slug>` in its own store, and `sokf:<store>:#<slug>` in another store.
 
+A store's manifest can cap the scope of all its keys at the store with `unique: knowledge`. A key that its schema declares unique in the repository is then unique only within its store, so a store that a tool delivers into many repositories, such as a pack's, keeps short keys of its own, such as `LOGIN-2_AC-1`, beside a key of the same text in the repository's own store. Every other document cites such a key with the store before it, as `sokf:<store>:#<slug>`.
+
 A link whose destination is only a fragment, `[text](#<fragment>)`, points to an anchor in the same document.
 
 A fragment on the id of a sidecar points to part of the body of the sidecar.
@@ -442,7 +419,8 @@ A fragment on the id of a sidecar points to part of the body of the sidecar.
 This specification gives no meaning to a fragment on a path link to a repository file.
 
 - <a id="sokf_format_68"></a>SOKF_FORMAT_68 [ubiquitous]: the document SHALL give each key a slug that differs from the slug of every other key and from the slug that SOKF_FORMAT_155 gives every heading in the document.
-- <a id="sokf_format_69"></a>SOKF_FORMAT_69 [ubiquitous]: the key SHALL have a slug that no other key has within the uniqueness scope of its schema, the knowledge store or the repository.
+- <a id="sokf_format_69"></a>SOKF_FORMAT_69 [ubiquitous]: the key SHALL have a slug that no other key has within the uniqueness scope of its schema, the knowledge store or the repository, narrowed to the knowledge store where the manifest of its store declares `unique: knowledge`.
+- <a id="sokf_format_208"></a>SOKF_FORMAT_208 [optional]: WHERE the manifest of a store declares `unique: knowledge`, the validator SHALL hold each key of the store unique only within the store, whatever scope its schema declares.
 - <a id="sokf_format_70"></a>SOKF_FORMAT_70 [ubiquitous]: the body link SHALL use a bare fragment only for a key that its schema declares unique beyond its document.
 - <a id="sokf_format_71"></a>SOKF_FORMAT_71 [ubiquitous]: the body link SHALL have a fragment that identifies one key or one heading of its target.
 - <a id="sokf_format_72"></a>SOKF_FORMAT_72 [ubiquitous]: the body link SHALL use the slug of the key or heading as each fragment.
@@ -635,9 +613,9 @@ A marker is a comment line in a repository file outside every knowledge store. I
 fn parse(args: &[String]) -> Options {
 ```
 
-The tag of a marker is the first word of its line after whitespace and ASCII punctuation, such as `//`, `#`, `--`, `/*`, or `<!--`, so a marker fits the comment syntax of any file that has comments. A file without comments, such as a JSON file, holds no marker. The tag is `sokf-`, a relationship in the form that §8 gives, and a colon, with whitespace after the colon. A qualified id, such as `sokf-spec:glossary`, has no whitespace after its colon, so it is not a tag.
+The tag of a marker is the first word of its line after whitespace and ASCII punctuation, such as `//`, `#`, `--`, `/*`, or `<!--`, so a marker fits the comment syntax of any file that has comments. A file without comments, such as a JSON file, holds no marker. The tag is `sokf-`, a relationship in the form that §8 gives, and a colon, with whitespace after the colon. A qualified id, such as `sokf-spec:glossary`, has no whitespace after its colon, so it is not a tag. A writer writes the tag in lowercase, and a consumer reads it in any case, as the tag in lowercase, because a linter's fix of a comment's case, such as `Sokf-Implements:`, changes no fact.
 
-One reference follows the tag, and after the reference come only whitespace and characters that are neither letters nor digits, such as the end of a block comment. A marker states one fact, so a line of code that implements two criteria has two markers.
+One reference follows the tag, and after the reference come only whitespace and characters that are neither letters nor digits, such as the end of a block comment. The reference can stand between backticks, which a linter of documentation comments adds to a word that looks like code, and the consumer reads the reference inside them. A marker states one fact, so a line of code that implements two criteria has two markers.
 
 ```text
 # sokf-tests: CLI_P-5
@@ -653,22 +631,24 @@ The reference takes any form that a label takes after `sokf:` (§8), or the form
 - `<store>:` - Before any of the preceding forms, the store of the target (§8.2).
 - `<key>` - A key that its schema declares unique in the repository, written as its text, such as `CLI-1_AC-2`.
 
-A bare word in lowercase kebab-case is an id, and any other bare word is a key. A marker belongs to no knowledge store, so a reference without a store resolves in every knowledge store of the repository. A fragment or a key in a marker matches a key by slug. The writer of a marker can therefore give a key as written, such as `CLI-1_AC-2`, and not only as its slug. The fix leaves every marker as written, because a marker is in a file that the writer of the code owns.
+A bare word in lowercase kebab-case is an id, and any other bare word is a key. A marker belongs to no knowledge store, so a reference without a store resolves in every knowledge store of the repository, except a store whose manifest declares `unique: knowledge`. A reference reaches a document or a key of such a store only with the store before it, as in `example-org/login:#login-2_ac-1`, so that a key of the repository's own store and a key of the same text in a delivered store never capture each other's markers. A fragment or a key in a marker matches a key by slug. The writer of a marker can therefore give a key as written, such as `CLI-1_AC-2`, and not only as its slug. The fix leaves every marker as written, because a marker is in a file that the writer of the code owns.
 
 A schema can require, for each key or document of its type, a marker with a given relationship. A schema can also limit the relationships of the markers that cite those keys and documents ([schema specification][sokf:sokf-schema-spec] §4).
 
-A writer protects text that looks like a marker, but is not one, with an ignore region: the lines between a `sokf:ignore-begin` line and the next `sokf:ignore-end` line. A `sokf:ignore-next-line` line protects the line after it. Each of these directives is the first word of its line after whitespace and ASCII punctuation, as the tag of a marker is. The end of a comment, such as `-->` or `*/`, can follow a directive, as it can follow a marker's reference.
+A line inside a fenced code block of a Markdown file, a file whose name ends in `.md`, is an example, not a marker, because a fence is where a README shows a sample. The fence hides an ignore directive too. A writer protects any other text that looks like a marker, but is not one, with an ignore region: the lines between a `sokf:ignore-begin` line and the next `sokf:ignore-end` line. A `sokf:ignore-next-line` line protects the line after it. Each of these directives is the first word of its line after whitespace and ASCII punctuation, as the tag of a marker is. The end of a comment, such as `-->` or `*/`, can follow a directive, as it can follow a marker's reference.
 
 - <a id="sokf_format_142"></a>SOKF_FORMAT_142 [ubiquitous]: the marker SHALL begin its line with the tag `sokf-<rel>:` and whitespace, after only whitespace and ASCII punctuation.
-- <a id="sokf_format_143"></a>SOKF_FORMAT_143 [ubiquitous]: the marker SHALL hold its relationship in lowercase kebab-case, the form of a `rel` in §8.
-- <a id="sokf_format_144"></a>SOKF_FORMAT_144 [ubiquitous]: the marker SHALL hold exactly one reference after its tag, followed by only whitespace and characters that are neither letters nor digits.
+- <a id="sokf_format_143"></a>SOKF_FORMAT_143 [ubiquitous]: the consumer SHALL read the tag of a marker in any case as the tag in lowercase, and refuse a relationship that isn't in the kebab-case form of a `rel` in §8.
+- <a id="sokf_format_144"></a>SOKF_FORMAT_144 [ubiquitous]: the marker SHALL hold exactly one reference after its tag, bare or between backticks, followed by only whitespace and characters that are neither letters nor digits.
 - <a id="sokf_format_145"></a>SOKF_FORMAT_145 [ubiquitous]: the marker SHALL hold a reference that resolves to one document, or to one key or one heading of a document.
 - <a id="sokf_format_146"></a>SOKF_FORMAT_146 [ubiquitous]: the consumer SHALL read a bare word of a marker in lowercase kebab-case as an id, and any other bare word as a key.
 - <a id="sokf_format_147"></a>SOKF_FORMAT_147 [ubiquitous]: the consumer SHALL resolve a bare key of a marker only to a key that its schema declares unique in the repository.
 - <a id="sokf_format_148"></a>SOKF_FORMAT_148 [ubiquitous]: the consumer SHALL resolve a reference of a marker without a store in every knowledge store of the repository.
+- <a id="sokf_format_209"></a>SOKF_FORMAT_209 [optional]: WHERE the manifest of a store declares `unique: knowledge`, the consumer SHALL resolve a reference of a marker to a document or a key of that store only when the reference names the store.
 - <a id="sokf_format_149"></a>SOKF_FORMAT_149 [ubiquitous]: the marker SHALL name the store of an id that more than one knowledge store holds.
 - <a id="sokf_format_150"></a>SOKF_FORMAT_150 [ubiquitous]: the consumer SHALL match the fragment and the key of a marker by their slug.
 - <a id="sokf_format_151"></a>SOKF_FORMAT_151 [ubiquitous]: the consumer SHALL read no marker in an ignore region, and none on the line after a `sokf:ignore-next-line` line.
+- <a id="sokf_format_250"></a>SOKF_FORMAT_250 [ubiquitous]: the consumer SHALL read no marker and no ignore directive on a line inside a fenced code block of a Markdown file.
 - <a id="sokf_format_152"></a>SOKF_FORMAT_152 [ubiquitous]: the repository file SHALL pair each `sokf:ignore-begin` line with a later `sokf:ignore-end` line, and contain no `sokf:ignore-begin` line inside an ignore region.
 - <a id="sokf_format_153"></a>SOKF_FORMAT_153 [ubiquitous]: the repository file SHALL contain no `sokf:ignore-end` line outside an ignore region.
 - <a id="sokf_format_156"></a>SOKF_FORMAT_156 [event]: WHEN only whitespace and characters that are neither letters nor digits follow an ignore directive on its line, the consumer SHALL read the directive.

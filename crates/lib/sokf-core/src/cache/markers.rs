@@ -17,7 +17,6 @@ fn encode(kind: &RowKind) -> (i64, &str, &str) {
     match kind {
         RowKind::Marker { rel, target } => (0, rel, target),
         RowKind::Malformed(tag) => (1, tag, ""),
-        RowKind::Case(tag) => (2, tag, ""),
         RowKind::Rel(tag) => (6, tag, ""),
         RowKind::Ignore(IgnoreFault::BeginInside) => (3, "", ""),
         RowKind::Ignore(IgnoreFault::EndOutside) => (4, "", ""),
@@ -31,7 +30,6 @@ fn decode(code: i64, rel: String, target: String) -> Option<RowKind> {
     Some(match code {
         0 => RowKind::Marker { rel, target },
         1 => RowKind::Malformed(rel),
-        2 => RowKind::Case(rel),
         3 => RowKind::Ignore(IgnoreFault::BeginInside),
         4 => RowKind::Ignore(IgnoreFault::EndOutside),
         5 => RowKind::Ignore(IgnoreFault::NeverEnds),
@@ -89,7 +87,7 @@ impl Cache {
                 "SELECT line, kind, rel, target FROM markers WHERE path = ?1",
                 [path.as_str()],
                 |r| {
-                    let line = r.get::<_, i64>(0)? as usize;
+                    let line = r.get::<_, usize>(0)?;
                     let kind = decode(r.get(1)?, r.get(2)?, r.get(3)?);
                     Ok(kind.map(|kind| MarkerRow { line, kind }))
                 },
@@ -116,7 +114,7 @@ impl Cache {
     /// `commit_markers` writes the markers inside the commit's transaction.
     /// It replaces all the rows of each file that the run scanned, and it
     /// deletes the rows of each removed file.
-    pub(super) fn commit_markers(&self, conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
+    pub(super) fn commit_markers(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut delete = conn.prepare("DELETE FROM markers WHERE path = ?1")?;
         for path in &state.removed {
             delete.execute([path.as_str()])?;
@@ -128,7 +126,7 @@ impl Cache {
             delete.execute([path.as_str()])?;
             for row in rows {
                 let (code, rel, target) = encode(&row.kind);
-                put.execute(params![path.as_str(), row.line as i64, code, rel, target])?;
+                put.execute(params![path.as_str(), row.line, code, rel, target])?;
             }
         }
         Ok(())

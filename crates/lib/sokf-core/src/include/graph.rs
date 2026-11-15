@@ -1,5 +1,5 @@
 //! This module builds the include graph from the source markers, never from
-//! materialised content (SOKF_FORMAT_91).
+//! materialised content (`SOKF_FORMAT_91`).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -105,7 +105,7 @@ pub(super) fn graph_for(
 }
 
 /// `includes_body` says whether an id-form include of `target` with
-/// `fragment` materialises the document's body (SOKF_FORMAT_85,
+/// `fragment` materialises the document's body (`SOKF_FORMAT_85`,
 /// FORMAT-2_AC-5). An include with an empty fragment includes the body of any
 /// document, an include with no fragment includes the body of a document that
 /// isn't an asset's sidecar, and an include with a named fragment never

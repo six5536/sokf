@@ -1,7 +1,7 @@
 //! This module checks the targets of the `sokf:` links in each unit that a
 //! unit rule with `to-type` accepts. Each such link resolves to a document
 //! of one of the rule's types, and a link with a fragment counts by the type
-//! of the document that the fragment lies in (SOKF_SCHEMA_56).
+//! of the document that the fragment lies in (`SOKF_SCHEMA_56`).
 
 use tramlines_md::{
     check::{CheckOutput, DocView},
@@ -18,7 +18,7 @@ use crate::{
 /// `check` reports each `sokf:` link, in a unit that the engine records as
 /// accepted by a rule with `to-type`, whose target is a document of another
 /// type. It reports the link at its own line. A link that resolves to
-/// nothing has a finding of its own (SOKF_FORMAT_61), so `check` passes it
+/// nothing has a finding of its own (`SOKF_FORMAT_61`), so `check` passes it
 /// by.
 // sokf-implements: EXT-5_AC-2
 // sokf-implements: EXT-5_AC-3
@@ -90,6 +90,10 @@ pub fn check(
 /// the run holds only the store's summary of the document. The summary
 /// answers which documents of a store have a type, but not the type of one
 /// document.
+#[expect(
+    clippy::option_option,
+    reason = "the inner `None` is a type that the run can't read, which the caller words differently from a known type, and the outer `None` is a type in `types`"
+)]
 fn type_outside(
     ctx: &Ctx<'_>,
     path: &RepoPath,
@@ -101,19 +105,18 @@ fn type_outside(
         Some(Located::Schema(_, s)) => Some(s.doc.type_name()),
         _ => None,
     };
-    match held {
-        Some(t) => match t {
+    if let Some(t) = held {
+        match t {
             Some(t) if types.iter().any(|w| w == t) => None,
             t => Some(t.map(str::to_string)),
-        },
-        None => {
-            let typed = types.iter().any(|t| {
-                ctx.model
-                    .ids_of_type(knowledge, t)
-                    .iter()
-                    .any(|(p, _)| p == path)
-            });
-            (!typed).then_some(None)
         }
+    } else {
+        let typed = types.iter().any(|t| {
+            ctx.model
+                .ids_of_type(knowledge, t)
+                .iter()
+                .any(|(p, _)| p == path)
+        });
+        (!typed).then_some(None)
     }
 }

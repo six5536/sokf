@@ -171,11 +171,17 @@ impl Model {
     fn archive_rules(&self) -> BTreeMap<(usize, String), Archived> {
         let mut rules = BTreeMap::new();
         for (k, knowledge) in self.knowledges.iter().enumerate() {
-            for schema in &knowledge.schemas {
+            // A store's own schemas, then those that it inherits, whose
+            // types it declares in no schema of its own (SOKF_SCHEMA_96).
+            let own = knowledge.schemas.iter();
+            let inherited = self.inherited(k).into_iter().map(|r| self.schema(r));
+            for schema in own.chain(inherited) {
                 if let Some(t) = &schema.type_const
                     && schema.archived != Archived::None
                 {
-                    rules.insert((k, t.clone()), schema.archived.clone());
+                    rules
+                        .entry((k, t.clone()))
+                        .or_insert_with(|| schema.archived.clone());
                 }
             }
         }

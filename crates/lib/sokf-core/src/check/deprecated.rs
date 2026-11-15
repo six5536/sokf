@@ -2,7 +2,7 @@
 //! check, the include check, and the marker check record each citation with
 //! what the citing document says about itself, and the pass of each
 //! deprecated document reads them after every document is checked
-//! (SOKF_VALIDATION_57 to SOKF_VALIDATION_64).
+//! (`SOKF_VALIDATION_57` to `SOKF_VALIDATION_64`).
 
 use std::collections::BTreeSet;
 
@@ -28,9 +28,9 @@ impl Citer {
     /// `of` describes the document or additional file of `doc`. It returns
     /// `None` for a document without a type, whose links cite nothing. A
     /// document is retired when it is archived or deprecated
-    /// (SOKF_VALIDATION_61, SOKF_VALIDATION_62). It supersedes each document
+    /// (`SOKF_VALIDATION_61`, `SOKF_VALIDATION_62`). It supersedes each document
     /// that a `supersedes` entry of its `links` resolves to
-    /// (SOKF_VALIDATION_60).
+    /// (`SOKF_VALIDATION_60`).
     pub fn of(doc: DocView<'_>, ctx: &Ctx<'_>) -> Option<Citer> {
         let mut citer = Citer {
             source: doc.path.clone(),
@@ -86,7 +86,7 @@ impl Citer {
     /// `declare` returns the record that the `links` entry at `line`
     /// supersedes `target`. It cites nothing and draws no warning, but the
     /// pass of `target` names its document as a replacement, even when no
-    /// body link mirrors the entry (SOKF_VALIDATION_64).
+    /// body link mirrors the entry (`SOKF_VALIDATION_64`).
     pub fn declare(&self, line: usize) -> Citation {
         Citation {
             slug: None,
@@ -193,7 +193,8 @@ mod tests {
 
     #[test]
     fn the_clause_names_each_superseder_in_a_list() {
-        let names = |list: &[&str]| -> Vec<String> { list.iter().map(|s| s.to_string()).collect() };
+        let names =
+            |list: &[&str]| -> Vec<String> { list.iter().map(ToString::to_string).collect() };
         assert_eq!(replaced_by(&[]), "");
         assert_eq!(replaced_by(&names(&["a"])), ": `a` supersedes it");
         assert_eq!(

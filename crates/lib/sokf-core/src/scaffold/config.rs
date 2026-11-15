@@ -59,7 +59,7 @@ pub fn register(
     let in_effect: Array = existing
         .iter()
         .filter(|r| *r != dir)
-        .map(|r| r.as_str())
+        .map(RepoPath::as_str)
         .collect();
     let roots = table
         .entry("roots")
@@ -74,6 +74,8 @@ pub fn register(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     fn p(s: &str) -> RepoPath {
@@ -82,9 +84,10 @@ mod tests {
 
     fn config(roots: &[&str], text: Option<&str>) -> ConfigText {
         ConfigText {
+            registered: vec![],
             roots: roots.iter().map(|r| p(r)).collect(),
-            declined: Default::default(),
-            hook_commands: Default::default(),
+            declined: BTreeMap::default(),
+            hook_commands: BTreeMap::default(),
             text: text.map(str::to_string),
         }
     }

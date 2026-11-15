@@ -3,7 +3,10 @@
 //! read in the cache, and adds to the model every file that holds a marker
 //! or used to hold one.
 
-use std::{sync::Mutex, thread};
+use std::{
+    sync::{Mutex, PoisonError},
+    thread,
+};
 
 use crate::{
     Cache, FileKey, FileKind, MarkerCheck, Model, RepoPath, RepoRoot, Stat,
@@ -42,7 +45,7 @@ pub(super) fn scan_outside(
     };
     let fresh = cache.is_fresh();
     let mut added = Vec::new();
-    for (path, read) in read_all(root, paths) {
+    for (path, read) in read_all(root, &paths) {
         let Some((key, rows)) = read else {
             cache.unread(&path);
             continue;
@@ -87,7 +90,7 @@ pub(super) fn marker_edges(model: &Model, keys: &KeyIndex, root: &RepoRoot) -> V
         return Vec::new();
     }
     let mut out = Vec::new();
-    for (path, read) in read_all(root, outside_files(model)) {
+    for (path, read) in read_all(root, &outside_files(model)) {
         let Some((_, rows)) = read else {
             continue;
         };
@@ -124,10 +127,9 @@ pub(super) fn is_checked_unit(model: &Model, cache: &Cache, path: &RepoPath) -> 
 /// `read_all` reads and scans `paths` on as many threads as the machine
 /// can run in parallel, but no more than one thread for every 64 paths. It returns the
 /// results in path order, with `None` for a file that it can't read.
-fn read_all(root: &RepoRoot, paths: Vec<RepoPath>) -> Vec<(RepoPath, Option<Read>)> {
+fn read_all(root: &RepoRoot, paths: &[RepoPath]) -> Vec<(RepoPath, Option<Read>)> {
     let threads = thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
+        .map_or(1, std::num::NonZero::get)
         .min(paths.len().div_ceil(64).max(1));
     let chunk = paths.len().div_ceil(threads).max(1);
     let results: Mutex<Vec<(RepoPath, Option<Read>)>> = Mutex::new(Vec::with_capacity(paths.len()));
@@ -141,14 +143,12 @@ fn read_all(root: &RepoRoot, paths: Vec<RepoPath>) -> Vec<(RepoPath, Option<Read
                     .collect();
                 results
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .unwrap_or_else(PoisonError::into_inner)
                     .extend(found);
             });
         }
     });
-    let mut results = results
-        .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut results = results.into_inner().unwrap_or_else(PoisonError::into_inner);
     results.sort_by(|a, b| a.0.cmp(&b.0));
     results
 }
@@ -167,6 +167,6 @@ fn read_one(root: &RepoRoot, path: &RepoPath) -> Option<Read> {
         mtime,
         hash: source::fnv1a64(&bytes),
     };
-    let rows = markers::scan(&bytes).unwrap_or_default();
+    let rows = markers::scan(path, &bytes).unwrap_or_default();
     Some((key, rows))
 }

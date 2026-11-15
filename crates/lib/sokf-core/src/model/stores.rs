@@ -1,5 +1,5 @@
 //! This module defines the identities of stores and the qualified ids that
-//! refer to them (SOKF_FORMAT_10, SOKF_FORMAT_64). The identity of a store is
+//! refer to them (`SOKF_FORMAT_10`, `SOKF_FORMAT_64`). The identity of a store is
 //! `<scope>/<name>`. To refer to another store, a document puts that store's
 //! identity in front of the id it would use inside that store. Within one
 //! scope, the name of the store is enough.
@@ -7,10 +7,9 @@
 use std::fmt;
 
 use super::{Document, Knowledge, Located, Model};
-use crate::RepoPath;
-use crate::markdown::is_slug;
+use crate::{RepoPath, markdown::is_slug};
 
-/// `Identity` is the identity of a store, `<scope>/<name>` (SOKF_FORMAT_10).
+/// `Identity` is the identity of a store, `<scope>/<name>` (`SOKF_FORMAT_10`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Identity {
     /// `scope` identifies the owner of the store.
@@ -44,6 +43,12 @@ impl fmt::Display for Identity {
 }
 
 impl Knowledge {
+    /// `capped` returns whether the store's manifest caps the scope of its
+    /// keys at the store, with `unique: knowledge` (`SOKF_FORMAT_208`).
+    pub fn capped(&self) -> bool {
+        self.manifest.as_ref().is_some_and(super::Manifest::capped)
+    }
+
     /// `identity` returns the identity of the store, when its manifest
     /// declares a `scope` and a `name` that are both slugs.
     pub fn identity(&self) -> Option<Identity> {
@@ -61,6 +66,26 @@ impl Knowledge {
             .filter_map(|(old, _)| Identity::parse(old))
             .collect()
     }
+}
+
+/// `matching_in` returns the stores of `knowledges` whose current identity
+/// `wanted` accepts, or, when none has one, those whose former identity it
+/// accepts, and whether the match is of a former identity.
+pub(crate) fn matching_in(
+    knowledges: &[Knowledge],
+    wanted: impl Fn(&Identity) -> bool,
+) -> (Vec<usize>, bool) {
+    let n = knowledges.len();
+    let current: Vec<usize> = (0..n)
+        .filter(|&k| knowledges[k].identity().is_some_and(|i| wanted(&i)))
+        .collect();
+    if !current.is_empty() {
+        return (current, false);
+    }
+    let former = (0..n)
+        .filter(|&k| knowledges[k].former().iter().any(&wanted))
+        .collect();
+    (former, true)
 }
 
 /// `StoreHit` is the store that a qualified id refers to.
@@ -107,7 +132,7 @@ impl Model {
     }
 
     /// `store` finds the store that `written` refers to from a document of
-    /// store `citing` (SOKF_FORMAT_64). It looks up a `name` among the
+    /// store `citing` (`SOKF_FORMAT_64`). It looks up a `name` among the
     /// stores in the scope of the citing store, and a `scope/name` among
     /// every store. It matches the current identities first, then the
     /// former ones. When two stores share an identity, `store` returns
@@ -143,17 +168,7 @@ impl Model {
     /// accepts. When there are none, it returns the stores with a former
     /// identity that `wanted` accepts, and says so with `true`.
     fn matching(&self, wanted: impl Fn(&Identity) -> bool) -> (Vec<usize>, bool) {
-        let n = self.knowledges.len();
-        let current: Vec<usize> = (0..n)
-            .filter(|&k| self.knowledges[k].identity().is_some_and(|i| wanted(&i)))
-            .collect();
-        if !current.is_empty() {
-            return (current, false);
-        }
-        let former = (0..n)
-            .filter(|&k| self.knowledges[k].former().iter().any(&wanted))
-            .collect();
-        (former, true)
+        matching_in(&self.knowledges, wanted)
     }
 
     /// `stores_named` returns the stores that `written` names on the command
@@ -216,7 +231,7 @@ impl Model {
 
     /// `path_label` returns the canonical `sokf:` label that a document in
     /// store `citing` should use for a link to `path` with `fragment`
-    /// (SOKF_FORMAT_65). The label depends on the file at `path`:
+    /// (`SOKF_FORMAT_65`). The label depends on the file at `path`:
     ///
     /// - For a document, the label is its id with the fragment.
     /// - For a sidecar, the label is its id with the fragment, and with an
@@ -251,7 +266,7 @@ impl Model {
 
     /// `prefix` returns the store prefix that a document in store `citing`
     /// should put before an id in store `target`. It is the shortest
-    /// unambiguous prefix (SOKF_FORMAT_65). The prefix is empty within one store,
+    /// unambiguous prefix (`SOKF_FORMAT_65`). The prefix is empty within one store,
     /// `name:` within one scope, and `scope/name:` otherwise. `prefix`
     /// returns `None` when the two stores differ and either has no
     /// identity.
@@ -271,7 +286,7 @@ impl Model {
 
     /// `canonical_label` returns the canonical `sokf:` label that a document
     /// in store `citing` should use for `id` and `fragment` in store `target`
-    /// (SOKF_FORMAT_65).
+    /// (`SOKF_FORMAT_65`).
     pub fn canonical_label(
         &self,
         citing: usize,
@@ -285,7 +300,7 @@ impl Model {
 
     /// `canonical_include` returns the canonical target that an include
     /// marker in store `citing` should use for `id` and `fragment` in store
-    /// `target` (SOKF_FORMAT_65).
+    /// `target` (`SOKF_FORMAT_65`).
     pub fn canonical_include(
         &self,
         citing: usize,

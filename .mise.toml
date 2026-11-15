@@ -1,26 +1,40 @@
-[tools]
-node = "24"
+# The tasks that only sokf has. The packs supply everything else, in
+# .config/mise/conf.d/.
 
-python = '3.14'
-# The project builds with Rust 1.96. Only the coverage command,
-# `cargo +nightly llvm-cov`, uses nightly, because only nightly honours the
-# `coverage(off)` markers.
-rust = ['1.96', 'nightly']
-zig = "0.16.0"
-cargo-binstall = "1.23.0"
-# The GitHub CLI opens and merges the pull requests.
-gh = "2.103.3"
-# gitleaks scans the export in `npm run export-public -- verify`, at the
-# version that `.github/actions/setup-gitleaks` installs in the release.
-gitleaks = "8.30.1"
+[tasks."version:set:sokf"]
+hide = true
+usage = 'arg "<version>"'
+run = 'node scripts/pack-version.mts set "${usage_version?}"'
 
-"npm:@anthropic-ai/claude-code" = { version = "latest", npm_args = "--ignore-scripts=false" }
+[tasks."version:list:sokf"]
+hide = true
+run = "node scripts/pack-version.mts list"
 
-"cargo:cargo-zigbuild" = "0.23.4"
-"cargo:cargo-nextest" = "0.9.146"
-"cargo:cargo-llvm-cov" = "0.9.1"
-# CI installs the latest cargo-deny; `npm run gate` runs this one.
-"cargo:cargo-deny" = "0.20.2"
-# The release notes: git-cliff writes them from the commit subjects. The
-# release workflow installs the same version.
-"cargo:git-cliff" = "2.14.2"
+# After the launcher's smoke test, which builds the host's binary when no
+# release build has staged one.
+[tasks."test:smoke:sokf"]
+hide = true
+depends = ["test:smoke:launcher"]
+run = "node scripts/release-smoke.mts"
+
+# github-publish.mts adds dist/share to each archive.
+[tasks."build:release:ubuntu:share"]
+hide = true
+run = """
+cargo build --release --locked -p sokf
+mkdir -p dist/share
+./target/release/sokf man > dist/share/sokf.1
+for shell in bash zsh fish powershell elvish; do
+  ./target/release/sokf completions "$shell" > "dist/share/sokf.$shell"
+done
+"""
+
+# Each side of the workspace has to reach the minimum by itself.
+[tasks."coverage:check:rust"]
+hide = true
+run = """
+cargo +$RUST_NIGHTLY llvm-cov clean --workspace
+cargo +$RUST_NIGHTLY llvm-cov nextest --workspace --run-ignored all --no-report
+cargo +$RUST_NIGHTLY llvm-cov report --summary-only --ignore-filename-regex 'crates/app' --fail-under-lines ${COVERAGE_MIN_LINES:-90}
+cargo +$RUST_NIGHTLY llvm-cov report --summary-only --ignore-filename-regex 'crates/lib' --fail-under-lines ${COVERAGE_MIN_LINES:-90}
+"""

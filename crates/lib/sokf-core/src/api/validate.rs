@@ -10,6 +10,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::{
+    admit::{admit_closure, admit_for_check, admit_full, admit_schemas_for, needed_slugs},
+    load::{CachedLoader, Loaded, ensure_not_missed, load_for_check, load_formats},
+    markers::is_checked_unit,
+};
 use crate::{
     Cache, CacheMode, Config, Error, Expr, Finding, RepoPath, RepoRoot, Report, Result,
     cache::CitedFact,
@@ -17,14 +22,8 @@ use crate::{
     config::{self, RepoFormats},
     fix,
     grammar::Grammar,
-    include, index,
+    include, index, markdown,
     model::{KeyIndex, Query},
-};
-
-use super::{
-    admit::{admit_closure, admit_for_check, admit_full, admit_schemas_for, needed_slugs},
-    load::{CachedLoader, Loaded, ensure_not_missed, load_for_check, load_formats},
-    markers::is_checked_unit,
 };
 
 /// The options of `sokf validate`.
@@ -156,15 +155,6 @@ fn check_once(
     // `indexes` holds the expected index of each touched directory, worked
     // out from the tree as it stands, with no moves applied.
     let indexes = index::expected_for(&loaded.model, &[], loaded.touched.as_ref());
-    let stored_citations = |units: &BTreeSet<RepoPath>, checked: &BTreeSet<RepoPath>| {
-        let mut rows = Vec::new();
-        for unit in units {
-            for c in cache.stored_citations_of(unit, checked) {
-                rows.push((unit.clone(), c));
-            }
-        }
-        rows
-    };
     let (units, citations) = if loaded.full {
         (None, Vec::new())
     } else {
@@ -172,8 +162,19 @@ fn check_once(
         // touched directories.
         let mut units = loaded.dirty.clone();
         units.extend(indexes.expected.keys().cloned());
-        (Some(units), stored_citations(&loaded.dirty, &loaded.dirty))
+        (
+            Some(units),
+            stored_citations(cache, &loaded.dirty, &loaded.dirty),
+        )
     };
+    settle(
+        cache,
+        config,
+        &loaded.model,
+        &mut loaded.expected,
+        Some(&indexes),
+        units.as_ref(),
+    );
     let mut out = check::run_units(
         &loaded.model,
         &loaded.compiled,
@@ -185,106 +186,209 @@ fn check_once(
         true,
     );
     if !loaded.full {
-        // The citations of some targets changed. This block checks the
-        // documents that read those citations, unless this run has checked
-        // them already. A
-        // citation to the same target that differs only in its fragment,
-        // relationship, or marker line still counts as a change.
-        let mut moved: BTreeSet<String> = BTreeSet::new();
-        for (source, cited) in &out.citations {
-            let old = cache.old_citations(source);
-            let new: BTreeSet<CitedFact> = cited
-                .iter()
-                .map(|(target, c)| CitedFact::of(target, c))
-                .collect();
-            for fact in old.symmetric_difference(&new) {
-                moved.insert(Query::Citations(fact.target.clone()).key());
-            }
-        }
-        let checked: BTreeSet<RepoPath> = out.documents.keys().cloned().collect();
-        let round2: BTreeSet<RepoPath> = cache
-            .readers_of(&moved)
-            .into_iter()
-            .filter(|p| is_checked_unit(&loaded.model, cache, p) && !checked.contains(p))
-            .collect();
-        if !round2.is_empty() {
-            admit_for_check(
-                &mut loaded.model,
-                &mut CachedLoader::new(root, cache),
-                cache,
-                &mut loaded.compiled,
-                &round2,
-            )?;
-            // The block captures the keys of the documents checked again, and
-            // adds them to `loaded.keys`. Their coverage check reads these keys, and the
-            // store records each document's keys from `loaded.keys`.
-            // `loaded.keys` may already hold a key of a document, because the
-            // store returned the key for a slug that a reference needs. Then
-            // the stored key stays, and the captured key isn't added a second
-            // time.
-            let own = check::capture_keys_of(&loaded.model, &loaded.compiled, Some(&round2));
-            let held: HashSet<(RepoPath, String)> = own
-                .document
-                .keys()
-                .filter(|k| loaded.keys.document.contains_key(*k))
-                .cloned()
-                .collect();
-            loaded.keys.extend(
-                own.document
-                    .into_iter()
-                    .filter(|(k, _)| !held.contains(k))
-                    .flat_map(|(_, entries)| entries),
-            );
-            let slugs = needed_slugs(&loaded.model, &KeyIndex::default());
-            let stored = cache.stored_keys_for(&slugs, &checked);
-            for entries in stored.document.into_values() {
-                for e in entries {
-                    if !loaded
-                        .keys
-                        .document
-                        .contains_key(&(e.path.clone(), crate::markdown::slug(&e.key)))
-                    {
-                        loaded.keys.add(e);
-                    }
-                }
-            }
-            let more = include::expected_for(&loaded.model, &loaded.keys, Some(&round2));
-            loaded.expected.includes.extend(more.includes);
-            loaded.expected.definitions.extend(more.definitions);
-            // The citations of the documents checked again are the store's
-            // citations, plus the citations that the first round found. The
-            // store's citations leave out those from the documents that this
-            // run checked, because the run found those citations itself.
-            let excluding: BTreeSet<RepoPath> = checked.union(&round2).cloned().collect();
-            let mut citations = stored_citations(&round2, &excluding);
-            for cited in out.citations.values() {
-                citations.extend(
-                    cited
-                        .iter()
-                        .filter(|(target, _)| round2.contains(target))
-                        .cloned(),
-                );
-            }
-            let second = check::run_units(
-                &loaded.model,
-                &loaded.compiled,
-                &loaded.expected,
-                &loaded.keys,
-                &indexes,
-                Some(&round2),
-                citations,
-                false,
-            );
-            out.documents.extend(second.documents);
-            out.citations.extend(second.citations);
-            loaded.dirty.extend(round2);
+        check_readers(root, config, cache, &mut loaded, &indexes, &mut out)?;
+    }
+    let checked: BTreeSet<RepoPath> = out.documents.keys().cloned().collect();
+    record_run(cache, &loaded, &out, &checked);
+    // A file that holds a text that the formatter left unsettled reads the
+    // query that every run checks again, so the run keeps the findings of
+    // every other file, and the next run formats that text again
+    // (CACHE-2_AC-9).
+    // sokf-implements: CACHE-2_AC-9
+    cache.record_unsettled(loaded.expected.layout.unsettled().intersection(&checked));
+    ensure_not_missed(cache)?;
+    cache.commit();
+    if !report {
+        return Ok((loaded, Vec::new()));
+    }
+    let mut findings = out.findings();
+    if !loaded.full {
+        findings.extend(cache.stored_outputs(&checked));
+    }
+    Ok((loaded, findings))
+}
+
+/// `settle` asks the formatter to compare each block of the files in
+/// `units`, or of every file, and each index of `indexes`, that differs
+/// from its expected text, and adds the result to `expected`, so that the
+/// check and the fix read the same answer (CLI-4_AC-45).
+fn settle(
+    cache: &Cache,
+    config: &Config,
+    model: &crate::Model,
+    expected: &mut crate::Expected,
+    indexes: Option<&index::Indexes>,
+    units: Option<&BTreeSet<RepoPath>>,
+) {
+    let pairs = include::pairs(model, expected, indexes, units);
+    let layout = cache.formatter().settle(&config.format, &pairs);
+    expected.layout.extend(layout);
+}
+
+/// `stored_citations` returns the citations of each of `units` that the
+/// cache holds, each with the unit that it cites, except those from the
+/// sources in `checked`.
+fn stored_citations(
+    cache: &Cache,
+    units: &BTreeSet<RepoPath>,
+    checked: &BTreeSet<RepoPath>,
+) -> Vec<(RepoPath, check::Citation)> {
+    let mut rows = Vec::new();
+    for unit in units {
+        for c in cache.stored_citations_of(unit, checked) {
+            rows.push((unit.clone(), c));
         }
     }
+    rows
+}
+
+/// `check_readers` checks the documents that read a citation that changed
+/// in `out`, the output of the first round, unless this run has checked them
+/// already. It adds their findings and citations to `out`, and the documents
+/// to `loaded.dirty`.
+fn check_readers(
+    root: &RepoRoot,
+    config: &Config,
+    cache: &Cache,
+    loaded: &mut Loaded,
+    indexes: &index::Indexes,
+    out: &mut check::RunOutput,
+) -> Result<()> {
+    // A citation to the same target that differs only in its fragment,
+    // relationship, or marker line still counts as a change.
+    let moved = moved_citations(cache, out);
+    let checked: BTreeSet<RepoPath> = out.documents.keys().cloned().collect();
+    let round2: BTreeSet<RepoPath> = cache
+        .readers_of(&moved)
+        .into_iter()
+        .filter(|p| is_checked_unit(&loaded.model, cache, p) && !checked.contains(p))
+        .collect();
+    if round2.is_empty() {
+        return Ok(());
+    }
+    admit_for_check(
+        &mut loaded.model,
+        &mut CachedLoader::new(root, cache),
+        cache,
+        &mut loaded.compiled,
+        &round2,
+    )?;
+    extend_keys(cache, loaded, &round2, &checked);
+    let more = include::expected_for(&loaded.model, &loaded.keys, Some(&round2));
+    loaded.expected.includes.extend(more.includes);
+    loaded.expected.fences.extend(more.fences);
+    loaded.expected.definitions.extend(more.definitions);
+    settle(
+        cache,
+        config,
+        &loaded.model,
+        &mut loaded.expected,
+        None,
+        Some(&round2),
+    );
+    // The citations of the documents checked again are the store's
+    // citations, plus the citations that the first round found. The
+    // store's citations leave out those from the documents that this
+    // run checked, because the run found those citations itself.
+    let excluding: BTreeSet<RepoPath> = checked.union(&round2).cloned().collect();
+    let mut citations = stored_citations(cache, &round2, &excluding);
+    for cited in out.citations.values() {
+        citations.extend(
+            cited
+                .iter()
+                .filter(|(target, _)| round2.contains(target))
+                .cloned(),
+        );
+    }
+    let second = check::run_units(
+        &loaded.model,
+        &loaded.compiled,
+        &loaded.expected,
+        &loaded.keys,
+        indexes,
+        Some(&round2),
+        citations,
+        false,
+    );
+    out.documents.extend(second.documents);
+    out.citations.extend(second.citations);
+    loaded.dirty.extend(round2);
+    Ok(())
+}
+
+/// `moved_citations` returns the query key of the citations of each target
+/// whose citations in `out` differ from those that the cache held.
+fn moved_citations(cache: &Cache, out: &check::RunOutput) -> BTreeSet<String> {
+    let mut moved: BTreeSet<String> = BTreeSet::new();
+    for (source, cited) in &out.citations {
+        let old = cache.old_citations(source);
+        let new: BTreeSet<CitedFact> = cited
+            .iter()
+            .map(|(target, c)| CitedFact::of(target, c))
+            .collect();
+        for fact in old.symmetric_difference(&new) {
+            moved.insert(Query::Citations(fact.target.clone()).key());
+        }
+    }
+    moved
+}
+
+/// `extend_keys` adds to `loaded.keys` the keys of the documents of
+/// `round2`, which the run checks again, and then the store's keys for the
+/// slugs that a reference needs, except those of the documents of
+/// `checked`. It adds no key that `loaded.keys` already holds.
+fn extend_keys(
+    cache: &Cache,
+    loaded: &mut Loaded,
+    round2: &BTreeSet<RepoPath>,
+    checked: &BTreeSet<RepoPath>,
+) {
+    // The coverage check of these documents reads the captured keys, and the
+    // store records each document's keys from `loaded.keys`. A key that the
+    // store already returned for a slug that a reference needs stays, and the
+    // captured key isn't added a second time.
+    let own = check::capture_keys_of(&loaded.model, &loaded.compiled, Some(round2));
+    let held: HashSet<(RepoPath, String)> = own
+        .document
+        .keys()
+        .filter(|k| loaded.keys.document.contains_key(*k))
+        .cloned()
+        .collect();
+    loaded.keys.extend(
+        own.document
+            .into_iter()
+            .filter(|(k, _)| !held.contains(k))
+            .flat_map(|(_, entries)| entries),
+    );
+    let slugs = needed_slugs(&loaded.model, &KeyIndex::default());
+    let stored = cache.stored_keys_for(&slugs, checked);
+    for entries in stored.document.into_values() {
+        for e in entries {
+            if !loaded
+                .keys
+                .document
+                .contains_key(&(e.path.clone(), markdown::slug(&e.key)))
+            {
+                loaded.keys.add(e);
+            }
+        }
+    }
+}
+
+/// `record_run` stores in the cache what the run derived for each unit of
+/// `checked`: its findings, edges, queries, citations, keys and plans, and
+/// the result of each probe that the run made of a path that the walk
+/// didn't list.
+fn record_run(
+    cache: &Cache,
+    loaded: &Loaded,
+    out: &check::RunOutput,
+    checked: &BTreeSet<RepoPath>,
+) {
     // Store what this run derived, for the next run to use: the findings of
     // each unit, the unit's edges for `graph`, and the queries that the run
     // made for the unit. Those queries include the ones made while the run
     // worked out the unit's edges.
-    let checked: BTreeSet<RepoPath> = out.documents.keys().cloned().collect();
     for (path, findings) in &out.documents {
         cache.record_output(path, findings.clone());
         if loaded.model.holds(path) || loaded.model.is_additional(path) {
@@ -312,8 +416,8 @@ fn check_once(
             .collect();
         cache.record_citations(source, rows);
     }
-    cache.record_keys_of(&loaded.keys, &checked);
-    cache.record_plans_of(&loaded.model.plans, &checked);
+    cache.record_keys_of(&loaded.keys, checked);
+    cache.record_plans_of(&loaded.model.plans, checked);
     for queries in loaded.model.reads().values() {
         for q in queries {
             if let Query::Exists(p) = q
@@ -323,22 +427,6 @@ fn check_once(
             }
         }
     }
-    ensure_not_missed(cache)?;
-    cache.commit();
-    if !report {
-        return Ok((loaded, Vec::new()));
-    }
-    let mut findings = out.findings();
-    if !loaded.full {
-        findings.extend(cache.stored_outputs(&checked));
-    }
-    // The files of a pack's `files/` lie outside every store, so the check
-    // reads them afresh on every run.
-    findings.extend(crate::check::pack_file_conflicts(
-        root,
-        &crate::pack::read_lock(root)?,
-    ));
-    Ok((loaded, findings))
 }
 
 /// `prepare_fix` loads in full every document that a fix might rewrite: the
@@ -350,6 +438,7 @@ fn check_once(
 // sokf-implements: SOKF_VALIDATION_19
 fn prepare_fix(
     root: &RepoRoot,
+    config: &Config,
     cache: &Cache,
     loaded: &mut Loaded,
     findings: &[Finding],
@@ -429,7 +518,19 @@ fn prepare_fix(
             .into_values()
             .flatten(),
     );
+    // The layout of a pair depends only on its texts, so what the check
+    // settled stays true of the new expected content.
+    let layout = std::mem::take(&mut loaded.expected.layout);
     loaded.expected = include::expected_for(&loaded.model, &keys, Some(&held));
+    loaded.expected.layout = layout;
+    settle(
+        cache,
+        config,
+        &loaded.model,
+        &mut loaded.expected,
+        None,
+        Some(&held),
+    );
     loaded.keys = keys;
     let mut over = held;
     over.extend(indexes);
@@ -439,12 +540,13 @@ fn prepare_fix(
 /// `plan_fix` loads what a fix needs and plans the fix.
 fn plan_fix(
     root: &RepoRoot,
+    config: &Config,
     cache: &Cache,
     loaded: &mut Loaded,
     findings: &[Finding],
     scope: &config::Scope,
 ) -> Result<fix::FixPlan> {
-    let over = prepare_fix(root, cache, loaded, findings)?;
+    let over = prepare_fix(root, config, cache, loaded, findings)?;
     fix::plan(
         &loaded.model,
         &loaded.compiled,
@@ -493,11 +595,11 @@ pub(crate) fn fix_indexes(
     let cache = Cache::open(root, cache);
     let scope = config::Scope {
         files: dirs.iter().filter_map(|d| d.join("index.md")).collect(),
-        dirs: Default::default(),
+        dirs: BTreeSet::default(),
     };
     let (mut loaded, findings) =
         check_repository(root, &config, &grammar, &repo_formats, &cache, false)?;
-    let plan = plan_fix(root, &cache, &mut loaded, &findings, &scope)?;
+    let plan = plan_fix(root, &config, &cache, &mut loaded, &findings, &scope)?;
     let (ops, _) = fix::apply(root, plan)?;
     // The indexes are written whether or not the second check succeeds, and
     // a full walk brings a cache that it failed to sync up to date.
@@ -556,7 +658,7 @@ pub fn validate(
         // document with a stored finding, or a directory that the store
         // lists. The run then checks the whole repository again before it
         // plans the fix, so that the fix never writes into what was removed.
-        let mut plan = plan_fix(root, &cache, &mut loaded, &findings, &scope);
+        let mut plan = plan_fix(root, &config, &cache, &mut loaded, &findings, &scope);
         let stale = matches!(&plan, Ok(p) if cache.hint().is_some()
             && !cache.is_fresh()
             && plan_is_stale(root, &loaded.model, p));
@@ -565,7 +667,7 @@ pub fn validate(
         }
         if stale || hint_missed(root, &cache, plan.as_ref().err()) {
             (loaded, findings) = check()?;
-            plan = plan_fix(root, &cache, &mut loaded, &findings, &scope);
+            plan = plan_fix(root, &config, &cache, &mut loaded, &findings, &scope);
         }
         let plan = plan?;
         for m in &plan.moves {
@@ -600,6 +702,7 @@ pub fn validate(
     // The check of the configuration runs once in each run, outside the
     // cache, because the configuration is no unit of the cache.
     report.extend(check::check_config(&config));
+    report.extend(check::leftover_packs(root));
     // The state of each installed harness lies outside the knowledge and
     // the cache, so the run reads it afresh, as it reads the configuration.
     report.extend(super::harness_stale::stale_parts(root, opts.home.clone()));

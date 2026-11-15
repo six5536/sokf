@@ -48,7 +48,7 @@ impl Fallback for StoreView {
         self.conn
             .rows(
                 "SELECT path FROM ids WHERE store = ?1 AND id = ?2 ORDER BY path",
-                params![knowledge as i64, id],
+                params![knowledge, id],
                 |r| r.get::<_, String>(0),
             )
             .iter()
@@ -61,7 +61,7 @@ impl Fallback for StoreView {
             .rows(
                 "SELECT path, id FROM documents WHERE store = ?1 AND type = ?2 AND id IS NOT NULL \
                  ORDER BY path",
-                params![knowledge as i64, type_name],
+                params![knowledge, type_name],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
             )
             .into_iter()
@@ -115,10 +115,10 @@ impl Fallback for StoreView {
     }
 
     fn schema_meta(&self, path: &RepoPath) -> Option<SchemaMeta> {
+        type Row = (String, String, String, String, usize, String);
         if self.removed.contains(path) {
             return None;
         }
-        type Row = (String, String, String, String, i64, String);
         let (key, globs, asset_globs, uses, line, archived): Row = self
             .conn
             .query_row(
@@ -148,7 +148,7 @@ impl Fallback for StoreView {
             globs: lines(globs),
             asset_globs: lines(asset_globs),
             uses: lines(uses),
-            body_line: line as usize,
+            body_line: line,
             archived: crate::model::Archived::decode(&archived),
         })
     }
@@ -161,7 +161,7 @@ impl Fallback for StoreView {
         self.conn
             .rows(
                 "SELECT path, scalars FROM documents WHERE store = ?1 AND type = ?2 ORDER BY path",
-                params![knowledge as i64, type_name],
+                params![knowledge, type_name],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
             )
             .into_iter()
@@ -178,7 +178,7 @@ impl Fallback for StoreView {
         self.conn
             .rows(
                 "SELECT path FROM documents WHERE store = ?1 AND broken = 1 ORDER BY path",
-                [knowledge as i64],
+                [knowledge],
                 |r| r.get::<_, String>(0),
             )
             .iter()

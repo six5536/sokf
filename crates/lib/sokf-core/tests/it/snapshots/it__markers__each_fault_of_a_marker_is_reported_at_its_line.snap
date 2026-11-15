@@ -1,0 +1,13 @@
+---
+source: crates/lib/sokf-core/tests/it/markers.rs
+expression: "errors.iter().chain(&on_src(&report.warnings)).cloned().collect::<Vec<_>>().join(\"\\n\")"
+---
+/src/bad.rs:1: `sokf-implements: CLI-9_AC-9` refers to no key with the slug `cli-9_ac-9` that a schema declares unique in the repository (SOKF_FORMAT_147)
+/src/bad.rs:2: `sokf-implements: req-none` refers to the id `req-none`, which no document carries (SOKF_FORMAT_145)
+/src/bad.rs:3: `sokf-implements: req-cli#nothing` refers to a fragment that is neither a captured key nor a heading (SOKF_FORMAT_145)
+/src/bad.rs:4: `sokf-implements:` has no reference after it, or has a word after its reference. A marker holds exactly one reference (SOKF_FORMAT_144)
+/src/bad.rs:5: `sokf-implements:` has no reference after it, or has a word after its reference. A marker holds exactly one reference (SOKF_FORMAT_144)
+/src/bad.rs:10: `sokf:ignore-end` appears outside an ignore region (SOKF_FORMAT_153)
+/src/bad.rs:11: `sokf-implements: nostore:req-cli` refers to the store `nostore`, which is not a knowledge store in this repository (SOKF_FORMAT_145)
+/src/bad.rs:12: `sokf-foo_bar:` has a rel that isn't kebab case. Write the rel as lowercase words of letters and digits joined by `-`, such as `sokf-implements:` (SOKF_FORMAT_143)
+/src/bad.rs:6: `sokf-mitigates: CLI-1_AC-2` has the relationship `mitigates`, which SOKF doesn't define, so consumers read it as `relates-to` (SOKF_VALIDATION_51)

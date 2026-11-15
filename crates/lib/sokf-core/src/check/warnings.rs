@@ -1,6 +1,6 @@
 //! This module checks the relation of each link: it reports a relation outside
-//! the core set as a warning (SOKF_VALIDATION_4), and one that is not
-//! lowercase kebab-case as an error (SOKF_FORMAT_52).
+//! the core set as a warning (`SOKF_VALIDATION_4`), and one that is not
+//! lowercase kebab-case as an error (`SOKF_FORMAT_52`).
 
 use crate::{Document, Finding, markdown::is_slug};
 
@@ -24,7 +24,7 @@ pub const CORE_RELS: &[&str] = &[
 ];
 
 /// `check` reports a `rel` outside the core set as a warning, and one that is
-/// not lowercase kebab-case as an error (SOKF_FORMAT_52).
+/// not lowercase kebab-case as an error (`SOKF_FORMAT_52`).
 // sokf-implements: SOKF_FORMAT_52
 // sokf-implements: SOKF_VALIDATION_4
 pub fn check(doc: &Document) -> Vec<Finding> {
@@ -33,14 +33,7 @@ pub fn check(doc: &Document) -> Vec<Finding> {
         if CORE_RELS.contains(&link.rel.as_str()) {
             continue;
         }
-        if !is_slug(&link.rel) {
-            findings.push(Finding::error(
-                doc.path.clone(),
-                Some(link.line),
-                "SOKF_FORMAT_52",
-                format!("`rel: {}` is not lowercase kebab-case", link.rel),
-            ));
-        } else {
+        if is_slug(&link.rel) {
             findings.push(Finding::warning(
                 doc.path.clone(),
                 Some(link.line),
@@ -49,6 +42,13 @@ pub fn check(doc: &Document) -> Vec<Finding> {
                     "`rel: {}` is outside the core set, so consumers read it as `relates-to`",
                     link.rel
                 ),
+            ));
+        } else {
+            findings.push(Finding::error(
+                doc.path.clone(),
+                Some(link.line),
+                "SOKF_FORMAT_52",
+                format!("`rel: {}` is not lowercase kebab-case", link.rel),
             ));
         }
     }

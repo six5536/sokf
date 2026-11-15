@@ -2,16 +2,19 @@
 //! A case-insensitive search finds the lines that contain `sokf-` or
 //! `sokf:`, and the scan parses only those lines.
 
-use std::sync::OnceLock;
+use std::{ops::RangeInclusive, sync::OnceLock};
 
 use regex::bytes::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::markdown::is_slug;
+use crate::{
+    RepoPath,
+    markdown::{self, is_slug},
+};
 
 /// `BINARY_PROBE` is the number of bytes at the start of a file that the
 /// scan searches for a NUL byte to decide whether the file is binary
-/// (SOKF_VALIDATION_50).
+/// (`SOKF_VALIDATION_50`).
 pub const BINARY_PROBE: usize = 8 * 1024;
 
 /// A `MarkerRow` is one line that the scan found: a marker, or a fault in
@@ -35,16 +38,13 @@ pub enum RowKind {
         target: String,
     },
     /// A tag with no reference after it, or with a letter or a digit after
-    /// its reference (SOKF_FORMAT_144). The value is the tag as written.
+    /// its reference (`SOKF_FORMAT_144`). The value is the tag as written.
     Malformed(String),
-    /// A tag that matches `sokf-<rel>:` only when case is ignored
-    /// (SOKF_VALIDATION_52). The value is the tag as written.
-    Case(String),
     /// A tag whose rel isn't kebab case, such as `sokf-foo_bar:`
     /// (CLI-4_AC-41). The value is the tag as written.
     Rel(String),
-    /// An ignore directive that is out of order (SOKF_FORMAT_152 and
-    /// SOKF_FORMAT_153).
+    /// An ignore directive that is out of order (`SOKF_FORMAT_152` and
+    /// `SOKF_FORMAT_153`).
     Ignore(IgnoreFault),
 }
 
@@ -82,9 +82,36 @@ pub fn is_binary(bytes: &[u8]) -> bool {
     bytes[..bytes.len().min(BINARY_PROBE)].contains(&0)
 }
 
-/// `scan` returns the markers of a file and the faults in the lines that
-/// look like markers, in line order. It returns `None` for a binary file,
-/// which it doesn't read for markers (SOKF_VALIDATION_50).
+/// `scan` returns the markers of the file at `path` and the faults in the
+/// lines that look like markers, in line order. It returns `None` for a
+/// binary file, which it doesn't read for markers (`SOKF_VALIDATION_50`).
+/// It passes by each line inside a fenced code block of a Markdown file,
+/// which is an example. It parses the file as Markdown only when a line
+/// gives a row or a directive, and parses it whole, as a body with no
+/// marker of a document, because a file outside the roots is no document,
+/// and a `---` that opens it is a rule. A file with a carriage return that
+/// no line feed follows, which the parser reads as a line ending, hides
+/// no line, because its lines would not match.
+// sokf-implements: SOKF_FORMAT_250
+pub fn scan(path: &RepoPath, bytes: &[u8]) -> Option<Vec<MarkerRow>> {
+    let rows = scan_lines(bytes, &[])?;
+    let directive = || bytes.windows(DIRECTIVE.len()).any(|w| w == DIRECTIVE);
+    let lone_cr =
+        || bytes.windows(2).any(|w| w[0] == b'\r' && w[1] != b'\n') || bytes.ends_with(b"\r");
+    if !markdown::is_markdown(path) || (rows.is_empty() && !directive()) || lone_cr() {
+        return Some(rows);
+    }
+    let text = String::from_utf8_lossy(bytes);
+    let body = markdown::parse(&text, 1, &markdown::Segments::default());
+    scan_lines(bytes, &markdown::fenced_lines(&body, &text))
+}
+
+/// `DIRECTIVE` begins every ignore directive.
+const DIRECTIVE: &[u8] = b"sokf:ignore-";
+
+/// `scan_lines` scans `bytes` for markers, and passes by each line of the
+/// ranges of `examples`, in the order of the lines, on which neither a
+/// marker nor a directive begins.
 // sokf-implements: SOKF_FORMAT_142
 // sokf-implements: SOKF_FORMAT_143
 // sokf-implements: SOKF_FORMAT_144
@@ -92,11 +119,12 @@ pub fn is_binary(bytes: &[u8]) -> bool {
 // sokf-implements: SOKF_FORMAT_152
 // sokf-implements: SOKF_FORMAT_153
 // sokf-implements: SOKF_VALIDATION_50
-// sokf-implements: SOKF_VALIDATION_52
-pub fn scan(bytes: &[u8]) -> Option<Vec<MarkerRow>> {
+fn scan_lines(bytes: &[u8], examples: &[RangeInclusive<usize>]) -> Option<Vec<MarkerRow>> {
     if is_binary(bytes) {
         return None;
     }
+    // The lines of the hits rise, so the scan passes each range once.
+    let mut example = examples.iter().peekable();
     let mut rows = Vec::new();
     // The scan tracks the line of the last hit and the offset where that
     // line starts, so that it counts each line once, however many hits the
@@ -114,15 +142,24 @@ pub fn scan(bytes: &[u8]) -> Option<Vec<MarkerRow>> {
         if start < counted {
             continue;
         }
-        line += bytes[counted..start]
+        #[expect(
+            clippy::naive_bytecount,
+            reason = "each byte is counted once per file, so a crate that counts faster isn't worth adding"
+        )]
+        let newlines = bytes[counted..start]
             .iter()
             .filter(|&&b| b == b'\n')
             .count();
+        line += newlines;
         counted = start;
         if line == last_line {
             continue;
         }
         last_line = line;
+        while example.next_if(|r| *r.end() < line).is_some() {}
+        if example.peek().is_some_and(|r| r.contains(&line)) {
+            continue;
+        }
         let end = bytes[start..]
             .iter()
             .position(|&b| b == b'\n')
@@ -167,7 +204,7 @@ pub fn scan(bytes: &[u8]) -> Option<Vec<MarkerRow>> {
 /// `first_word` returns the rest of the line from the first character
 /// that is a letter, a digit, or a non-ASCII character. It skips the
 /// whitespace and ASCII punctuation before a marker, such as the `//` or
-/// `#` that opens a comment (SOKF_FORMAT_142).
+/// `#` that opens a comment (`SOKF_FORMAT_142`).
 fn first_word(line: &str) -> &str {
     line.trim_start_matches(|c: char| c.is_ascii() && !c.is_ascii_alphanumeric())
 }
@@ -191,33 +228,42 @@ fn directive(word: &str) -> Option<Directive> {
 
 /// `parse` returns the marker that starts `word`, or the fault in a tag
 /// that looks like a marker. It returns `None` when `word` doesn't start
-/// with a tag.
+/// with a tag. It reads the tag in any case, as the tag in lowercase, so
+/// that a linter's fix of a comment's case, such as `Sokf-Implements:`,
+/// breaks no marker (`SOKF_FORMAT_143`), and it reads a reference between
+/// backticks, which a linter of doc comments adds, as the reference inside
+/// them (`SOKF_FORMAT_144`).
 // sokf-implements: CLI-4_AC-41
+// sokf-implements: SOKF_FORMAT_143
+// sokf-implements: SOKF_FORMAT_144
 fn parse(word: &str) -> Option<RowKind> {
     let (tag, rest) = tag(word)?;
-    let rel = &tag["sokf-".len()..tag.len() - 1];
-    // A rel in the wrong case of letters is a fault of its own
-    // (SOKF_VALIDATION_52), so the kebab test ignores case.
-    if !is_slug(&rel.to_ascii_lowercase()) {
+    let rel = tag["sokf-".len()..tag.len() - 1].to_ascii_lowercase();
+    if !is_slug(&rel) {
         return Some(RowKind::Rel(tag.to_string()));
     }
-    if !tag.starts_with("sokf-") || tag.bytes().any(|b| b.is_ascii_uppercase()) {
-        return Some(RowKind::Case(tag.to_string()));
-    }
     let rest = rest.trim_start();
+    let (rest, ticked) = match rest.strip_prefix('`') {
+        Some(inside) => (inside, true),
+        None => (rest, false),
+    };
     let len = rest
         .find(|c: char| !is_reference_char(c))
         .unwrap_or(rest.len());
     // The scan trims a full stop, a hyphen, a slash, or a colon from the end
     // of a reference, because these characters follow a reference as the end
-    // of a sentence or of a comment, such as `-->`.
+    // of a sentence or of a comment, such as `-->`, inside the backticks too.
     let target = rest[..len].trim_end_matches(['.', '-', '/', ':']);
-    let after = &rest[target.len()..];
-    if target.is_empty() || after.chars().any(char::is_alphanumeric) {
+    let after = if ticked {
+        rest[len..].strip_prefix('`')
+    } else {
+        Some(&rest[target.len()..])
+    };
+    if target.is_empty() || after.is_none_or(|a| a.chars().any(char::is_alphanumeric)) {
         return Some(RowKind::Malformed(tag.to_string()));
     }
     Some(RowKind::Marker {
-        rel: rel.to_string(),
+        rel,
         target: target.to_string(),
     })
 }
@@ -259,7 +305,7 @@ mod tests {
     use super::*;
 
     fn rows(text: &str) -> Vec<MarkerRow> {
-        scan(text.as_bytes()).expect("text")
+        scan_lines(text.as_bytes(), &[]).expect("text")
     }
 
     fn marker(line: usize, rel: &str, target: &str) -> MarkerRow {
@@ -319,7 +365,10 @@ mod tests {
         );
         // A qualified reference, a file name, and a word with a slash stay
         // no tags, and so does line 4 above.
-        assert!(rows("sokf-spec:glossary\n- sokf-spec.md: the spec\n// sokf-a/b: X\n").is_empty());
+        assert_eq!(
+            rows("sokf-spec:glossary\n- sokf-spec.md: the spec\n// sokf-a/b: X\n"),
+            [] as [crate::markers::scan::MarkerRow; 0]
+        );
     }
 
     // sokf-tests: SOKF_FORMAT_144
@@ -345,18 +394,51 @@ mod tests {
         );
     }
 
+    // A tag in another case reads as the tag in lowercase, such as the
+    // `Sokf-Implements:` of eslint's `capitalized-comments`.
     // sokf-tests: SOKF_FORMAT_143
-    // sokf-tests: SOKF_VALIDATION_52
     #[test]
-    fn a_tag_in_another_case_is_reported() {
-        let text = "// SOKF-Implements: CLI-1_AC-2\n// sokf-Tests: X\n// Sokf-implements: X\n";
-        let kinds: Vec<RowKind> = rows(text).into_iter().map(|r| r.kind).collect();
+    fn a_tag_in_another_case_reads_as_the_tag_in_lowercase() {
+        let text = "// SOKF-Implements: CLI-1_AC-2\n// sokf-Tests: X\n// Sokf-implements: X\n// Sokf-Foo_Bar: X\n";
         assert_eq!(
-            kinds,
+            rows(text),
             vec![
-                RowKind::Case("SOKF-Implements:".into()),
-                RowKind::Case("sokf-Tests:".into()),
-                RowKind::Case("Sokf-implements:".into()),
+                marker(1, "implements", "CLI-1_AC-2"),
+                marker(2, "tests", "X"),
+                marker(3, "implements", "X"),
+                MarkerRow {
+                    line: 4,
+                    kind: RowKind::Rel("Sokf-Foo_Bar:".into())
+                },
+            ]
+        );
+    }
+
+    // A reference between backticks, as clippy's `doc_markdown` writes it
+    // in a doc comment, reads as the reference inside them. A backtick that
+    // nothing closes, or a word after the closing one, is malformed.
+    // sokf-tests: SOKF_FORMAT_144
+    #[test]
+    fn a_reference_between_backticks_reads_as_the_reference() {
+        let text = "/// sokf-implements: `CLI-1_AC-2.`\n// sokf-tests: `req-cli#CLI-1_AC-1`.\n<!-- sokf-references: `design-cache` -->\n// sokf-tests: `X\n// sokf-tests: `X` and Y\n// sokf-tests: ``\n";
+        assert_eq!(
+            rows(text),
+            vec![
+                marker(1, "implements", "CLI-1_AC-2"),
+                marker(2, "tests", "req-cli#CLI-1_AC-1"),
+                marker(3, "references", "design-cache"),
+                MarkerRow {
+                    line: 4,
+                    kind: RowKind::Malformed("sokf-tests:".into())
+                },
+                MarkerRow {
+                    line: 5,
+                    kind: RowKind::Malformed("sokf-tests:".into())
+                },
+                MarkerRow {
+                    line: 6,
+                    kind: RowKind::Malformed("sokf-tests:".into())
+                },
             ]
         );
     }
@@ -409,11 +491,11 @@ mod tests {
     fn a_binary_file_is_not_read() {
         let mut bytes = b"// sokf-tests: X\n".to_vec();
         bytes.push(0);
-        assert_eq!(scan(&bytes), None);
+        assert_eq!(scan_lines(&bytes, &[]), None);
         // A NUL past the first 8 KB does not make a file binary.
         let mut late = vec![b' '; BINARY_PROBE];
         late.extend_from_slice(b"\n// sokf-tests: X\n\0");
-        assert_eq!(scan(&late).unwrap().len(), 1);
+        assert_eq!(scan_lines(&late, &[]).unwrap().len(), 1);
     }
 
     #[test]

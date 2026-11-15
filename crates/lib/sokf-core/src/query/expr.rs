@@ -56,9 +56,7 @@ impl Expr {
     // sokf-implements: CLI-7_AC-44
     // sokf-implements: CLI-7_AC-11
     pub fn truthy(&self, value: &Value) -> bool {
-        eval::eval(self.compiled.as_ast(), value)
-            .map(|v| eval::truthy(&v))
-            .unwrap_or(false)
+        eval::eval(self.compiled.as_ast(), value).is_ok_and(|v| eval::truthy(&v))
     }
 }
 

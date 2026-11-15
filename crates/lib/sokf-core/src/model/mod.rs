@@ -5,6 +5,7 @@
 pub mod archive;
 mod build;
 mod document;
+pub mod extends;
 mod fallback;
 pub(crate) mod frontmatter;
 pub mod keys;
@@ -15,7 +16,6 @@ mod plans;
 mod reads;
 pub mod stores;
 
-pub use crate::markdown::split_store;
 pub use archive::Archived;
 pub use build::{build, build_with};
 pub use document::{
@@ -31,5 +31,7 @@ pub use knowledge::{Knowledge, Located, Model};
 pub use loader::{FsLoader, Loader};
 pub use manifest::{Manifest, manifest};
 pub use plans::{PlanIndex, Planned};
-pub use reads::{Query, Reads, Recorder, SCHEMA_PREFIX};
+pub use reads::{HISTORY_PREFIX, Query, Reads, Recorder, SCHEMA_PREFIX};
 pub use stores::{Identity, IdentityRow, StoreHit};
+
+pub use crate::markdown::split_store;

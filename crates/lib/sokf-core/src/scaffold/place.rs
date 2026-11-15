@@ -86,7 +86,7 @@ pub fn place(
             .ok_or_else(|| Error::Internal(format!("{derived}/{file} is not a path")));
     }
     let roots: Vec<&RepoPath> = model.knowledges.iter().map(|k| &k.root).collect();
-    let type_root = schema.root.as_deref().and_then(RepoPath::parse);
+    let type_root = schema.type_root();
     let directory = match (dir, knowledge) {
         (Some(d), _) => {
             let shown = d.display().to_string();
@@ -94,33 +94,30 @@ pub fn place(
                 .to_str()
                 .and_then(|s| PathArg(s).resolve_new(root, cwd))
                 .ok_or_else(|| refuse(format!("{shown} lies outside the repository")))?;
-            match knowledge {
-                Some(k) => {
-                    let kroot = &model.knowledges[k].root;
-                    if !resolved.starts_with(kroot) {
-                        return Err(refuse(format!(
-                            "{resolved} lies outside the knowledge {kroot}"
-                        )));
-                    }
-                    // sokf-implements: CLI-6_AC-65
-                    if let Some(type_root) = type_root
-                        && !resolved.starts_with(&type_root)
-                    {
-                        return Err(refuse(format!(
-                            "{resolved} lies outside {type_root}, the root of the type's schema"
-                        )));
-                    }
+            if let Some(k) = knowledge {
+                let kroot = &model.knowledges[k].root;
+                if !resolved.starts_with(kroot) {
+                    return Err(refuse(format!(
+                        "{resolved} lies outside the knowledge {kroot}"
+                    )));
                 }
-                None => {
-                    let is_schemas = roots
-                        .iter()
-                        .any(|r| r.join("schemas").as_ref() == Some(&resolved));
-                    if !is_schemas {
-                        return Err(refuse(format!(
-                            "{resolved} isn't the `schemas/` directory of a root. The `schemas/` directories are: {}",
-                            schema_dirs(&roots)
-                        )));
-                    }
+                // sokf-implements: CLI-6_AC-65
+                if let Some(type_root) = type_root
+                    && !resolved.starts_with(&type_root)
+                {
+                    return Err(refuse(format!(
+                        "{resolved} lies outside {type_root}, the root of the type's schema"
+                    )));
+                }
+            } else {
+                let is_schemas = roots
+                    .iter()
+                    .any(|r| r.join("schemas").as_ref() == Some(&resolved));
+                if !is_schemas {
+                    return Err(refuse(format!(
+                        "{resolved} isn't the `schemas/` directory of a root. The `schemas/` directories are: {}",
+                        schema_dirs(&roots)
+                    )));
                 }
             }
             resolved

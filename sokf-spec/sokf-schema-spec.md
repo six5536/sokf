@@ -76,7 +76,7 @@ An asset and its sidecar lie within the knowledge store of their schema (SOKF_SC
 
 A schema is strict: it requires everything it declares and allows nothing else. A schema relaxes a rule only with a key that exists for that purpose, such as `links-open` (see the SOKF schema extension).
 
-- <a id="sokf_schema_13"></a>SOKF_SCHEMA_13 [ubiquitous]: the knowledge store SHALL contain exactly one schema for each type in use, other than `Schema`.
+- <a id="sokf_schema_13"></a>SOKF_SCHEMA_13 [ubiquitous]: the knowledge store SHALL contain or inherit exactly one schema for each type in use, other than `Schema`.
 - <a id="sokf_schema_14"></a>SOKF_SCHEMA_14 [ubiquitous]: the document SHALL conform to the schema of its type.
 - <a id="sokf_schema_15"></a>SOKF_SCHEMA_15 [ubiquitous]: the Schema document SHALL conform to the `schema-document` schema of the [SOKF schema extension][sokf:sokf-extension].
 - <a id="sokf_schema_16"></a>SOKF_SCHEMA_16 [ubiquitous]: the additional file SHALL conform to the schema whose glob matches it.
@@ -108,7 +108,14 @@ A unit rule declares `to-type` to say what a body link reaches, as a `links` ent
 
 A `links` entry requires at least one link unless it declares `min`, and allows any number unless it declares `max`. An entry with `only` applies only in the states that it names.
 
-A rule uses `unique` to set the scope in which each key it captures is unique: its document (the default), its knowledge store (`knowledge`), or the whole repository (`repository`).
+A rule uses `unique` to set the scope in which each key it captures is unique: its document (the default), its knowledge store (`knowledge`), or the whole repository (`repository`). The manifest of a store can narrow the repository to the store for every key of the store ([format specification][sokf:sokf-format-spec] §8.5).
+
+A store inherits schemas from the store that its manifest names in `extends` ([format specification][sokf:sokf-format-spec] §2), so that many stores share one set of schemas and each store states only where it differs. The schema of a type in a store is the store's own schema of the type, in its `schemas/`, and, where the store has none, the schema of the type that the named store has or inherits in turn. A store changes an inherited schema only by holding a whole schema of the same type, which replaces it. A schema that governs additional files isn't inherited, because its globs name the files of the repository that it governs, and a copy in each store would govern each file twice (SOKF_SCHEMA_6). A schema states its `root` and its `asset-files` globs as paths of the repository, so a path of an inherited schema that lies under the root of the store that holds the schema stands for the same place under the root of the inheriting store: a `root` of `/knowledge/contracts` in the store at `/knowledge` is `/packs/login/contracts` in a store at `/packs/login` that inherits it.
+
+- <a id="sokf_schema_96"></a>SOKF_SCHEMA_96 [optional]: WHERE the manifest of a store names a store in `extends`, the validator SHALL check each document of a type of which the store holds no schema against the schema of that type that the named store holds or inherits.
+- <a id="sokf_schema_97"></a>SOKF_SCHEMA_97 [ubiquitous]: the validator SHALL check each document against the schema of its type that its own store holds, wherever the store also inherits a schema of the type.
+- <a id="sokf_schema_98"></a>SOKF_SCHEMA_98 [ubiquitous]: the validator SHALL read each `root` and each `asset-files` glob of an inherited schema that lies under the root of the store that holds the schema at the same place under the root of the inheriting store.
+- <a id="sokf_schema_99"></a>SOKF_SCHEMA_99 [ubiquitous]: the validator SHALL let no store inherit a schema that declares `additional-files`.
 
 When an include block refers to a sidecar, a `source-pattern` matches the path of the asset, followed by `#<region>` when the include marker selects a region. A `source-pattern` never matches the id of a document. A validator checks the target of an include block against its `source-pattern`, as the [tramlines-md specification](https://github.com/six5536/tramlines/blob/main/knowledge/spec/tramlines-md-spec.md) states (TLMD_163).
 

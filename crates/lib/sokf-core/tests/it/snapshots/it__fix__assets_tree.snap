@@ -1,0 +1,89 @@
+---
+source: crates/lib/sokf-core/tests/it/fix.rs
+expression: dump
+---
+==== knowledge/media/draft/index.md
+# draft
+
+- [Flowers][sokf:flowers] - Wild flowers on the ridge.
+- [Lonely][sokf:lonely]
+- [Stale][sokf:stale]
+- [Wrong][sokf:wrong]
+
+<!-- sokf:links -->
+
+[sokf:flowers]: /knowledge/media/draft/flowers.png
+[sokf:lonely]: /knowledge/media/draft/lonely.md
+[sokf:stale]: /knowledge/media/draft/stale.png
+[sokf:wrong]: /knowledge/media/draft/wrong.png
+==== knowledge/media/draft/stale.png.md
+---
+type: Image
+id: stale
+title: Stale
+state: draft
+resource: /knowledge/media/draft/stale.png
+---
+
+A picture whose resource is out of date.
+==== knowledge/media/index.md
+# media
+
+- [draft/](draft/index.md)
+- [published/](published/index.md)
+==== knowledge/media/published/index.md
+# published
+
+- [Sunset][sokf:sunset]
+
+<!-- sokf:links -->
+
+[sokf:sunset]: /knowledge/media/published/sunset.png
+==== knowledge/media/published/sunset.png.md
+---
+type: Image
+id: sunset
+title: Sunset
+state: published
+resource: /knowledge/media/published/sunset.png
+---
+
+The sun going down.
+==== knowledge/notes/album.md
+---
+type: Note
+id: album
+title: Album
+links:
+  - rel: has-part
+    to: flowers
+---
+
+# Album
+
+The [flowers][sokf:flowers#] sidecar describes a picture. The last
+include of this note shows the [rates][sokf:rates].
+
+![Flowers][sokf:flowers]
+![Sunset][sokf:sunset]
+
+<!-- sokf:include flowers# -->
+
+Wild flowers on the ridge, June.
+
+<!-- /sokf:include -->
+
+<!-- sokf:include rates#q3 -->
+
+```csv
+q3,0.25
+```
+
+<!-- /sokf:include -->
+
+<!-- sokf:links -->
+
+[sokf:flowers]: /knowledge/media/draft/flowers.png
+[sokf:flowers#]: /knowledge/media/draft/flowers.png.md
+[sokf:rates]: /knowledge/data/rates.csv
+[sokf:sunset]: /knowledge/media/published/sunset.png

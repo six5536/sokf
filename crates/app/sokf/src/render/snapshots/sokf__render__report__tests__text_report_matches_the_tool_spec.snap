@@ -1,0 +1,12 @@
+---
+source: crates/app/sokf/src/render/report.rs
+assertion_line: 77
+expression: "String::from_utf8(buf).unwrap()"
+---
+moved   /knowledge/open/x.md -> /knowledge/closed/x.md
+created /knowledge/closed/index.md
+rewrote /knowledge/a.md
+/README.md: error: section `## Usage` is missing (schema readme) (TLMD_18)
+/knowledge/a.md:41: error: `[sokf:planer]` resolves to no document (SOKF_FORMAT_61)
+
+2 errors, 0 of 1 warnings listed

@@ -17,7 +17,7 @@ pub enum FixOp {
         to: RepoPath,
     },
     /// `Created` records an index that `--fix` wrote where none existed
-    /// (SOKF_VALIDATION_33).
+    /// (`SOKF_VALIDATION_33`).
     Created {
         /// `path` is the path of the index that `--fix` wrote.
         path: RepoPath,

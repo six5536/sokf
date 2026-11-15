@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sokf info formats registry",
+  "description": "The registry of `sokf info formats --json`: the types and the formats of the registry that the command prints as YAML, in the shape of a formats file, each entry with its source (CLI-5_AC-38).",
+  "type": "object",
+  "properties": {
+    "types": {
+      "description": "The placeholder types, by name, an empty map where the registry declares none.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/FormatType"
+      }
+    },
+    "registry": {
+      "description": "The line formats, by name, an empty map where the registry holds none.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/FormatEntry"
+      }
+    }
+  },
+  "required": ["types", "registry"],
+  "$defs": {
+    "FormatType": {
+      "description": "One placeholder type of the registry.",
+      "type": "object",
+      "properties": {
+        "match": {
+          "description": "What the type matches: a regular expression, or a list of literal choices.",
+          "$ref": "#/$defs/TypeMatch"
+        },
+        "source": {
+          "description": "Where the type comes from: `built-in`, `embedded`, `repo`, the path of a file of `/.sokf/formats.d/`, or the id of a schema.",
+          "type": "string"
+        }
+      },
+      "required": ["match", "source"]
+    },
+    "TypeMatch": {
+      "description": "What a placeholder type matches.",
+      "anyOf": [
+        {
+          "description": "A regular expression with no anchors and no capture groups.",
+          "type": "string"
+        },
+        {
+          "description": "Literal choices.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "FormatEntry": {
+      "description": "One line format of the registry: its keys as a formats file writes them, which the grammar `format` of `sokf info grammar` defines, such as `template`, `example`, and `variants`, and its source.",
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "Where the format comes from: `embedded`, `repo`, the path of a file of `/.sokf/formats.d/`, or the id of a schema.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": true,
+      "required": ["source"]
+    }
+  }
+}

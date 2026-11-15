@@ -6,6 +6,10 @@
 
 use std::sync::Arc;
 
+/// `Answer` is the hook's answer, the same for every harness, which
+/// agent-harness-adapter writes in the harness's form. With `Allow`, the hook adds
+/// nothing. With `Context`, the harness adds the note to the agent's context.
+pub use agent_harness_adapter_core::hook::Answer;
 use agent_harness_adapter_core::{
     Harness, harness,
     hook::{Event, HookInput},
@@ -19,11 +23,6 @@ use crate::{
     CacheMode, Config, Error, RepoRoot, Report, Result, ValidateOptions, config,
     harness::HOOK_EVENTS, report,
 };
-
-/// `Answer` is the hook's answer, the same for every harness, which
-/// agent-harness-adapter writes in the harness's form. With `Allow`, the hook adds
-/// nothing. With `Context`, the harness adds the note to the agent's context.
-pub use agent_harness_adapter_core::hook::Answer;
 
 /// A `HookAnswer` is the answer that `sokf harness hook claude prompt-submit` prints on
 /// stdout, and that Codex and Factory Droid read in the same form: an empty object adds

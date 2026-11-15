@@ -121,7 +121,7 @@ impl Host for SokfHost<'_> {
     /// the engine's rules. A gated `links` rule, one whose `only` limits it
     /// to some lifecycle states, records each entry that it matches. The
     /// engine's check of a scaffold's markers reads those records
-    /// (TLMD_174). It then checks the targets of the links in each unit that
+    /// (`TLMD_174`). It then checks the targets of the links in each unit that
     /// a rule with `to-type` accepts.
     fn check(
         &self,

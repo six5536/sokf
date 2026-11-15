@@ -1,0 +1,39 @@
+---
+source: crates/lib/sokf-core/tests/it/validate.rs
+assertion_line: 141
+expression: json(&report)
+---
+{
+  "errors": [
+    {
+      "path": "/other/index.md",
+      "message": "the directory has no `index.md` (SOKF_FORMAT_96)"
+    },
+    {
+      "path": "/other/note.md",
+      "line": 8,
+      "message": "`[sokf:overview]` resolves to no document (SOKF_FORMAT_61)"
+    },
+    {
+      "path": "/other/note.md",
+      "line": 8,
+      "message": "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:fixture:req-cli]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+    },
+    {
+      "path": "/other/schemas/index.md",
+      "message": "the directory has no `index.md` (SOKF_FORMAT_96)"
+    },
+    {
+      "path": "/other/schemas/note.md",
+      "line": 2,
+      "message": "frontmatter key `description` is missing (schema schema-document, key `description`) (TL_54)"
+    }
+  ],
+  "warnings": [],
+  "fixes": [],
+  "summary": {
+    "errors": 5,
+    "warnings": 0,
+    "fixes": 0
+  }
+}

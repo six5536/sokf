@@ -85,7 +85,6 @@ types:
     - writer
     - process
     - consumer
-    - schema pack
 
 formats:
   sokf-criterion:

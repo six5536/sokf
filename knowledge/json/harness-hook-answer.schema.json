@@ -12,9 +12,7 @@
           "$ref": "#/$defs/NoteOutput"
         }
       },
-      "required": [
-        "hookSpecificOutput"
-      ]
+      "required": ["hookSpecificOutput"]
     },
     {
       "description": "When no error remains, or the hook has already noted the same errors, the hook adds nothing.",
@@ -36,10 +34,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "hookEventName",
-        "additionalContext"
-      ]
+      "required": ["hookEventName", "additionalContext"]
     },
     "EventName": {
       "description": "An `EventName` is the name of the event that the answer is for. Its only value is `UserPromptSubmit`.",

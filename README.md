@@ -17,12 +17,12 @@ and locates a document by id.
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Agent harness](#agent-harness)
-- [Schema packs](#schema-packs)
+- [The sokf pack](#the-sokf-pack)
 - [Output and exit codes](#output-and-exit-codes)
 - [Specifications](#specifications)
 - [Project layout](#project-layout)
 - [Development](#development)
-- [Licence](#licence)
+- [License](#license)
 
 ## Install
 
@@ -51,12 +51,6 @@ sokf harness install codex cursor   # the parts that OpenAI Codex and Cursor sup
 sokf harness status all             # each part of each harness: current, shared, stale, edited, absent
 sokf harness diff claude            # a patch for each part that you edited
 sokf harness install claude --force skills  # overwrite an edited part, or every part with `all`
-sokf pack add sokf                  # declare the built-in sokf pack and copy it into /knowledge
-sokf pack add https://example.com/method.git    # declare and copy a schema pack from a git repository
-sokf pack sync                      # merge each later change of every declared pack with your edits
-sokf pack status                    # each pack, and each of its files that you edited or that conflicts
-sokf pack status --check            # the same, and exit with code 1 when a file differs from its pack
-sokf pack accept /.gitignore --note "the project's binary"   # keep an edit of a pack's file on purpose
 sokf validate                       # check every knowledge store and additional file
 sokf validate --fix                 # regenerate blocks and indexes, move lifecycle documents, and rewrite headings
 sokf validate knowledge/core --json # report on a directory, as one JSON object
@@ -77,7 +71,8 @@ sokf locate --asset flowers         # the file a sidecar describes; --json gives
 
 sokf info grammar                   # the schema language, verbatim: the tramlines core grammar, the tramlines-md grammar, then SOKF's schema extension
 sokf info formats --schema readme   # the line formats a schema sees
-sokf info formats --layer pack      # only the formats of the packs in /.sokf/packs.lock
+sokf info formats --layer formats.d # only the formats of the files of /.sokf/formats.d/
+sokf info formats --json --query types.slug   # one placeholder type of the registry, as JSON
 sokf new Issue --slug retry --title "Add a retry" --write
                                     # a document from its schema's template, at its derived path
 sokf new Issue --slug retry --title "Add a retry" --seq 42 --write
@@ -100,8 +95,7 @@ unchanged. Both `--repo-root` and `--no-cache` are global options.
 
 ## Configuration
 
-Three files under `/.sokf/` configure the tool, and `sokf pack` keeps two
-more:
+Three files and two folders under `/.sokf/` configure the tool:
 
 - `/.sokf/config.toml` lists the knowledge roots (default `/knowledge`), the
   paths that sokf skips in its walk of the repository, and the declined
@@ -109,10 +103,12 @@ more:
   `sokf validate` warns at each glob of `repository.exclude` that lies under a
   root.
 - `/.sokf/formats.yaml` adds line formats for the whole repository.
+- `/.sokf/roots.d/` and `/.sokf/formats.d/` hold the files that another tool,
+  such as pakf, ships for sokf, at any depth: each file `*.toml` of
+  `roots.d` lists further knowledge roots, and each file `*.yaml` of
+  `formats.d` adds line formats, where `/.sokf/formats.yaml` decides a format
+  or a type that two of them declare differently.
 - `/.sokf/harness.toml` records the harness parts that the tool wrote.
-- `/.sokf/packs.lock` records each schema pack that `sokf pack sync` copied,
-  and `/.sokf/packs/` holds each pack's formats and the base copies of its
-  files.
 
 Every path that the tool prints is relative to the repository root and starts
 with `/`, as paths in documents do. Only `locate` prints filesystem paths.
@@ -125,18 +121,8 @@ writes the `sokf` skill, an instructions block, and the permission to run
 `sokf`. A hook is off by default: with `with = ["hooks"]` under
 `[harness.claude]` in `/.sokf/config.toml`, the command also writes a hook that
 runs `sokf validate` when the user submits a prompt, and tells the agent how
-many errors remain, without blocking it. At the
-project and the local scopes, the instructions block also carries the
-`instructions.md` of each pack in `/.sokf/packs.lock`, in the order of the
-packs. `sokf pack sync` and `sokf pack remove` rewrite each installed block
-that you haven't edited, so that it holds the instructions of each pack, and
-no command rewrites a block while the copy of a pack's instructions holds a
-conflict. To change a pack's rule for your project, edit the copy
-`/.sokf/packs/<NAME>/instructions.md`, not the block, and run
-`sokf harness install`: a sync merges each upstream change into the copy,
-`sokf pack diff` returns your edit to the pack, and `sokf pack remove` keeps
-an edited copy. The command
-touches only the parts that it writes. It keeps a part that you edited unless
+many errors remain, without blocking it. The instructions block holds only
+sokf's own instructions. The command touches only the parts that it writes. It keeps a part that you edited unless
 you pass `--force`. To refresh the stale parts after an upgrade, run the
 command again.
 
@@ -145,20 +131,20 @@ sokf installs the same integration into every agent harness of
 more, or `all`. A harness that has no place for a part, shown as none in the
 following table, reports the part as unsupported:
 
-| Harness | Name | Instructions | Hook | Permission | Skill |
-| --- | --- | --- | --- | --- | --- |
-| Claude Code | `claude` | `CLAUDE.md` or `AGENTS.md` | `.claude/settings.json` | `.claude/settings.json` | `.claude/skills` |
-| OpenAI Codex | `codex` | `AGENTS.md` | `.codex/hooks.json` | none | `.agents/skills` |
-| Factory Droid | `factory` | `AGENTS.md` | `.factory/hooks.json` | none | `.agents/skills` |
-| Gemini CLI | `gemini` | `GEMINI.md` | `.gemini/settings.json` | `.gemini/settings.json` | `.agents/skills` |
-| GitHub Copilot | `copilot` | `AGENTS.md` | `.github/hooks/sokf.json` | none | `.agents/skills` |
-| Cursor | `cursor` | `AGENTS.md` | `.cursor/hooks.json` | `.cursor/cli.json` | `.agents/skills` |
-| Pi | `pi` | `AGENTS.md` | `.pi/extensions/sokf.ts` | none | `.agents/skills` |
-| OpenCode | `opencode` | `AGENTS.md` | `.opencode/plugins/sokf.ts` | `opencode.json` | `.agents/skills` |
-| Kilo Code | `kilo` | `AGENTS.md` | `.kilo/plugins/sokf.ts` | `kilo.json` | `.agents/skills` |
-| Qwen Code | `qwen` | `AGENTS.md` | `.qwen/settings.json` | `.qwen/settings.json` | `.agents/skills` |
-| Devin | `devin` | `AGENTS.md` | `.devin/hooks.v1.json` | `.devin/config.json` | `.agents/skills` |
-| Any `AGENTS.md` agent | `agents` | `AGENTS.md` | none | none | `.agents/skills` |
+| Harness               | Name       | Instructions               | Hook                        | Permission              | Skill            |
+| --------------------- | ---------- | -------------------------- | --------------------------- | ----------------------- | ---------------- |
+| Claude Code           | `claude`   | `CLAUDE.md` or `AGENTS.md` | `.claude/settings.json`     | `.claude/settings.json` | `.claude/skills` |
+| OpenAI Codex          | `codex`    | `AGENTS.md`                | `.codex/hooks.json`         | none                    | `.agents/skills` |
+| Factory Droid         | `factory`  | `AGENTS.md`                | `.factory/hooks.json`       | none                    | `.agents/skills` |
+| Gemini CLI            | `gemini`   | `GEMINI.md`                | `.gemini/settings.json`     | `.gemini/settings.json` | `.agents/skills` |
+| GitHub Copilot        | `copilot`  | `AGENTS.md`                | `.github/hooks/sokf.json`   | none                    | `.agents/skills` |
+| Cursor                | `cursor`   | `AGENTS.md`                | `.cursor/hooks.json`        | `.cursor/cli.json`      | `.agents/skills` |
+| Pi                    | `pi`       | `AGENTS.md`                | `.pi/extensions/sokf.ts`    | none                    | `.agents/skills` |
+| OpenCode              | `opencode` | `AGENTS.md`                | `.opencode/plugins/sokf.ts` | `opencode.json`         | `.agents/skills` |
+| Kilo Code             | `kilo`     | `AGENTS.md`                | `.kilo/plugins/sokf.ts`     | `kilo.json`             | `.agents/skills` |
+| Qwen Code             | `qwen`     | `AGENTS.md`                | `.qwen/settings.json`       | `.qwen/settings.json`   | `.agents/skills` |
+| Devin                 | `devin`    | `AGENTS.md`                | `.devin/hooks.v1.json`      | `.devin/config.json`    | `.agents/skills` |
+| Any `AGENTS.md` agent | `agents`   | `AGENTS.md`                | none                        | none                    | `.agents/skills` |
 
 A file that several harnesses read, such as `AGENTS.md`, is written once, and
 the report shows it as `shared` for the others. `--scope user` installs into
@@ -166,53 +152,21 @@ your home directory, for every repository, and `--scope local` into the
 repository's files that stay out of git (Claude Code and GitHub Copilot). Keep
 `/.sokf/harness.local.toml` and `/.sokf/config.local.toml` out of git too.
 
-## Schema packs
+## The sokf pack
 
-A schema pack is a directory, with the manifest `pack.sokf.yaml`, that holds a
-method for a store: schemas, documents such as documentation standards, and
-line formats. `sokf pack add <SOURCE>` fetches the pack with your own `git`,
-declares it in a `[[pack]]` entry of `/.sokf/config.toml`, copies it into the
-store, and records it in `/.sokf/packs.lock`. The store
-owns the copy, so you edit it as any other document, and a later
-`sokf pack sync` merges each upstream change into your edit with
-`git merge-file`. A merge that conflicts leaves git's markers in the file, and
-the command exits with code 1. Run `sokf validate --fix` after a sync.
+The sokf pack, in [`packs/sokf/`](packs/sokf/), is a method for a project's
+knowledge: the schemas of an architecture, stories, contracts, designs,
+issues, and other documents, the line formats that they share, documentation
+standards, recipes, and instructions for the agent. It is a pack of
+[pakf](https://github.com/six5536/pakf), the tool that shares project files
+through packs, and each release of sokf tags it. Its
+[README](packs/sokf/README.md) says how to take it.
 
-A pack can also hold `files/`, the files that projects share outside a store,
-such as `rustfmt.toml`, a lint configuration, or a workflow. Sync places each
-at the same path from the repository root, `files/rustfmt.toml` at
-`/rustfmt.toml`, and keeps it current as it keeps a document, with its
-executable bit. A pack that holds only `files/` needs no store. Sync refuses a
-file that would land in `/.git/` or `/.sokf/`, inside a store, or on a file
-that a harness writes.
-
-`builtin:<NAME>`, or `NAME` alone, names a pack that the binary embeds, and
-`sokf pack list` shows them. `sokf pack diff <NAME>` prints your edits as a
-patch that `git apply` applies in the pack's repository, without the edits
-that you accepted unless you pass `--accepted`. `--new <PATH>...` adds a
-file that the pack doesn't hold yet, such as a new schema or script, to the
-patch at its path in the pack, and the next `sokf pack sync` records your
-copy as the pack's file, because it holds the pack's version. `sokf pack
-remove <NAME>` deletes the pack's files that you haven't edited, and `sokf
-pack export <NAME> <DIR>` writes an embedded pack to a new directory.
-To move a pack to another source or ref, edit its `[[pack]]` entry and run
-`sokf pack sync`, and delete an entry to remove its pack at the next sync.
-
-An edit of a pack's file either goes back to the pack or stays on purpose.
-`sokf pack accept <PATH> --note <TEXT>` records an edit or a deletion that the
-project keeps, such as its own line in a shared `.gitignore`, and
-`sokf pack status --check` then passes on the file while it holds what you
-accepted. A clean merge of a later change of the pack keeps the acceptance, and
-a conflict drops it. `--withdraw` undoes an acceptance.
-
-A pack can build on another: its manifest names the packs that it depends on,
-each with its oldest version, as in `depends: { house-base: 1.4.0 }`. A pack
-comes after the packs that it depends on, the order of the `[[pack]]` entries
-orders the rest, and the highest pack that supplies a file, a schema type, or
-a format owns it. Sync writes only the owner's version, so a group pack can
-replace a file of the base pack, such as a stricter Issue schema. When the
-owner of a file changes, sync merges the new owner's version with your edit, and
-`sokf pack status` lists each shadowed file with the pack that owns it.
+sokf itself has no packs. It refuses a `[[pack]]` entry in
+`/.sokf/config.toml` with exit code 2, and `sokf validate` warns at a
+`/.sokf/packs.lock` or a `/.sokf/packs/` that an older sokf wrote, until you
+delete them. sokf reads the files that a pack ships for it as it reads any
+other file, such as a file of formats in `/.sokf/formats.d/`.
 
 ## Output and exit codes
 
@@ -290,14 +244,8 @@ Three core specifications define the format:
 [`sokf-spec/sokf-schema-spec.md`](sokf-spec/sokf-schema-spec.md), and
 [`sokf-spec/sokf-validation-spec.md`](sokf-spec/sokf-validation-spec.md).
 They are documents of `sokf-spec`, the knowledge store of SOKF itself. The
-sokf pack, in [`packs/sokf/`](packs/sokf/), shows SOKF in use. It is an optional
-method for a project's knowledge. It holds schemas for the architecture, the
-stories, the contracts, the designs, the issues, and other documents, the
-formats that they share, documentation standards, and recipes for rewriting a
-document and for planning a building block. It also holds instructions for the
-agent, which the harness's instructions block carries. sokf's own development
-records its knowledge with the pack. The binary embeds it, so a repository
-adds it with `sokf pack add sokf`.
+[sokf pack](#the-sokf-pack) shows SOKF in use, and sokf's own development
+records its knowledge with it.
 
 The schema language comes from [tramlines](https://github.com/six5536/tramlines),
 a Markdown schema engine with its own
@@ -314,41 +262,38 @@ writes the skill into a repository.
 
 ## Project layout
 
-
 ```
 sokf-spec/               the knowledge store of SOKF itself: its specifications, its grammar, and its formats, which sokf validates
 harness/                 the embedded harness integration: the sokf skill and the instructions block
-packs/sokf/              the sokf pack, the method of a project's knowledge that the binary embeds
+packs/sokf/              the sokf pack, the method of a project's knowledge, which a project takes with pakf
 crates/lib/sokf-core     the library: it walks the repository, builds the model, hosts SOKF's schema extension in the tramlines engine, checks and fixes the knowledge, reports the findings, builds the graph, runs queries, and installs the harness
 crates/app/sokf          the binary: it parses the command line, calls the library, and renders the results as text, JSON, or Mermaid
-packages/sokf            the npm launcher (a JS shim that spawns the binary)
+packages/cli             the npm launcher (a JS shim that spawns the binary)
 packages/sokf-OS-CPU     the five prebuilt-binary packages it selects from
 scripts/                 the version and smoke-test scripts that the release runs
-.github/workflows/       publish.yml, which builds and publishes each release
+.config/mise/            the tasks and scripts that build, test, version, and publish the project
+.github/workflows/       publish.yml and build.yml, which build and publish each release
 ```
-
 
 In `packages/sokf-OS-CPU`, `OS` is `linux`, `darwin`, or `win32`, and `CPU` is
 `x64` or `arm64`.
 
 ## Development
 
-`.mise.toml` and `rust-toolchain.toml` pin the toolchains, which
-[mise](https://mise.jdx.dev/) installs.
-
+`rust-toolchain.toml` and the files in `.config/mise/conf.d/` pin the
+toolchains, which [mise](https://mise.jdx.dev/) installs, and `mise tasks ls`
+lists the project's tasks.
 
 ```sh
-npm run build           # cargo build --workspace
-npm run lint            # cargo clippy --workspace
-npm run fmt             # cargo fmt --all
-npm run verify-version  # check that every version in the tree agrees
+cargo build                     # build the workspace
+mise run test                   # the fast tests
+mise run version:check          # check that every version in the tree agrees
 cargo run -p sokf -- validate   # run the validator from source
 ```
-
 
 For the setup, and for how to report a bug or ask for a feature, see the
 [contributing guide](CONTRIBUTING.md).
 
-## Licence
+## License
 
-sokf is released under the Elastic License 2.0. The [licence file](LICENSE) states its terms.
+sokf is released under the Elastic License 2.0. The [license file](LICENSE) states its terms.

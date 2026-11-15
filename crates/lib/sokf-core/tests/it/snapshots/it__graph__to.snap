@@ -1,0 +1,56 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+assertion_line: 193
+expression: "json(&tree, to)"
+---
+{
+  "start": [
+    "/knowledge/core/planner.md"
+  ],
+  "nodes": [
+    {
+      "kind": "document",
+      "path": "/knowledge/config.md",
+      "type": "Subsystem",
+      "id": "config",
+      "title": "Configuration",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/core/planner.md",
+      "type": "Subsystem",
+      "id": "planner",
+      "title": "Planner",
+      "description": "The planner is a pure planning stage.",
+      "resource": "/crates/lib/example-core/src/planner.rs",
+      "status": "stable"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "links",
+      "from": "/knowledge/config.md",
+      "to": "/knowledge/core/planner.md",
+      "rel": "depended-on-by",
+      "synthesised": true
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/core/planner.md",
+      "to": "/knowledge/config.md",
+      "rel": "depends-on",
+      "note": "Reads logging configuration."
+    }
+  ],
+  "summary": {
+    "documents": {
+      "shown": 2,
+      "total": 3
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

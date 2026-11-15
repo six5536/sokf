@@ -34,7 +34,7 @@ pub struct WalkedFile {
 }
 
 /// A `WalkedDir` is one directory that the walk visits under a knowledge
-/// root. Each such directory must have an index (SOKF_FORMAT_96).
+/// root. Each such directory must have an index (`SOKF_FORMAT_96`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalkedDir {
     /// The path of the directory.
@@ -54,6 +54,9 @@ pub struct Tree {
     pub files: Vec<WalkedFile>,
     /// Every directory under a root, including the roots, ordered by path.
     pub dirs: Vec<WalkedDir>,
+    /// The number of registered roots, those of `/.sokf/roots.d/`, at the
+    /// end of `roots`.
+    pub registered_count: usize,
     on_disk: RefCell<HashMap<RepoPath, OnDisk>>,
 }
 
@@ -106,6 +109,7 @@ impl Tree {
             roots,
             files,
             dirs,
+            registered_count: 0,
             on_disk: RefCell::new(HashMap::new()),
         }
     }
@@ -157,7 +161,7 @@ impl Tree {
         let parent = path.parent();
         let kind = if name == "manifest.sokf.yaml" && parent.as_ref() == Some(root) {
             FileKind::Manifest
-        } else if !name.ends_with(".md") {
+        } else if !crate::markdown::is_markdown(path) {
             FileKind::Candidate
         } else if name == "index.md" {
             FileKind::Index

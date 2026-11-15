@@ -2,7 +2,10 @@
 //! Text form section of design-graph describes. It draws each tree with the
 //! branch characters `├──` and `└──`, as the `tree` command does.
 
-use std::io::{self, Write};
+use std::{
+    fmt::Write as _,
+    io::{self, Write},
+};
 
 use serde_json::Value;
 use sokf_core::{EdgeKind, Entry, Graph, GraphResult, NodeKey, NodeKind, Row, graph::node_json};
@@ -127,14 +130,14 @@ fn edge_line(
     // sokf-implements: CLI-7_AC-70
     // sokf-implements: CLI-7_AC-91
     if folded > 0 {
-        line.push_str(&format!(" ({})", folded_count(e.kind, folded)));
+        let _ = write!(line, " ({})", folded_count(e.kind, folded));
     } else if e.kind == EdgeKind::Marker
         && let Some(n) = e.line
     {
-        line.push_str(&format!(" (line {n})"));
+        let _ = write!(line, " (line {n})");
     }
     if via {
-        line.push_str(&format!(" (via {})", e.from.as_str()));
+        let _ = write!(line, " (via {})", e.from.as_str());
     }
     if e.kind == EdgeKind::Keys
         && e.rel == "defined-in"
@@ -143,7 +146,7 @@ fn edge_line(
             .and_then(|n| n.fields.get("line"))
             .and_then(Value::as_u64)
     {
-        line.push_str(&format!(" (line {n})"));
+        let _ = write!(line, " (line {n})");
     }
     line
 }
@@ -180,7 +183,10 @@ fn layout_line(graph: &Graph, row: &Row, template: &Template) -> String {
         Some(NodeKind::Root) => root_line(graph, &row.node),
         Some(NodeKind::Directory) => format!(
             "{}/",
-            row.node.path().map(|p| p.file_name()).unwrap_or_default()
+            row.node
+                .path()
+                .map(sokf_core::RepoPath::file_name)
+                .unwrap_or_default()
         ),
         _ => node_line(graph, &row.node, template),
     }
@@ -210,7 +216,7 @@ fn node_line(graph: &Graph, key: &NodeKey, template: &Template) -> String {
             .get("reason")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        line.push_str(&format!(" [broken: {reason}]"));
+        let _ = write!(line, " [broken: {reason}]");
     }
     line
 }
@@ -224,28 +230,28 @@ mod tests {
     use std::collections::BTreeMap;
 
     use serde_json::json;
-    use sokf_core::Node;
+    use sokf_core::{Node, graph::Summary};
 
     use super::*;
     use crate::render::fixtures::{edge, key, node};
 
     fn graph() -> Graph {
         let nodes: BTreeMap<NodeKey, Node> = [
-            node("/k", NodeKind::Root, json!({"name": "k"})),
-            node("/k/core", NodeKind::Directory, json!({})),
+            node("/k", NodeKind::Root, &json!({"name": "k"})),
+            node("/k/core", NodeKind::Directory, &json!({})),
             node(
                 "/k/core/a.md",
                 NodeKind::Document,
-                json!({"id": "a", "title": "A"}),
+                &json!({"id": "a", "title": "A"}),
             ),
             node(
                 "/k/b.md",
                 NodeKind::Document,
-                json!({"broken": true, "reason": "no id"}),
+                &json!({"broken": true, "reason": "no id"}),
             ),
-            node("/README.md", NodeKind::Additional, json!({})),
-            node("/src/x.rs", NodeKind::File, json!({})),
-            node("gone", NodeKind::Missing, json!({})),
+            node("/README.md", NodeKind::Additional, &json!({})),
+            node("/src/x.rs", NodeKind::File, &json!({})),
+            node("gone", NodeKind::Missing, &json!({})),
         ]
         .into_iter()
         .collect();
@@ -340,8 +346,8 @@ mod tests {
             ],
             nodes: vec![],
             edges: vec![],
-            folded: Default::default(),
-            summary: Default::default(),
+            folded: BTreeMap::default(),
+            summary: Summary::default(),
             projection: None,
             notes: Vec::new(),
         };

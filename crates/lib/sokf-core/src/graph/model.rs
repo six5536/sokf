@@ -321,6 +321,7 @@ impl Graph {
     /// `built` already carry their fields. The hydrator reads the file of
     /// every other document node when the node is first visited
     /// (CACHE-1_AC-22).
+    #[must_use]
     pub fn with_hydrator(mut self, hydrator: Hydrator, built: HashSet<NodeKey>) -> Graph {
         self.hydrator = Some(hydrator);
         self.hydrated = built;
@@ -369,7 +370,7 @@ impl Graph {
     /// `edge_indices_from` returns the indices of the edges from `key`, in
     /// graph order.
     pub fn edge_indices_from(&self, key: &NodeKey) -> &[usize] {
-        self.out.get(key).map(Vec::as_slice).unwrap_or(&[])
+        self.out.get(key).map(Vec::as_slice).unwrap_or_default()
     }
 
     /// `inverse_indices` returns the indices of the inverses of `edge`,
@@ -520,7 +521,7 @@ mod tests {
         );
         assert_eq!(g.edges_from(&a).count(), 5);
         assert_eq!(g.edge_indices_from(&b), &[5]);
-        assert!(g.edge_indices_from(&m).is_empty());
+        assert_eq!(g.edge_indices_from(&m), [] as [usize; 0]);
         assert_eq!(EdgeKind::Sources.name(), "sources");
     }
 

@@ -13,7 +13,7 @@ pub struct Compiled {
     /// `grammar` holds the grammar that each schema is checked against.
     pub grammar: Grammar,
     /// `registry` holds the formats that schemas can use: the embedded
-    /// formats, then the pack layer, then the repository's formats, each
+    /// formats, then the layer `formats.d`, then the repository's formats, each
     /// layer replacing a format of the same name in the layers under it.
     pub registry: FormatRegistry,
     /// `regexes` holds each regular expression that the schemas use, so that
@@ -30,6 +30,11 @@ pub struct Compiled {
     pub problems: Vec<Finding>,
     /// `done` holds every schema compiled so far, including those that failed.
     done: std::collections::HashSet<SchemaRef>,
+    /// `rebased` holds, for each store and each schema that the store
+    /// inherits and that declares a `root` or `asset-files` globs, a copy
+    /// of the compiled schema whose paths lie under the inheriting store
+    /// (`SOKF_SCHEMA_98`).
+    rebased: std::collections::HashMap<(usize, SchemaRef), SokfSchema>,
 }
 
 impl Compiled {
@@ -61,6 +66,43 @@ impl Compiled {
                 self.done.insert(r);
             }
         }
+        self.rebase_inherited(model);
+    }
+
+    /// `rebase_inherited` adds a rebased copy of each compiled schema that a
+    /// store inherits, where the schema declares a `root` or `asset-files`
+    /// globs and the run holds no copy for that store yet.
+    // sokf-implements: SOKF_SCHEMA_98
+    // sokf-implements: FORMAT-5_AC-6
+    fn rebase_inherited(&mut self, model: &Model) {
+        for k in 0..model.knowledges.len() {
+            for r in model.inherited(k) {
+                if self.rebased.contains_key(&(k, r)) {
+                    continue;
+                }
+                let Some(source) = self.schema(r) else {
+                    continue;
+                };
+                if source.root.is_none() && source.asset_files.is_empty() {
+                    continue;
+                }
+                let (from, to) = (
+                    &model.knowledges[r.knowledge].root,
+                    &model.knowledges[k].root,
+                );
+                let mut copy = source.clone();
+                copy.root = copy
+                    .root
+                    .as_deref()
+                    .map(|root| crate::model::extends::rebase(root, from, to));
+                copy.asset_files = copy
+                    .asset_files
+                    .iter()
+                    .map(|g| crate::model::extends::rebase(g, from, to))
+                    .collect();
+                self.rebased.insert((k, r), copy);
+            }
+        }
     }
     /// `schema` returns the schema of Schema document `r`, or `None` when the
     /// schema hasn't compiled.
@@ -72,29 +114,31 @@ impl Compiled {
     }
 
     /// `for_type` returns the schema that governs `type_name` in `knowledge`,
-    /// when exactly one schema declares the type and that schema compiled. It
-    /// records that the caller asked for the type's schema (CACHE-1_AC-25).
+    /// its own or an inherited one, when exactly one schema declares the type
+    /// and that schema compiled. An inherited schema comes as its copy for
+    /// `knowledge`, where it has one. It records that the caller asked for
+    /// the type's schema in each store of the chain that it read
+    /// (CACHE-1_AC-25).
+    // sokf-implements: SOKF_SCHEMA_96
+    // sokf-implements: SOKF_SCHEMA_97
+    // sokf-implements: FORMAT-5_AC-5
     pub fn for_type(
         &self,
         model: &Model,
         knowledge: usize,
         type_name: &str,
     ) -> Option<(SchemaRef, &SokfSchema)> {
-        model.note(crate::model::Query::Schema {
-            knowledge,
-            key: type_name.to_string(),
-        });
-        let k = model.knowledges.get(knowledge)?;
-        match k.schemas_for(type_name) {
-            [one] => {
-                let r = SchemaRef {
-                    knowledge,
-                    index: *one,
-                };
-                self.schema(r).map(|c| (r, c))
-            }
+        match model.claimants(knowledge, type_name).as_slice() {
+            [r] => self.for_ref(knowledge, *r).map(|s| (*r, s)),
             _ => None,
         }
+    }
+
+    /// `for_ref` returns the compiled schema `r` as it governs the documents
+    /// of `knowledge`: its copy for `knowledge` when `knowledge` inherits it
+    /// and its paths move, and the schema itself otherwise.
+    pub fn for_ref(&self, knowledge: usize, r: SchemaRef) -> Option<&SokfSchema> {
+        self.rebased.get(&(knowledge, r)).or_else(|| self.schema(r))
     }
 
     /// `for_doc` returns the schema that governs the type of `doc` in
@@ -115,7 +159,6 @@ impl Compiled {
 /// schema that the model has read.
 // sokf-implements: SOKF_SCHEMA_15
 // sokf-implements: SOKF_SCHEMA_43
-// sokf-implements: CLI-13_AC-33
 pub fn compile_all(model: &Model, grammar: Grammar, formats: &RepoFormats) -> Compiled {
     let regexes = RegexCache::new();
     let mut problems = Vec::new();
@@ -147,6 +190,7 @@ pub fn compile_all(model: &Model, grammar: Grammar, formats: &RepoFormats) -> Co
         schemas: Vec::new(),
         problems,
         done: std::collections::HashSet::new(),
+        rebased: std::collections::HashMap::new(),
     };
     // Every schema gets an entry, so that each reference to a schema resolves.
     // `compile_more` compiles the schemas that the run has read, and the rest

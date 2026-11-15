@@ -1,0 +1,100 @@
+---
+source: crates/lib/sokf-core/tests/it/fix.rs
+assertion_line: 40
+expression: dump
+---
+==== README.md
+# sokf fixture
+
+This repository is a fixture for the validator.
+
+## Usage
+
+<!-- sokf:include /src/main.rs#cli -->
+
+```rust
+fn cli() -> &'static str {
+    "sokf validate"
+}
+```
+
+<!-- /sokf:include -->
+==== knowledge/decisions/decision-single-binary.md
+---
+type: Decision
+id: decision-single-binary
+title: Ship one binary
+description: The CLI and daemon ship as one binary.
+---
+
+# Ship one binary
+
+## Context
+
+Two binaries doubled the release surface and users installed the wrong one.
+
+## Decision
+
+The CLI and daemon ship as one binary. The daemon is a subcommand.
+
+## Consequences
+
+- The project releases, signs, and versions one artefact.
+==== knowledge/issues/closed/issue-002-done.md
+---
+type: Issue
+id: issue-002-done
+title: Done
+state: closed
+kind: feature
+---
+
+# Done
+
+This issue shipped [the decision][sokf:decision-single-binary].
+
+## Conclusion
+
+The work on the decision is done.
+
+<!-- sokf:links -->
+
+[sokf:decision-single-binary]: /knowledge/decisions/decision-single-binary.md
+==== knowledge/overview.md
+---
+type: Overview
+id: overview
+title: Overview
+description: The overview reads the requirement and the issue.
+links:
+  - rel: references
+    to: req-cli
+---
+
+# Overview
+
+The CLI requirement is [CLI-1][sokf:#cli-1] in [the criteria][sokf:req-cli#acceptance-criteria]. [Its schema][sokf:schema-requirement] governs it. See [the issue][sokf:issue-002-done].
+
+<!-- sokf:include req-cli -->
+
+# CLI requirement
+
+## User stories
+
+CLI-1: AS A developer, I WANT configuration loaded from a file, SO THAT I don't need to specify options every time.
+
+> Loading configuration from a file enables persistent configuration without repetitive CLI arguments.
+
+## Acceptance criteria
+
+- CLI-1_AC-1 [event]: WHEN `--config <path>` names a readable file, the system SHALL load options from it.
+- CLI-1_AC-2 [unwanted]: IF the config file fails to parse, THEN the system SHALL report the line and column.
+
+<!-- /sokf:include -->
+
+<!-- sokf:links -->
+
+[sokf:#cli-1]: /knowledge/req-cli.md#cli-1
+[sokf:issue-002-done]: /knowledge/issues/closed/issue-002-done.md
+[sokf:req-cli#acceptance-criteria]: /knowledge/req-cli.md#acceptance-criteria
+[sokf:schema-requirement]: /knowledge/schemas/requirement.md

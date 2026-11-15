@@ -1,7 +1,7 @@
 //! The store keeps the paths that each document plans, so that a run that
 //! doesn't read a planning document still knows its plans, and so that a
 //! change to a plan makes the readers of each changed path dirty
-//! (SOKF_SCHEMA_53).
+//! (`SOKF_SCHEMA_53`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -59,7 +59,7 @@ impl Cache {
 
     /// `commit_plans` replaces the rows in `plans` of each document that the
     /// run checked, and removes the rows of each removed file.
-    pub(super) fn commit_plans(&self, conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
+    pub(super) fn commit_plans(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut delete = conn.prepare("DELETE FROM plans WHERE path = ?1")?;
         let mut put = conn.prepare("INSERT INTO plans (path, target) VALUES (?1, ?2)")?;
         for path in &state.removed {

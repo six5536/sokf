@@ -1,25 +1,24 @@
 {
   "name": "@six5536/sokf-linux-arm64",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "This package contains the prebuilt sokf binary for linux-arm64.",
+  "keywords": [
+    "cli",
+    "command-line"
+  ],
   "homepage": "https://github.com/six5536/sokf#readme",
+  "bugs": {
+    "url": "https://github.com/six5536/sokf/issues"
+  },
+  "license": "Elastic-2.0",
+  "author": "six5536 <10079653+six5536@users.noreply.github.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/six5536/sokf.git",
     "directory": "packages/sokf-linux-arm64"
   },
-  "bugs": {
-    "url": "https://github.com/six5536/sokf/issues"
-  },
-  "author": "six5536 <10079653+six5536@users.noreply.github.com>",
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public",
-    "provenance": true
-  },
-  "keywords": [
-    "cli",
-    "command-line"
+  "files": [
+    "bin/"
   ],
   "os": [
     "linux"
@@ -27,8 +26,9 @@
   "cpu": [
     "arm64"
   ],
-  "files": [
-    "bin/"
-  ],
-  "license": "Elastic-2.0"
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
+  }
 }

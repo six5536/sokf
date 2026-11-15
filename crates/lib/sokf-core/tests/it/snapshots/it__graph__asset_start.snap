@@ -1,0 +1,86 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+expression: "json(&tree, query(&[\"knowledge/media/draft/flowers.png\"], 2))"
+---
+{
+  "start": [
+    "/knowledge/media/draft/flowers.png"
+  ],
+  "nodes": [
+    {
+      "kind": "asset",
+      "path": "/knowledge/media/draft/flowers.png",
+      "sidecar": "flowers"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/media/draft/flowers.png.md",
+      "type": "Image",
+      "id": "flowers",
+      "title": "Flowers",
+      "description": "Wild flowers on the ridge.",
+      "state": "draft",
+      "resource": "/knowledge/media/draft/flowers.png",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/notes/album.md",
+      "type": "Note",
+      "id": "album",
+      "title": "Album",
+      "status": "stable"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "resource",
+      "from": "/knowledge/media/draft/flowers.png",
+      "to": "/knowledge/media/draft/flowers.png.md",
+      "rel": "described-by",
+      "synthesised": true
+    },
+    {
+      "kind": "includes",
+      "from": "/knowledge/media/draft/flowers.png.md",
+      "to": "/knowledge/notes/album.md",
+      "rel": "included-by",
+      "synthesised": true
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/media/draft/flowers.png.md",
+      "to": "/knowledge/notes/album.md",
+      "rel": "part-of",
+      "synthesised": true
+    },
+    {
+      "kind": "resource",
+      "from": "/knowledge/media/draft/flowers.png.md",
+      "to": "/knowledge/media/draft/flowers.png",
+      "rel": "describes"
+    },
+    {
+      "kind": "includes",
+      "from": "/knowledge/notes/album.md",
+      "to": "/knowledge/media/draft/flowers.png.md",
+      "rel": "includes"
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/notes/album.md",
+      "to": "/knowledge/media/draft/flowers.png.md",
+      "rel": "has-part"
+    }
+  ],
+  "summary": {
+    "documents": {
+      "shown": 2,
+      "total": 2
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::{
     Finding, Knowledge, Model,
     markdown::is_slug,
-    model::{Identity, manifest::SOKF_VERSION},
+    model::{Identity, extends::Broken, manifest::SOKF_VERSION},
 };
 
 /// `check` reports each way in which a store's manifest breaks the format.
@@ -85,6 +85,16 @@ pub fn check(knowledge: &Knowledge) -> Vec<Finding> {
             ));
         }
     }
+    // sokf-implements: SOKF_FORMAT_205
+    // sokf-implements: FORMAT-5_AC-4
+    if let Some(v) = manifest.unique.as_deref().filter(|v| *v != "knowledge") {
+        findings.push(Finding::error(
+            path.clone(),
+            manifest.line_of.get("unique").copied(),
+            "SOKF_FORMAT_205",
+            format!("the manifest's `unique` is `{v}`, but the one value that caps the keys of the store is `knowledge`"),
+        ));
+    }
     for (key, line) in &manifest.stamped_present {
         findings.push(Finding::error(
             path.clone(),
@@ -97,7 +107,7 @@ pub fn check(knowledge: &Knowledge) -> Vec<Finding> {
 }
 
 /// `check_identities` reports each identity, current or former, that two or
-/// more roots share (SOKF_FORMAT_12, SOKF_FORMAT_13). An identity must be
+/// more roots share (`SOKF_FORMAT_12`, `SOKF_FORMAT_13`). An identity must be
 /// unique for two reasons: a qualified id must identify one store, and an
 /// old reference must reach the store it meant. It reports a clash as a finding on the manifest of each
 /// store that uses the identity.
@@ -149,6 +159,49 @@ pub fn check_identities(model: &Model) -> Vec<Finding> {
                 ),
             ));
         }
+    }
+    findings
+}
+
+/// `check_extends` reports the `extends` line of each manifest that names
+/// no knowledge store of the repository, or that lies on a cycle of
+/// `extends` (`SOKF_FORMAT_206`, `SOKF_FORMAT_207`). Such a store is broken:
+/// it inherits nothing, and the run checks none of its files
+/// (FORMAT-5_AC-10).
+// sokf-implements: SOKF_FORMAT_206
+// sokf-implements: SOKF_FORMAT_207
+// sokf-implements: FORMAT-5_AC-8
+// sokf-implements: FORMAT-5_AC-9
+pub fn check_extends(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for (k, knowledge) in model.knowledges.iter().enumerate() {
+        let Some(why) = model.broken(k).cloned() else {
+            continue;
+        };
+        let line = knowledge
+            .manifest
+            .as_ref()
+            .and_then(|m| m.line_of.get("extends").copied());
+        let (key, message) = match why {
+            Broken::NoStore(written) => (
+                "SOKF_FORMAT_206",
+                format!("the manifest's `extends` `{written}` names no knowledge store of the repository by its `<scope>/<name>`, so sokf checks no file of the store"),
+            ),
+            Broken::Shared(written) => (
+                "SOKF_FORMAT_206",
+                format!("the manifest's `extends` `{written}` is the identity of more than one knowledge store, so it names none, and sokf checks no file of the store"),
+            ),
+            Broken::Cycle => (
+                "SOKF_FORMAT_207",
+                "the manifest's `extends` leads back to the store through the `extends` of other stores, so sokf checks no file of the store".to_string(),
+            ),
+        };
+        findings.push(Finding::error(
+            knowledge.manifest_path.clone(),
+            line,
+            key,
+            message,
+        ));
     }
     findings
 }

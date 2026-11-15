@@ -4,14 +4,15 @@
 //! read an asset.
 
 use super::Ctx;
-use crate::{Document, Finding, Knowledge, model::Resource};
+use crate::{Document, Finding, Knowledge, Model, model::Resource};
 
 /// `check_assets` reports each asset in the knowledge that has no sidecar.
 // sokf-implements: FORMAT-1_AC-3
-pub fn check_assets(knowledge: &Knowledge) -> Vec<Finding> {
+pub fn check_assets(model: &Model, knowledge: &Knowledge) -> Vec<Finding> {
     let mut findings = Vec::new();
     for asset in &knowledge.assets {
-        let schema = &knowledge.schemas[asset.schema.index];
+        // The schema of an asset can be one that the store inherits.
+        let schema = model.schema(asset.schema);
         if !asset.has_sidecar {
             findings.push(Finding::error(
                 asset.path.clone(),
@@ -35,13 +36,13 @@ pub fn check_assets(knowledge: &Knowledge) -> Vec<Finding> {
 // sokf-implements: FORMAT-1_AC-4
 // sokf-implements: FORMAT-1_AC-5
 // sokf-implements: FORMAT-1_AC-6
-pub fn check_document(knowledge: &Knowledge, doc: &Document, ctx: &Ctx<'_>) -> Vec<Finding> {
+pub fn check_document(doc: &Document, ctx: &Ctx<'_>) -> Vec<Finding> {
     let mut findings = Vec::new();
     let Some(k) = ctx.knowledge else {
         return findings;
     };
     if let Some((_, asset)) = ctx.model.asset_of(&doc.path) {
-        let schema = &knowledge.schemas[asset.schema.index];
+        let schema = ctx.model.schema(asset.schema);
         let sidecar = doc;
         if let (Some(have), Some(want)) = (sidecar.type_name(), schema.type_const.as_deref())
             && have != want

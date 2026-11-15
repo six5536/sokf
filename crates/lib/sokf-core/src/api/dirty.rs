@@ -83,6 +83,8 @@ pub(super) fn schema_rows(model: &Model, cache: &Cache) -> Vec<crate::cache::Sch
 ///   was added or removed
 /// - The directory of each document that an id moved to or from
 /// - The directory of each asset or sidecar whose pairing changed
+/// - The directory of each index that holds a text that the formatter left
+///   unsettled
 // sokf-implements: CACHE-1_AC-4
 // sokf-implements: CACHE-1_AC-5
 // sokf-implements: CACHE-1_AC-18
@@ -106,29 +108,26 @@ pub(super) fn changed_queries(
         }
         touch(dirs, &doc.path);
         q.insert(Query::Body(doc.path.clone()).key());
-        match cache.old_row(&doc.path) {
-            Some(old) => {
-                // A change to a scalar value, such as a lifecycle state, can
-                // archive the document, which a reader checks
-                // (SOKF_SCHEMA_54).
-                let scalars =
-                    crate::model::archive::encode_scalars(&crate::model::archive::scalars(doc));
-                if old.visible != doc.visible_hash() || old.scalars != scalars {
-                    doc_and_type(&mut q, k, old.id.as_deref(), old.type_name.as_deref());
-                    doc_and_type(&mut q, k, doc.id(), doc.type_name());
-                    q.insert(Query::Path(doc.path.clone()).key());
-                    if old.id != doc.core.id {
-                        ids.extend(old.id.iter().map(|id| (k, id.clone())));
-                        ids.extend(doc.id().map(|id| (k, id.to_string())));
-                    }
-                }
-            }
-            None => {
+        if let Some(old) = cache.old_row(&doc.path) {
+            // A change to a scalar value, such as a lifecycle state, can
+            // archive the document, which a reader checks
+            // (SOKF_SCHEMA_54).
+            let scalars =
+                crate::model::archive::encode_scalars(&crate::model::archive::scalars(doc));
+            if old.visible != doc.visible_hash() || old.scalars != scalars {
+                doc_and_type(&mut q, k, old.id.as_deref(), old.type_name.as_deref());
                 doc_and_type(&mut q, k, doc.id(), doc.type_name());
                 q.insert(Query::Path(doc.path.clone()).key());
-                q.insert(Query::Exists(doc.path.clone()).key());
-                ids.extend(doc.id().map(|id| (k, id.to_string())));
+                if old.id != doc.core.id {
+                    ids.extend(old.id.iter().map(|id| (k, id.clone())));
+                    ids.extend(doc.id().map(|id| (k, id.to_string())));
+                }
             }
+        } else {
+            doc_and_type(&mut q, k, doc.id(), doc.type_name());
+            q.insert(Query::Path(doc.path.clone()).key());
+            q.insert(Query::Exists(doc.path.clone()).key());
+            ids.extend(doc.id().map(|id| (k, id.to_string())));
         }
     }
     for path in cache.removed() {
@@ -203,7 +202,53 @@ pub(super) fn changed_queries(
             touch(dirs, &path);
         }
     }
+    unsettled_queries(model, cache, &mut q, dirs);
+    history_queries(model, cache, &mut q);
     q
+}
+
+/// `history_queries` adds to `q` each query of the history that a stored
+/// check read with a commit other than the one that `HEAD` names now. A
+/// commit changes the history and no stat of a file, so the readers of
+/// those queries check again. A store that holds no such query runs no
+/// `git` (CACHE-1_AC-97). It also adds the query of what only the run
+/// decides, such as its time, whose readers every run checks again.
+// sokf-implements: CACHE-1_AC-97
+fn history_queries(model: &Model, cache: &Cache, q: &mut BTreeSet<String>) {
+    // What only the run decides changes in every run.
+    q.insert(Query::Run.key());
+    let stored = cache.history_queries();
+    if stored.is_empty() {
+        return;
+    }
+    let now = Query::History(model.history().head().to_string()).key();
+    q.extend(stored.into_iter().filter(|key| *key != now));
+}
+
+/// `unsettled_queries` adds to `q` the query of the texts that the
+/// formatter left unsettled, and to `dirs` the directory of each index
+/// that reads it. No stat records the formatter, so the readers of that
+/// query are dirty in every run, and an index among them touches its
+/// directory, whose check reads the index (CACHE-2_AC-9).
+// sokf-implements: CACHE-2_AC-9
+fn unsettled_queries(
+    model: &Model,
+    cache: &Cache,
+    q: &mut BTreeSet<String>,
+    dirs: &mut BTreeSet<RepoPath>,
+) {
+    let unsettled = BTreeSet::from([Query::Unsettled.key()]);
+    for reader in cache.readers_of(&unsettled) {
+        if model
+            .tree
+            .file(&reader)
+            .is_some_and(|f| f.kind == crate::FileKind::Index)
+            && let Some(dir) = reader.parent()
+        {
+            dirs.insert(dir);
+        }
+    }
+    q.extend(unsettled);
 }
 
 /// `file_queries` adds to `q` the queries that a file's body and path

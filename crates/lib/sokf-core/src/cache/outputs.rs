@@ -156,7 +156,7 @@ impl Cache {
             [],
             |r| {
                 Ok(IdentityRow {
-                    knowledge: r.get::<_, i64>(0)? as usize,
+                    knowledge: r.get::<_, usize>(0)?,
                     identity: r.get(1)?,
                     former: r.get(2)?,
                 })
@@ -189,7 +189,7 @@ impl Cache {
         let mut old: BTreeMap<String, u64> = self
             .conn()
             .rows("SELECT name, hash FROM formats", [], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64))
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?.cast_unsigned()))
             })
             .into_iter()
             .collect();
@@ -223,14 +223,14 @@ impl Cache {
                         return Ok(None);
                     };
                     Ok(Some(SchemaRow {
-                        knowledge: r.get::<_, i64>(0)? as usize,
+                        knowledge: r.get::<_, usize>(0)?,
                         path,
                         key: r.get(2)?,
-                        hash: r.get::<_, i64>(3)? as u64,
+                        hash: r.get::<_, i64>(3)?.cast_unsigned(),
                         globs: r.get(4)?,
                         asset_globs: r.get(5)?,
                         uses: r.get(6)?,
-                        line: r.get::<_, i64>(7)? as usize,
+                        line: r.get::<_, usize>(7)?,
                         archived: r.get(8)?,
                     }))
                 },
@@ -297,6 +297,27 @@ impl Cache {
         readers
     }
 
+    /// `history_queries` returns the key of each query of the history
+    /// that a stored check read, one for each commit that `HEAD` named
+    /// (CACHE-1_AC-97).
+    pub fn history_queries(&self) -> BTreeSet<String> {
+        let start = crate::model::HISTORY_PREFIX;
+        // The keys of the prefix lie between it and the prefix with its
+        // last byte raised, so that the index of the keys finds them. The
+        // prefix is ASCII, so the raised byte is a character.
+        let (stem, last) = start.split_at(start.len() - 1);
+        let end = format!("{stem}{}", char::from(last.as_bytes()[0] + 1));
+        self.conn()
+            .rows(
+                "SELECT q.key FROM queries q WHERE q.key >= ?1 AND q.key < ?2 \
+                 AND EXISTS (SELECT 1 FROM deps d WHERE d.query = q.id)",
+                [start, end.as_str()],
+                |r| r.get::<_, String>(0),
+            )
+            .into_iter()
+            .collect()
+    }
+
     /// `record_output` keeps the output of one check for the commit to
     /// write.
     pub fn record_output(&self, path: &RepoPath, findings: Vec<Finding>) {
@@ -313,6 +334,18 @@ impl Cache {
             .borrow_mut()
             .deps
             .insert(path.clone(), queries.iter().map(Query::key).collect());
+    }
+
+    /// `record_unsettled` adds to the queries of each of `paths`, which the
+    /// run checked, the query that every run checks again, because each
+    /// holds a text that the formatter left unsettled (CACHE-2_AC-9).
+    pub fn record_unsettled<'a>(&self, paths: impl Iterator<Item = &'a RepoPath>) {
+        let mut state = self.state.borrow_mut();
+        for path in paths {
+            if let Some(deps) = state.deps.get_mut(path) {
+                deps.insert(Query::Unsettled.key());
+            }
+        }
     }
 
     /// `record_citations` keeps the citations that one document resolved
@@ -363,7 +396,7 @@ impl Cache {
         let old: BTreeSet<AssetRow> = self
             .conn()
             .rows("SELECT store, asset, sidecar FROM assets", [], |r| {
-                let knowledge = r.get::<_, i64>(0)? as usize;
+                let knowledge = r.get::<_, usize>(0)?;
                 let sidecar = r.get::<_, Option<String>>(2)?;
                 Ok(
                     RepoPath::parse(&r.get::<_, String>(1)?).map(|asset| AssetRow {
@@ -425,7 +458,7 @@ impl Cache {
                         source,
                         source_type: r.get(2)?,
                         rel: r.get(3)?,
-                        line: r.get::<_, i64>(4)? as usize,
+                        line: r.get::<_, usize>(4)?,
                         include: r.get::<_, i64>(5)? != 0,
                         supersedes: r.get::<_, i64>(6)? != 0,
                         retired: r.get::<_, i64>(7)? != 0,
@@ -461,7 +494,7 @@ impl Cache {
                         return Ok(None);
                     };
                     let rel: Option<String> = r.get(3)?;
-                    let line = r.get::<_, i64>(4)? as usize;
+                    let line = r.get::<_, usize>(4)?;
                     Ok(Some(CitedFact {
                         target,
                         slug: r.get(1)?,
@@ -491,7 +524,7 @@ impl Cache {
                     Ok((
                         r.get::<_, String>(0)?,
                         crate::markdown::slug(&r.get::<_, String>(1)?),
-                        r.get::<_, i64>(2)? as usize,
+                        r.get::<_, usize>(2)?,
                     ))
                 },
             )
@@ -522,7 +555,28 @@ impl Cache {
     /// the formats file, the additional files, the identities of the
     /// knowledge stores, and the hash of the formats file.
     // sokf-implements: CACHE-1_AC-14
-    pub(super) fn commit_outputs(&self, conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
+    pub(super) fn commit_outputs(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
+        Self::delete_gone(conn, state)?;
+        Self::commit_edges(conn, state)?;
+        Self::commit_findings(conn, state)?;
+        Self::commit_deps(conn, state)?;
+        Self::commit_citations(conn, state)?;
+        Self::commit_keys(conn, state)?;
+        Self::commit_probes(conn, state)?;
+        Self::commit_assets(conn, state)?;
+        Self::commit_schemas(conn, state)?;
+        Self::commit_formats(conn, state)?;
+        Self::commit_additional(conn, state)?;
+        Self::commit_identities(conn, state)?;
+        if let Some(v) = state.formats_hash {
+            conn.put_meta("formats_hash", &v)?;
+        }
+        Ok(())
+    }
+
+    /// `delete_gone` deletes the outputs, dependencies, citations, edges,
+    /// keys, and probes of each file that the walk no longer lists.
+    fn delete_gone(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut gone: Vec<&str> = state.removed.iter().map(RepoPath::as_str).collect();
         // When a directory is removed, the commit also deletes the rows of
         // its index. If the directory never had an index, the deletes match
@@ -545,7 +599,11 @@ impl Cache {
                 conn.execute(sql, [path])?;
             }
         }
-        Self::commit_edges(conn, state)?;
+        Ok(())
+    }
+
+    /// `commit_findings` writes the findings of each check that the run ran.
+    fn commit_findings(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut put_output = conn.prepare(
             "INSERT OR REPLACE INTO outputs (path, findings, has_findings) VALUES (?1, ?2, ?3)",
         )?;
@@ -553,6 +611,12 @@ impl Cache {
             let json = serde_json::to_vec(findings).unwrap_or_default();
             put_output.execute(params![path.as_str(), json, !findings.is_empty()])?;
         }
+        Ok(())
+    }
+
+    /// `commit_deps` writes the queries that each checked document read, in
+    /// place of the document's stored dependencies.
+    fn commit_deps(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         // The `queries` table interns each reader's path and each query key
         // once, so the `deps` table stores each dependency as a pair of
         // integer ids.
@@ -573,6 +637,12 @@ impl Cache {
                 put_dep.execute([rid, qid])?;
             }
         }
+        Ok(())
+    }
+
+    /// `commit_citations` writes the citations of each checked document, in
+    /// place of the document's stored citations.
+    fn commit_citations(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut del_cit = conn.prepare("DELETE FROM citations WHERE source = ?1")?;
         let mut put_cit = conn.prepare(
             "INSERT INTO citations (target, slug, source, source_type, rel, line, include, \
@@ -587,14 +657,20 @@ impl Cache {
                     c.source.as_str(),
                     c.source_type,
                     c.rel,
-                    c.line as i64,
-                    c.include as i64,
-                    c.supersedes as i64,
-                    c.retired as i64,
-                    c.declared as i64
+                    c.line,
+                    i64::from(c.include),
+                    i64::from(c.supersedes),
+                    i64::from(c.retired),
+                    i64::from(c.declared)
                 ])?;
             }
         }
+        Ok(())
+    }
+
+    /// `commit_keys` writes the keys of each checked document, in place of
+    /// the document's stored keys.
+    fn commit_keys(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut del_keys = conn.prepare("DELETE FROM keys WHERE path = ?1")?;
         let mut put_key = conn.prepare(
             "INSERT INTO keys (path, key, slug, line, heading_slug, scope, knowledge, rule_id) \
@@ -611,31 +687,48 @@ impl Cache {
                     path.as_str(),
                     e.key,
                     crate::markdown::slug(&e.key),
-                    e.line as i64,
+                    e.line,
                     e.heading_slug,
                     scope,
-                    e.knowledge as i64,
+                    e.knowledge,
                     e.rule_id
                 ])?;
             }
         }
+        Ok(())
+    }
+
+    /// `commit_probes` writes whether each path that the run probed exists.
+    fn commit_probes(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut put_probe =
             conn.prepare("INSERT OR REPLACE INTO probes (path, exists_) VALUES (?1, ?2)")?;
         for (path, on_disk) in &state.probes {
             put_probe.execute(params![path.as_str(), on_disk.code()])?;
         }
+        Ok(())
+    }
+
+    /// `commit_assets` replaces the stored asset pairings with those that the
+    /// run recorded, if it recorded them.
+    fn commit_assets(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         if let Some(assets) = &state.assets {
             conn.execute_batch("DELETE FROM assets")?;
             let mut put =
                 conn.prepare("INSERT INTO assets (store, asset, sidecar) VALUES (?1, ?2, ?3)")?;
             for a in assets {
                 put.execute(params![
-                    a.knowledge as i64,
+                    a.knowledge,
                     a.asset.as_str(),
-                    a.sidecar.as_ref().map(|s| s.as_str())
+                    a.sidecar.as_ref().map(RepoPath::as_str)
                 ])?;
             }
         }
+        Ok(())
+    }
+
+    /// `commit_schemas` replaces the stored schemas with those that the run
+    /// recorded, if it recorded them.
+    fn commit_schemas(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         if let Some(schemas) = &state.schemas {
             conn.execute_batch("DELETE FROM schemas")?;
             let mut put = conn.prepare(
@@ -645,44 +738,59 @@ impl Cache {
             for s in schemas {
                 put.execute(params![
                     s.path.as_str(),
-                    s.knowledge as i64,
+                    s.knowledge,
                     s.key,
-                    s.hash as i64,
+                    s.hash.cast_signed(),
                     s.globs,
                     s.asset_globs,
                     s.uses,
-                    s.line as i64,
+                    s.line,
                     s.archived
                 ])?;
             }
         }
+        Ok(())
+    }
+
+    /// `commit_formats` replaces the stored fingerprint of the formats file
+    /// with the one that the run recorded, if it recorded one.
+    fn commit_formats(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         if let Some(formats) = &state.formats {
             conn.execute_batch("DELETE FROM formats")?;
             let mut put = conn.prepare("INSERT INTO formats (name, hash) VALUES (?1, ?2)")?;
             for (name, hash) in formats {
-                put.execute(params![name, *hash as i64])?;
+                put.execute(params![name, hash.cast_signed()])?;
             }
         }
+        Ok(())
+    }
+
+    /// `commit_additional` replaces the stored additional files with those
+    /// that the run recorded, if it recorded them.
+    fn commit_additional(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         if let Some(additional) = &state.additional {
             conn.execute_batch("DELETE FROM additional")?;
             let mut put = conn.prepare("INSERT INTO additional (path, schema) VALUES (?1, ?2)")?;
             for a in additional {
                 put.execute(params![
                     a.path.as_str(),
-                    a.schema.as_ref().map(|s| s.as_str()).unwrap_or("")
+                    a.schema.as_ref().map_or("", RepoPath::as_str)
                 ])?;
             }
         }
+        Ok(())
+    }
+
+    /// `commit_identities` replaces the stored identities of the knowledge
+    /// stores with those that the run recorded, if it recorded them.
+    fn commit_identities(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         if let Some(identities) = &state.identities {
             conn.execute_batch("DELETE FROM stores")?;
             let mut put =
                 conn.prepare("INSERT INTO stores (root, identity, former) VALUES (?1, ?2, ?3)")?;
             for row in identities {
-                put.execute(params![row.knowledge as i64, row.identity, row.former])?;
+                put.execute(params![row.knowledge, row.identity, row.former])?;
             }
-        }
-        if let Some(v) = state.formats_hash {
-            conn.put_meta("formats_hash", v)?;
         }
         Ok(())
     }

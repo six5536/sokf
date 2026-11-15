@@ -1,0 +1,33 @@
+---
+source: crates/lib/sokf-core/tests/it/validate.rs
+assertion_line: 101
+expression: json(&report)
+---
+{
+  "errors": [
+    {
+      "path": "/knowledge/issues/open/issue-001-move.md",
+      "message": "the document sits in `/knowledge/issues/open`, but its lifecycle states place it in `/knowledge/issues/closed` (SOKF_SCHEMA_26)"
+    },
+    {
+      "path": "/knowledge/none/index.md",
+      "message": "the directory has no `index.md` (SOKF_FORMAT_96)"
+    },
+    {
+      "path": "/knowledge/schemas/glob.md",
+      "line": 7,
+      "message": "the `additional-files` glob `/knowledge/sub/index.md` matches the index `/knowledge/sub/index.md` (SOKF_SCHEMA_5)"
+    },
+    {
+      "path": "/knowledge/sub/index.md",
+      "message": "the index is stale: it differs from the generated content (SOKF_FORMAT_97)"
+    }
+  ],
+  "warnings": [],
+  "fixes": [],
+  "summary": {
+    "errors": 4,
+    "warnings": 0,
+    "fixes": 0
+  }
+}

@@ -3,11 +3,13 @@
 //! must not have. It also rewrites each heading bound to a frontmatter key to
 //! the value of that key.
 
-use super::gate::continuation_end;
+use std::fmt::Write as _;
+
 use tramlines_md::derive::derived_title;
 
+use super::gate::continuation_end;
 use crate::{
-    Compiled, Error, Locator, Model, RepoPath, Result, Source,
+    Compiled, Error, Locator, Model, RepoPath, Result, Source, Spanned,
     check::{Ctx, check_against, doc_view},
     fix::{AnchorEdit, rewrite},
     grammar::{Dispatch, Segment, Shape, SokfSchema, States},
@@ -94,9 +96,7 @@ pub fn identity(
     states: States,
     resource: Option<RepoPath>,
 ) -> Identity {
-    let title = title
-        .map(str::to_string)
-        .unwrap_or_else(|| derived_title(slug.unwrap_or(id)));
+    let title = title.map_or_else(|| derived_title(slug.unwrap_or(id)), str::to_string);
     Identity {
         id: id.to_string(),
         title,
@@ -120,20 +120,19 @@ pub fn identity(
 pub fn fill(document: &str, schema: &SokfSchema, identity: &Identity) -> String {
     let lines: Vec<&str> = document.lines().collect();
     let source = Source::from_text(RepoPath::root(), document);
-    let close = match split(&source).frontmatter {
-        Some((yaml, _)) => 1 + yaml.lines().count(),
-        None => {
-            let mut fm = format!(
-                "---\nid: {}\ntitle: {}\n",
-                scalar(&identity.id),
-                scalar(&identity.title)
-            );
-            if let Some(r) = &identity.resource {
-                fm.push_str(&format!("resource: {r}\n"));
-            }
-            fm.push_str("---\n");
-            return fm + document;
+    let close = if let Some((yaml, _)) = split(&source).frontmatter {
+        1 + yaml.lines().count()
+    } else {
+        let mut fm = format!(
+            "---\nid: {}\ntitle: {}\n",
+            scalar(&identity.id),
+            scalar(&identity.title)
+        );
+        if let Some(r) = &identity.resource {
+            let _ = writeln!(fm, "resource: {r}");
         }
+        fm.push_str("---\n");
+        return fm + document;
     };
     let mut out: Vec<Option<String>> = lines.iter().map(|l| Some((*l).to_string())).collect();
     let mut id_line = None;
@@ -236,7 +235,7 @@ fn top_key(line: &str) -> Option<&str> {
 fn scalar(value: &str) -> String {
     let plain = yaml::parse(&format!("k: {value}\n"), 1)
         .ok()
-        .and_then(|y| y.get("k").and_then(|v| v.scalar_text()))
+        .and_then(|y| y.get("k").and_then(Spanned::scalar_text))
         .is_some_and(|read| read == value)
         && !value.is_empty()
         && !value.contains('#');

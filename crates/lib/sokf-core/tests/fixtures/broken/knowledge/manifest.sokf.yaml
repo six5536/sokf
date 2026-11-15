@@ -1,0 +1,4 @@
+sokf: "0.6"
+name: fixture
+scope: test
+description: A clean fixture store.

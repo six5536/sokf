@@ -2,7 +2,7 @@
 //! of the format specification defines them.
 
 /// A `RegionError` reports a region marker that breaks the pairing of `begin`
-/// and `end` markers (SOKF_FORMAT_95, SOKF_FORMAT_112), and gives the name of
+/// and `end` markers (`SOKF_FORMAT_95`, `SOKF_FORMAT_112`), and gives the name of
 /// the region and the number of the line.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RegionError {
@@ -132,6 +132,8 @@ pub fn extract(text: &str, region: Option<&str>) -> Result<Option<String>, Regio
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use proptest::prelude::*;
 
     use super::*;
@@ -224,12 +226,12 @@ mod tests {
             let mut text = String::from("head\n");
             let mut expected: Vec<(String, Vec<String>)> = Vec::new();
             for (name, lines) in regions {
-                text.push_str(&format!("// sokf:begin {name}\n"));
+                let _ = writeln!(text, "// sokf:begin {name}");
                 for l in &lines {
                     text.push_str(l);
                     text.push('\n');
                 }
-                text.push_str(&format!("// sokf:end {name}\n"));
+                let _ = writeln!(text, "// sokf:end {name}");
                 match expected.iter_mut().find(|(n, _)| *n == name) {
                     Some((_, acc)) => acc.extend(lines),
                     None => expected.push((name.to_string(), lines)),
@@ -247,7 +249,10 @@ mod tests {
         #[test]
         fn extraction_concatenates_same_named_regions_and_strips_markers((text, expected) in arb_file()) {
             for (name, lines) in &expected {
-                let want: String = lines.iter().map(|l| format!("{l}\n")).collect();
+                let want = lines.iter().fold(String::new(), |mut out, l| {
+                    let _ = writeln!(out, "{l}");
+                    out
+                });
                 prop_assert_eq!(extract(&text, Some(name)).unwrap().unwrap(), want);
             }
             prop_assert_eq!(extract(&text, Some("absent")).unwrap(), None);

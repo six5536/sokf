@@ -413,11 +413,7 @@ impl<'a> Traversal<'a> {
     fn node_json(&mut self, key: &NodeKey) -> &Value {
         if !self.json.contains_key(key) {
             self.graph.hydrate(key);
-            let value = self
-                .graph
-                .node(key)
-                .map(json::node_json)
-                .unwrap_or(Value::Null);
+            let value = self.graph.node(key).map_or(Value::Null, json::node_json);
             self.json.insert(key.clone(), value);
         }
         &self.json[key]

@@ -5,6 +5,11 @@
 
 use std::collections::BTreeSet;
 
+use super::{
+    admit::{admit_for_check, admit_full, admit_indexes, needed_slugs, unit_paths},
+    dirty::{additional_rows, changed_queries, key_query, schema_rows, scope_name},
+    markers::{is_checked_unit, scan_outside},
+};
 use crate::{
     Cache, Compiled, Config, Document, Error, Expected, Model, RepoPath, RepoRoot, Result, Source,
     Tree,
@@ -12,15 +17,9 @@ use crate::{
     check,
     config::{self, RepoFormats},
     grammar::{self, Grammar, RegexCache},
-    include,
-    model::{self, KeyIndex, Loader, ParseMode, Query},
+    include, markdown,
+    model::{self, KeyIndex, Loader, ParseMode, PlanIndex, Query},
     source, walk,
-};
-
-use super::{
-    admit::{admit_for_check, admit_full, admit_indexes, needed_slugs, unit_paths},
-    dirty::{additional_rows, changed_queries, key_query, schema_rows, scope_name},
-    markers::{is_checked_unit, scan_outside},
 };
 
 /// `Working` selects which documents a cached loader passes to the model
@@ -318,11 +317,7 @@ pub fn load_repository(
 /// run is full when the caller asks for one or when the store is new.
 // sokf-implements: CLI-4_AC-20
 // sokf-implements: CACHE-1_AC-4
-// sokf-implements: CACHE-1_AC-5
 // sokf-implements: CACHE-1_AC-15
-// sokf-implements: CACHE-1_AC-16
-// sokf-implements: CACHE-1_AC-17
-// sokf-implements: CACHE-1_AC-40
 // sokf-implements: CACHE-1_AC-41
 pub(super) fn load_for_check(
     root: &RepoRoot,
@@ -343,11 +338,15 @@ pub(super) fn load_for_check(
     model.marker_check = config.markers;
     let scanned = scan_outside(&mut model, cache, root, full);
     let mut compiled = grammar::compile_all(&model, grammar.clone(), repo_formats);
-    let formats_changed = cache.formats_changed(repo_formats.hash, || {
-        grammar::fingerprint(&compiled.registry)
-    });
-    let schemas_changed = cache.schemas_changed(schema_rows(&model, cache));
-    let additional_changed = cache.additional_changed(additional_rows(&model));
+    let changes = Changes {
+        identities: identities_changed,
+        scanned,
+        formats: cache.formats_changed(repo_formats.hash, || {
+            grammar::fingerprint(&compiled.registry)
+        }),
+        schemas: cache.schemas_changed(schema_rows(&model, cache)),
+        additional: cache.additional_changed(additional_rows(&model)),
+    };
     let mut touched: Option<BTreeSet<RepoPath>> = None;
     let (dirty, keys) = if full {
         let all = unit_paths(&model);
@@ -357,138 +356,12 @@ pub(super) fn load_for_check(
         model.plans = check::capture_plans_of(&model, &compiled, None);
         (all, keys)
     } else {
-        let mut dirs: BTreeSet<RepoPath> = BTreeSet::new();
-        let mut queries = changed_queries(&model, cache, root, &mut dirs);
-        for (knowledge, key) in schemas_changed {
-            queries.insert(Query::Schema { knowledge, key }.key());
-        }
-        if identities_changed {
-            queries.insert(Query::Identities.key());
-        }
-        // After an edit to the formats file, query the schemas that use a
-        // changed format or type. The documents that those schemas govern
-        // read the schemas, so those documents become dirty too.
-        // sokf-implements: CACHE-1_AC-17
-        if let Some(names) = &formats_changed {
-            for (k, knowledge) in model.knowledges.iter().enumerate() {
-                for (i, schema) in knowledge.schemas.iter().enumerate() {
-                    if schema.uses.iter().any(|u| names.contains(u)) {
-                        queries.insert(
-                            Query::Schema {
-                                knowledge: k,
-                                key: knowledge.schema_key(i),
-                            }
-                            .key(),
-                        );
-                    }
-                }
-            }
-        }
+        let (mut queries, dirs) = dirty_queries(&model, cache, root, &changes);
         admit_indexes(&mut model, &mut loader, cache, &dirs);
         touched = Some(dirs);
-        // Only the files whose content changed are dirty. The sync reads a
-        // document again when its modification time lies within
-        // `RACY_MARGIN` of the last sync. Such a document stays clean when
-        // its content is the same.
-        let changed = cache.changed_set();
-        let mut dirty: BTreeSet<RepoPath> = model
-            .documents_and_schemas()
-            .map(|(_, d)| &d.path)
-            .chain(model.additional.iter().map(|a| &a.path))
-            .filter(|p| changed.contains(*p))
-            .cloned()
-            .collect();
-        // A file whose markers changed is dirty, so its check runs.
-        dirty.extend(scanned);
-        // A file that a glob now matches is dirty, so its check runs. For a
-        // file that a glob no longer matches, the loader clears its output
-        // and its edges in the cache. The commit deletes every row of a file
-        // that the walk no longer lists, so the loader records nothing for it.
-        // sokf-implements: CACHE-1_AC-52
-        for path in additional_changed {
-            queries.insert(Query::Path(path.clone()).key());
-            if model.is_additional(&path) {
-                dirty.insert(path);
-            } else if model.tree.file(&path).is_some() {
-                cache.record_output(&path, Vec::new());
-                cache.record_edges(&path, Vec::new());
-            }
-        }
-        // The readers of the changed queries are dirty, except a reader that
-        // the walk no longer lists as a unit, because it has no check.
-        dirty.extend(
-            cache
-                .readers_of(&queries)
-                .into_iter()
-                .filter(|p| is_checked_unit(&model, cache, p)),
-        );
-        // When a format changed, was added, or was removed, every schema
-        // document is dirty, because its own check reads the examples of
-        // the whole registry.
-        // sokf-implements: CACHE-1_AC-40
-        if formats_changed
-            .as_ref()
-            .is_some_and(|names| names.iter().any(|n| n.starts_with("f:")))
-        {
-            dirty.extend(
-                model
-                    .knowledges
-                    .iter()
-                    .flat_map(|k| k.schemas.iter().map(|s| s.doc.path.clone()))
-                    .filter(|p| is_checked_unit(&model, cache, p)),
-            );
-        }
-        // Compare the keys of the dirty documents with the store's keys: a
-        // key that differs from the store's makes its readers dirty. The
-        // loop repeats until no new document is dirty.
-        let mut captured = KeyIndex::default();
-        let mut planned = crate::model::PlanIndex::default();
-        let mut seen: BTreeSet<RepoPath> = BTreeSet::new();
-        loop {
-            let wave: BTreeSet<RepoPath> = dirty.difference(&seen).cloned().collect();
-            if wave.is_empty() {
-                break;
-            }
-            admit_for_check(&mut model, &mut loader, cache, &mut compiled, &wave)?;
-            let fresh = check::capture_keys_of(&model, &compiled, Some(&wave));
-            let mut moved: BTreeSet<String> = BTreeSet::new();
-            for path in &wave {
-                let old = cache.old_keys_of(path);
-                let new: BTreeSet<(String, String, usize)> = fresh
-                    .of_document(path)
-                    .map(|e| {
-                        (
-                            scope_name(&e.scope),
-                            crate::markdown::slug(&e.key),
-                            e.knowledge,
-                        )
-                    })
-                    .collect();
-                for (scope, slug, k) in old.symmetric_difference(&new) {
-                    moved.insert(key_query(scope, slug, *k));
-                }
-            }
-            captured.extend(fresh.document.into_values().flatten());
-            // A path that a document starts or stops planning makes the
-            // readers of that path dirty (SOKF_SCHEMA_53).
-            let plans = check::capture_plans_of(&model, &compiled, Some(&wave));
-            for path in &wave {
-                let new = plans.of(path);
-                for target in cache.old_plans_of(path).symmetric_difference(&new) {
-                    moved.insert(Query::Planned(target.path.clone()).key());
-                }
-                for target in &new {
-                    planned.add(path, target);
-                }
-            }
-            seen.extend(wave);
-            let more: BTreeSet<RepoPath> = cache
-                .readers_of(&moved)
-                .into_iter()
-                .filter(|p| is_checked_unit(&model, cache, p) && !dirty.contains(p))
-                .collect();
-            dirty.extend(more);
-        }
+        let mut dirty = first_dirty(&model, cache, changes, &mut queries);
+        let (mut captured, mut planned) =
+            spread_dirty(&mut model, &mut loader, cache, &mut compiled, &mut dirty)?;
         let stored_plans = cache.stored_plans(&dirty);
         for target in stored_plans.targets() {
             for planner in stored_plans.planners(&target) {
@@ -515,6 +388,198 @@ pub(super) fn load_for_check(
         touched,
         full,
     })
+}
+
+/// A `Changes` is what changed since the last run, besides the content of
+/// the files, that `load_for_check` reads to compute the dirty set.
+struct Changes {
+    /// Whether a store's current or former identity changed.
+    identities: bool,
+    /// The files whose markers changed.
+    scanned: Vec<RepoPath>,
+    /// The formats and types that changed in the formats file, or `None`
+    /// when the file is unchanged.
+    formats: Option<BTreeSet<String>>,
+    /// The schemas that changed, by knowledge and key.
+    schemas: BTreeSet<(usize, String)>,
+    /// The files whose status as an additional file changed.
+    additional: BTreeSet<RepoPath>,
+}
+
+/// `dirty_queries` returns the queries whose answers changed since the last
+/// run, and the directories that a change touched: the queries that the
+/// changed files answer, the queries of each changed schema, the query of
+/// the identities when one changed, and the query of each schema that uses
+/// a format or a type that changed in the formats file.
+// sokf-implements: CACHE-1_AC-16
+fn dirty_queries(
+    model: &Model,
+    cache: &Cache,
+    root: &RepoRoot,
+    changes: &Changes,
+) -> (BTreeSet<String>, BTreeSet<RepoPath>) {
+    let mut dirs: BTreeSet<RepoPath> = BTreeSet::new();
+    let mut queries = changed_queries(model, cache, root, &mut dirs);
+    for (knowledge, key) in &changes.schemas {
+        queries.insert(
+            Query::Schema {
+                knowledge: *knowledge,
+                key: key.clone(),
+            }
+            .key(),
+        );
+    }
+    if changes.identities {
+        queries.insert(Query::Identities.key());
+    }
+    // After an edit to the formats file, query the schemas that use a
+    // changed format or type. The documents that those schemas govern
+    // read the schemas, so those documents become dirty too.
+    // sokf-implements: CACHE-1_AC-17
+    if let Some(names) = &changes.formats {
+        for (k, knowledge) in model.knowledges.iter().enumerate() {
+            for (i, schema) in knowledge.schemas.iter().enumerate() {
+                if schema.uses.iter().any(|u| names.contains(u)) {
+                    queries.insert(
+                        Query::Schema {
+                            knowledge: k,
+                            key: knowledge.schema_key(i),
+                        }
+                        .key(),
+                    );
+                }
+            }
+        }
+    }
+    (queries, dirs)
+}
+
+/// `first_dirty` returns the documents that are dirty before any key is
+/// compared: the files whose content or markers changed, the files that a
+/// glob now matches, the readers of `queries`, and every schema document
+/// when a format changed. It adds the query of each file whose status as an
+/// additional file changed to `queries`, and it clears the stored findings
+/// and edges of such a file that is no longer an additional file.
+fn first_dirty(
+    model: &Model,
+    cache: &Cache,
+    changes: Changes,
+    queries: &mut BTreeSet<String>,
+) -> BTreeSet<RepoPath> {
+    // Only the files whose content changed are dirty. The sync reads a
+    // document again when its modification time lies within
+    // `RACY_MARGIN` of the last sync. Such a document stays clean when
+    // its content is the same.
+    let changed = cache.changed_set();
+    let mut dirty: BTreeSet<RepoPath> = model
+        .documents_and_schemas()
+        .map(|(_, d)| &d.path)
+        .chain(model.additional.iter().map(|a| &a.path))
+        .filter(|p| changed.contains(*p))
+        .cloned()
+        .collect();
+    // A file whose markers changed is dirty, so its check runs.
+    dirty.extend(changes.scanned);
+    // A file that a glob now matches is dirty, so its check runs. For a
+    // file that a glob no longer matches, the loader clears its output
+    // and its edges in the cache. The commit deletes every row of a file
+    // that the walk no longer lists, so the loader records nothing for it.
+    // sokf-implements: CACHE-1_AC-52
+    for path in changes.additional {
+        queries.insert(Query::Path(path.clone()).key());
+        if model.is_additional(&path) {
+            dirty.insert(path);
+        } else if model.tree.file(&path).is_some() {
+            cache.record_output(&path, Vec::new());
+            cache.record_edges(&path, Vec::new());
+        }
+    }
+    // The readers of the changed queries are dirty, except a reader that
+    // the walk no longer lists as a unit, because it has no check.
+    dirty.extend(
+        cache
+            .readers_of(queries)
+            .into_iter()
+            .filter(|p| is_checked_unit(model, cache, p)),
+    );
+    // When a format changed, was added, or was removed, every schema
+    // document is dirty, because its own check reads the examples of
+    // the whole registry.
+    // sokf-implements: CACHE-1_AC-40
+    if changes
+        .formats
+        .as_ref()
+        .is_some_and(|names| names.iter().any(|n| n.starts_with("f:")))
+    {
+        dirty.extend(
+            model
+                .knowledges
+                .iter()
+                .flat_map(|k| k.schemas.iter().map(|s| s.doc.path.clone()))
+                .filter(|p| is_checked_unit(model, cache, p)),
+        );
+    }
+    dirty
+}
+
+/// `spread_dirty` loads the documents in `dirty` for their check, captures
+/// their keys and their plans, and adds to `dirty` the readers of each key
+/// and each planned path that differs from the store's, in waves, until a
+/// wave adds no new document. It returns the captured keys and plans.
+// sokf-implements: CACHE-1_AC-5
+fn spread_dirty(
+    model: &mut Model,
+    loader: &mut CachedLoader,
+    cache: &Cache,
+    compiled: &mut Compiled,
+    dirty: &mut BTreeSet<RepoPath>,
+) -> Result<(KeyIndex, PlanIndex)> {
+    // Compare the keys of the dirty documents with the store's keys: a
+    // key that differs from the store's makes its readers dirty. The
+    // loop repeats until no new document is dirty.
+    let mut captured = KeyIndex::default();
+    let mut planned = PlanIndex::default();
+    let mut seen: BTreeSet<RepoPath> = BTreeSet::new();
+    loop {
+        let wave: BTreeSet<RepoPath> = dirty.difference(&seen).cloned().collect();
+        if wave.is_empty() {
+            break;
+        }
+        admit_for_check(model, loader, cache, compiled, &wave)?;
+        let fresh = check::capture_keys_of(model, compiled, Some(&wave));
+        let mut moved: BTreeSet<String> = BTreeSet::new();
+        for path in &wave {
+            let old = cache.old_keys_of(path);
+            let new: BTreeSet<(String, String, usize)> = fresh
+                .of_document(path)
+                .map(|e| (scope_name(&e.scope), markdown::slug(&e.key), e.knowledge))
+                .collect();
+            for (scope, slug, k) in old.symmetric_difference(&new) {
+                moved.insert(key_query(scope, slug, *k));
+            }
+        }
+        captured.extend(fresh.document.into_values().flatten());
+        // A path that a document starts or stops planning makes the
+        // readers of that path dirty (SOKF_SCHEMA_53).
+        let plans = check::capture_plans_of(model, compiled, Some(&wave));
+        for path in &wave {
+            let new = plans.of(path);
+            for target in cache.old_plans_of(path).symmetric_difference(&new) {
+                moved.insert(Query::Planned(target.path.clone()).key());
+            }
+            for target in &new {
+                planned.add(path, target);
+            }
+        }
+        seen.extend(wave);
+        let more: BTreeSet<RepoPath> = cache
+            .readers_of(&moved)
+            .into_iter()
+            .filter(|p| is_checked_unit(model, cache, p) && !dirty.contains(p))
+            .collect();
+        dirty.extend(more);
+    }
+    Ok((captured, planned))
 }
 
 /// `is_not_found` returns whether `e` is the I/O error of a missing file.

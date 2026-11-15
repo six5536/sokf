@@ -30,12 +30,7 @@
       }
     }
   },
-  "required": [
-    "root",
-    "created",
-    "updated",
-    "hand_written_indexes"
-  ],
+  "required": ["root", "created", "updated", "hand_written_indexes"],
   "$defs": {
     "RepoPath": {
       "description": "A path relative to the repository root, which starts with `/` and uses forward slashes. The path `/` is the root itself.",

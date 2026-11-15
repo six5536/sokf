@@ -3,6 +3,7 @@
 
 use std::{
     collections::{BTreeSet, HashMap},
+    fmt::Write as _,
     io::{self, Write},
 };
 
@@ -25,15 +26,16 @@ pub fn text<W: Write>(w: &mut W, graph: &Graph, result: &GraphResult) -> io::Res
         .enumerate()
         .map(|(i, k)| (k, i + 1))
         .collect();
-    let is_container = |key: &NodeKey| {
-        ids.contains_key(key)
-            && matches!(graph.kind(key), Some(NodeKind::Root | NodeKind::Directory))
+    let container = |key: &NodeKey| {
+        ids.get_key_value(key)
+            .map(|(k, _)| *k)
+            .filter(|k| matches!(graph.kind(k), Some(NodeKind::Root | NodeKind::Directory)))
     };
     // Put each root, directory, document, additional file, and asset in the
     // subgraph of its nearest printed ancestor root or directory. Put
     // `file`, `missing`, and `key` nodes, and nodes with no printed
     // ancestor, at the top level.
-    let mut children: HashMap<Option<NodeKey>, Vec<&NodeKey>> = HashMap::new();
+    let mut children: HashMap<Option<&NodeKey>, Vec<&NodeKey>> = HashMap::new();
     for key in &result.nodes {
         let mut parent = None;
         if matches!(
@@ -48,8 +50,8 @@ pub fn text<W: Write>(w: &mut W, graph: &Graph, result: &GraphResult) -> io::Res
         ) {
             let mut up = Graph::parent(key);
             while let Some(p) = up {
-                if is_container(&p) {
-                    parent = Some(p);
+                if let Some(k) = container(&p) {
+                    parent = Some(k);
                     break;
                 }
                 up = Graph::parent(&p);
@@ -91,9 +93,11 @@ pub fn text<W: Write>(w: &mut W, graph: &Graph, result: &GraphResult) -> io::Res
         let mut label = escape(&e.rel);
         match (result.folded.get(&i), &e.region) {
             (Some(n), _) => {
-                label.push_str(&format!(" ({})", super::tree::folded_count(e.kind, *n)))
+                let _ = write!(label, " ({})", super::tree::folded_count(e.kind, *n));
             }
-            (None, Some(region)) => label.push_str(&format!(" #{}", escape(region))),
+            (None, Some(region)) => {
+                let _ = write!(label, " #{}", escape(region));
+            }
             (None, None) => {}
         }
         writeln!(w, "  n{from} {arrow}|\"{label}\"| n{to}")?;
@@ -124,14 +128,14 @@ fn walk(rows: &[Row], out: &mut BTreeSet<usize>) {
 fn declare<W: Write>(
     w: &mut W,
     graph: &Graph,
-    children: &HashMap<Option<NodeKey>, Vec<&NodeKey>>,
+    children: &HashMap<Option<&NodeKey>, Vec<&NodeKey>>,
     ids: &HashMap<&NodeKey, usize>,
     starts: &[NodeKey],
-    parent: Option<NodeKey>,
+    parent: Option<&NodeKey>,
     depth: usize,
 ) -> io::Result<()> {
     let indent = "  ".repeat(depth);
-    for &key in children.get(&parent).map(Vec::as_slice).unwrap_or(&[]) {
+    for &key in children.get(&parent).map(Vec::as_slice).unwrap_or_default() {
         let Some(node) = graph.node(key) else {
             continue;
         };
@@ -151,15 +155,7 @@ fn declare<W: Write>(
                     )
                 };
                 writeln!(w, "{indent}subgraph n{id}[{}]", quote(&text))?;
-                declare(
-                    w,
-                    graph,
-                    children,
-                    ids,
-                    starts,
-                    Some(key.clone()),
-                    depth + 1,
-                )?;
+                declare(w, graph, children, ids, starts, Some(key), depth + 1)?;
                 writeln!(w, "{indent}end")?;
             }
             NodeKind::Document => writeln!(w, "{indent}n{id}[\"{}\"]", label(node))?,
@@ -226,38 +222,39 @@ mod tests {
 
     use proptest::prelude::*;
     use serde_json::json;
+    use sokf_core::graph::Summary;
 
     use super::*;
     use crate::render::fixtures::{edge, key, node};
 
     fn graph() -> Graph {
         let nodes: BTreeMap<NodeKey, Node> = [
-            node("/k", NodeKind::Root, json!({})),
+            node("/k", NodeKind::Root, &json!({})),
             node(
                 "/k/a.md",
                 NodeKind::Document,
-                json!({"id": "a", "title": "Say \"hi\""}),
+                &json!({"id": "a", "title": "Say \"hi\""}),
             ),
-            node("/k/core", NodeKind::Directory, json!({})),
+            node("/k/core", NodeKind::Directory, &json!({})),
             node(
                 "/k/core/b.md",
                 NodeKind::Document,
-                json!({"id": "b", "title": null}),
+                &json!({"id": "b", "title": null}),
             ),
-            node("/k/core/deep", NodeKind::Directory, json!({})),
+            node("/k/core/deep", NodeKind::Directory, &json!({})),
             node(
                 "/k/core/deep/c.md",
                 NodeKind::Document,
-                json!({"broken": true, "title": "<c> & \"d\""}),
+                &json!({"broken": true, "title": "<c> & \"d\""}),
             ),
-            node("/README.md", NodeKind::Additional, json!({})),
+            node("/README.md", NodeKind::Additional, &json!({})),
             node(
                 "/k/core/pic.png",
                 NodeKind::Asset,
-                json!({"sidecar": "pic"}),
+                &json!({"sidecar": "pic"}),
             ),
-            node("/src/x.rs", NodeKind::File, json!({})),
-            node("gone", NodeKind::Missing, json!({})),
+            node("/src/x.rs", NodeKind::File, &json!({})),
+            node("gone", NodeKind::Missing, &json!({})),
         ]
         .into_iter()
         .collect();
@@ -357,8 +354,8 @@ mod tests {
                 key("gone"),
             ],
             edges: (0..6).collect(),
-            folded: Default::default(),
-            summary: Default::default(),
+            folded: BTreeMap::default(),
+            summary: Summary::default(),
             projection: None,
             notes: Vec::new(),
         };
@@ -391,8 +388,8 @@ mod tests {
             rows: vec![],
             nodes: vec![key("/k/core/deep"), key("/k/core/deep/c.md")],
             edges: vec![],
-            folded: Default::default(),
-            summary: Default::default(),
+            folded: BTreeMap::default(),
+            summary: Summary::default(),
             projection: None,
             notes: Vec::new(),
         };
@@ -428,7 +425,7 @@ mod tests {
                     nodes.push(all[i].clone());
                 }
             }
-            let result = GraphResult { start: vec![], rows: printed(0..6), nodes: nodes.clone(), edges: (0..6).collect(), folded: Default::default(), summary: Default::default(), projection: None, notes: Vec::new() };
+            let result = GraphResult { start: vec![], rows: printed(0..6), nodes: nodes.clone(), edges: (0..6).collect(), folded: BTreeMap::default(), summary: Summary::default(), projection: None, notes: Vec::new() };
             let mut buf = Vec::new();
             text(&mut buf, &g, &result).unwrap();
             let out = String::from_utf8(buf).unwrap();

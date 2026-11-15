@@ -4,7 +4,7 @@
 //! schemas that use a format or a type changed by an edit to the registry
 //! (CACHE-1_AC-17).
 
-use std::{collections::BTreeSet, sync::OnceLock};
+use std::{collections::BTreeSet, fmt::Write as _, sync::OnceLock};
 
 use regex::Regex;
 
@@ -60,7 +60,9 @@ pub fn fingerprint(registry: &FormatRegistry) -> Vec<(String, u64)> {
             text.push('\t');
             match shape.regex() {
                 Some(re) => text.push_str(re.as_str()),
-                None => text.push_str(&format!("{shape:?}")),
+                None => {
+                    let _ = write!(text, "{shape:?}");
+                }
             }
             text.push('\n');
         }
@@ -113,6 +115,6 @@ mod tests {
                 "t:slug"
             ]
         );
-        assert!(schema_uses("sections: []").is_empty());
+        assert_eq!(schema_uses("sections: []"), [] as [std::string::String; 0]);
     }
 }

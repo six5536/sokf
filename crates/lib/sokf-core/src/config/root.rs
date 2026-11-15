@@ -34,9 +34,15 @@ pub fn discover_root(cwd: &Path, given: Option<&Path>) -> Result<RepoRoot> {
     }
     let abs = std::path::absolute(cwd).map_err(|e| Error::io(cwd, e))?;
     abs.ancestors()
-        .find(|dir| dir.join(".git").exists())
+        .find(|dir| holds_git(dir))
         .map(|dir| RepoRoot::new(dir.to_path_buf()))
         .ok_or(Error::NoRepository)
+}
+
+/// `holds_git` returns whether a `.git` directory or file stands in `dir`,
+/// which marks the top of a git repository.
+pub fn holds_git(dir: &Path) -> bool {
+    dir.join(".git").exists()
 }
 
 /// `Scope` holds the files and directories that the `PATHS` arguments of

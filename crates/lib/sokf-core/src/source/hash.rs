@@ -15,19 +15,19 @@ impl Default for Fnv {
 impl Fnv {
     /// `new` starts a hash at the FNV-1a offset basis, the hash of no bytes.
     pub fn new() -> Self {
-        Fnv(0xcbf2_9ce4_8422_2325)
+        Fnv(0xCBF2_9CE4_8422_2325)
     }
 
     /// `update` adds `bytes` to the hash.
     pub fn update(&mut self, bytes: &[u8]) {
         for b in bytes {
             self.0 ^= u64::from(*b);
-            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01B3);
         }
     }
 
     /// `finish` returns the hash of every byte fed so far.
-    pub fn finish(&self) -> u64 {
+    pub fn finish(self) -> u64 {
         self.0
     }
 }
@@ -45,8 +45,8 @@ mod tests {
 
     #[test]
     fn the_hash_is_fnv1a() {
-        assert_eq!(fnv1a64(b""), 0xcbf2_9ce4_8422_2325);
-        assert_eq!(fnv1a64(b"a"), 0xaf63_dc4c_8601_ec8c);
+        assert_eq!(fnv1a64(b""), 0xCBF2_9CE4_8422_2325);
+        assert_eq!(fnv1a64(b"a"), 0xAF63_DC4C_8601_EC8C);
         let mut h = Fnv::default();
         h.update(b"a");
         assert_eq!(h.finish(), fnv1a64(b"a"));

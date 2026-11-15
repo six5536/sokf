@@ -1,0 +1,132 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+assertion_line: 144
+expression: "json(&tree, every(1))"
+---
+{
+  "start": [
+    "/knowledge/config.md",
+    "/knowledge/core/executor.md",
+    "/knowledge/core/planner.md"
+  ],
+  "nodes": [
+    {
+      "kind": "file",
+      "path": "/crates/app/sokf/src/main.rs"
+    },
+    {
+      "kind": "file",
+      "path": "/crates/lib/example-core/src/planner.rs"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/config.md",
+      "type": "Subsystem",
+      "id": "config",
+      "title": "Configuration",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/core/executor.md",
+      "type": "Subsystem",
+      "id": "executor",
+      "title": "Executor",
+      "status": "stable"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/core/planner.md",
+      "type": "Subsystem",
+      "id": "planner",
+      "title": "Planner",
+      "description": "The planner is a pure planning stage.",
+      "resource": "/crates/lib/example-core/src/planner.rs",
+      "status": "stable"
+    },
+    {
+      "kind": "missing",
+      "target": "planer"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "includes",
+      "from": "/crates/app/sokf/src/main.rs",
+      "to": "/knowledge/core/planner.md",
+      "rel": "included-by",
+      "region": "cli",
+      "synthesised": true
+    },
+    {
+      "kind": "resource",
+      "from": "/crates/lib/example-core/src/planner.rs",
+      "to": "/knowledge/core/planner.md",
+      "rel": "described-by",
+      "synthesised": true
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/config.md",
+      "to": "/knowledge/core/planner.md",
+      "rel": "depended-on-by",
+      "synthesised": true
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/core/executor.md",
+      "to": "/knowledge/core/planner.md",
+      "rel": "depends-on"
+    },
+    {
+      "kind": "includes",
+      "from": "/knowledge/core/planner.md",
+      "to": "/crates/app/sokf/src/main.rs",
+      "rel": "includes",
+      "region": "cli"
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/core/planner.md",
+      "to": "/knowledge/config.md",
+      "rel": "depends-on",
+      "note": "Reads logging configuration."
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/core/planner.md",
+      "to": "/knowledge/core/executor.md",
+      "rel": "depended-on-by",
+      "synthesised": true
+    },
+    {
+      "kind": "links",
+      "from": "/knowledge/core/planner.md",
+      "to": "planer",
+      "rel": "references"
+    },
+    {
+      "kind": "resource",
+      "from": "/knowledge/core/planner.md",
+      "to": "/crates/lib/example-core/src/planner.rs",
+      "rel": "describes"
+    },
+    {
+      "kind": "links",
+      "from": "planer",
+      "to": "/knowledge/core/planner.md",
+      "rel": "referenced-by",
+      "synthesised": true
+    }
+  ],
+  "summary": {
+    "documents": {
+      "shown": 3,
+      "total": 3
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

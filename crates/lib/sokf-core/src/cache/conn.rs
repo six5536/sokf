@@ -88,7 +88,7 @@ impl Conn {
     }
 
     /// `put_meta` sets the value of `key` in the `meta` table.
-    pub(super) fn put_meta(&self, key: &str, value: impl ToString) -> rusqlite::Result<usize> {
+    pub(super) fn put_meta(&self, key: &str, value: &impl ToString) -> rusqlite::Result<usize> {
         self.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
             [key, &value.to_string()],

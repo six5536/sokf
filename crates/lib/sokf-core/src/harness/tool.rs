@@ -7,9 +7,8 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use agent_harness_adapter_core::{DeclinedStore, Harness, Integration, Scope, Tool, harness};
 
+use super::{SokfDeclined, integration};
 use crate::RepoPath;
-
-use super::{SokfDeclined, instructions_only, integration};
 
 /// `HEADER` is the first line of the record file.
 // sokf-implements: CLI-3_AC-58
@@ -27,15 +26,12 @@ const LOCAL_RECORD: &str = ".sokf/harness.local.toml";
 const LOCAL_CONFIG: &str = ".sokf/config.local.toml";
 
 /// `SokfTool` is sokf in a repository, in the home directory, or both, with the program
-/// that the hook line of each harness runs and the instructions fragment of each pack.
+/// that the hook line of each harness runs.
 #[derive(Clone)]
 pub struct SokfTool {
     repo: Option<PathBuf>,
     home: Option<PathBuf>,
     programs: BTreeMap<String, String>,
-    fragments: Vec<(String, String)>,
-    only_instructions: bool,
-    held_instructions: bool,
 }
 
 impl SokfTool {
@@ -51,35 +47,7 @@ impl SokfTool {
             repo,
             home,
             programs,
-            fragments: Vec::new(),
-            only_instructions: false,
-            held_instructions: false,
         }
-    }
-
-    /// `fragments` adds the instructions fragment of each pack, by the pack's name, in the
-    /// order of the packs, to the instructions block.
-    #[must_use]
-    pub fn fragments(mut self, fragments: Vec<(String, String)>) -> Self {
-        self.fragments = fragments;
-        self
-    }
-
-    /// `instructions_only` makes the integration hold the instructions block alone, so
-    /// that an install writes no other part.
-    #[must_use]
-    pub fn instructions_only(mut self) -> Self {
-        self.only_instructions = true;
-        self
-    }
-
-    /// `hold_instructions` declines the instructions part of every harness, so that an
-    /// install leaves it as it is and keeps its recorded hash, while the copy of a pack's
-    /// fragment holds a conflict.
-    #[must_use]
-    pub fn hold_instructions(mut self) -> Self {
-        self.held_instructions = true;
-        self
     }
 
     /// `declined_at` returns the store of the declined parts at `scope`: the configuration of
@@ -100,12 +68,7 @@ impl SokfTool {
                 )
             }
         };
-        let store = SokfDeclined::new(path, shown);
-        Ok(if self.held_instructions {
-            store.holding(agent_harness_adapter_core::Item::Instructions.as_str())
-        } else {
-            store
-        })
+        Ok(SokfDeclined::new(path, shown))
     }
 
     fn repo(&self) -> agent_harness_adapter_core::Result<&PathBuf> {
@@ -122,7 +85,7 @@ impl SokfTool {
 }
 
 impl Tool for SokfTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "sokf"
     }
 
@@ -132,13 +95,9 @@ impl Tool for SokfTool {
     }
 
     /// The integration, whose hook runs the program that the configuration sets for each
-    /// harness, and whose instructions block holds the fragments of the packs.
+    /// harness.
     fn integration(&self, _scope: Scope) -> Integration {
-        if self.only_instructions {
-            instructions_only(&self.fragments)
-        } else {
-            integration(&self.programs, &self.fragments)
-        }
+        integration(&self.programs)
     }
 
     fn root(&self, scope: Scope) -> agent_harness_adapter_core::Result<PathBuf> {

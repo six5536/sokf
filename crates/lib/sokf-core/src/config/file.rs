@@ -5,8 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::RepoRoot;
-use crate::{Error, RepoPath, Result, Severity, source::read_optional};
+use crate::{Error, RepoPath, RepoRoot, Result, Severity, source::read_optional};
 
 // sokf-implements: CONF-1_AC-2
 // sokf-implements: CONF-1_AC-4
@@ -21,10 +20,89 @@ struct ConfigFile {
     repository: RepositorySection,
     markers: MarkersSection,
     harness: BTreeMap<String, HarnessSection>,
-    /// The packs, which `read_packs` checks.
-    pack: Vec<super::packs::PackEntry>,
+    format: FormatSection,
 }
 // sokf:end config-file
+
+/// `PACKS_GONE` says why the tool refuses a `[[pack]]` entry
+/// (CONF-1_AC-6).
+const PACKS_GONE: &str = "`[[pack]]` declares a pack, and packs are no longer part of sokf: \
+                          remove each `[[pack]]` entry";
+
+// sokf:begin config-format
+/// `FormatSection` holds the `[format]` table (CONF-10): the formatter's
+/// command, with `{files}` for the files to format and `{settings}` for the
+/// path of the settings, the settings that sokf passes in place of its
+/// own, and the seconds that one run of the formatter lasts at most. Without
+/// `command`, sokf detects the formatter.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct FormatSection {
+    command: Option<Vec<String>>,
+    settings: Option<toml::Table>,
+    timeout: Option<i64>,
+}
+// sokf:end config-format
+
+/// `FORMAT_TIMEOUT` is the longest that one run of the formatter lasts
+/// when `format.timeout` is absent (CONF-10_AC-20).
+pub const FORMAT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// `FormatConfig` is the resolved `[format]` table: the command and the
+/// settings, as JSON text, that the configuration names, and the limit of
+/// one run of the formatter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatConfig {
+    /// The formatter's program and arguments, or `None` to detect it.
+    pub command: Option<Vec<String>>,
+    /// The settings as JSON, or `None` for sokf's own.
+    pub settings: Option<String>,
+    /// The longest that one run of the formatter lasts.
+    pub timeout: std::time::Duration,
+}
+
+impl Default for FormatConfig {
+    // sokf-implements: CONF-10_AC-20
+    fn default() -> FormatConfig {
+        FormatConfig {
+            command: None,
+            settings: None,
+            timeout: FORMAT_TIMEOUT,
+        }
+    }
+}
+
+impl FormatSection {
+    /// `resolve` checks the table and returns it as a `FormatConfig`. It
+    /// refuses a command that is empty or has no element `{files}`, and a
+    /// timeout that isn't a whole number of seconds above 0.
+    // sokf-implements: CONF-10_AC-4
+    // sokf-implements: CONF-10_AC-21
+    fn resolve(self) -> std::result::Result<FormatConfig, String> {
+        if let Some(command) = &self.command
+            && (command.is_empty() || !command.iter().any(|a| a == "{files}"))
+        {
+            return Err("format.command must name a program and have an element `{files}`".into());
+        }
+        let settings = self
+            .settings
+            .map(|t| serde_json::to_string(&t).map_err(|e| format!("format.settings: {e}")))
+            .transpose()?;
+        let timeout = match self.timeout {
+            None => FORMAT_TIMEOUT,
+            Some(secs) => u64::try_from(secs)
+                .ok()
+                .filter(|s| *s > 0)
+                .map(std::time::Duration::from_secs)
+                .ok_or("format.timeout must be a whole number of seconds above 0")?,
+        };
+        Ok(FormatConfig {
+            command: self.command,
+            settings,
+            timeout,
+        })
+    }
+}
 
 // sokf:begin config-harness
 /// `HarnessSection` holds one `[harness.NAME]` table (CONF-4). `without`
@@ -39,6 +117,19 @@ struct HarnessSection {
     command: Option<String>,
 }
 // sokf:end config-harness
+
+/// `parse` reads the text of `/.sokf/config.toml` as a `ConfigFile`. It
+/// refuses a file that holds a `[[pack]]` entry, or a key `pack` of any other
+/// form, with `PACKS_GONE`, before it reads the tables, so that the key is
+/// neither read nor named among the keys that the file can hold.
+// sokf-implements: CONF-1_AC-6
+fn parse(text: &str) -> std::result::Result<ConfigFile, String> {
+    let table: toml::Table = toml::from_str(text).map_err(|e| e.message().to_string())?;
+    if table.contains_key("pack") {
+        return Err(PACKS_GONE.to_string());
+    }
+    toml::from_str(text).map_err(|e| e.message().to_string())
+}
 
 impl ConfigFile {
     fn declined(&self) -> BTreeMap<String, Vec<String>> {
@@ -135,23 +226,32 @@ impl MarkerCheck {
 /// `Config` is the resolved configuration, with every root checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-    /// The knowledge roots, each an existing directory.
+    /// The knowledge roots, each an existing directory: the own roots of
+    /// `knowledge.roots`, then the roots of `/.sokf/roots.d/`.
     pub roots: Vec<RepoPath>,
+    /// The number of registered roots, those of `/.sokf/roots.d/`, at the
+    /// end of `roots`. The roots before them are the own roots of
+    /// `knowledge.roots` (CLI-6_AC-116).
+    pub registered_count: usize,
     /// `/`-rooted globs pruned from the repository walk.
     pub exclude: Vec<String>,
     /// The declined parts of each harness, by harness name.
     pub declined: BTreeMap<String, Vec<String>>,
     /// How a run reports markers.
     pub markers: MarkerCheck,
+    /// The formatter that a run compares generated blocks with.
+    pub format: FormatConfig,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             roots: vec![RepoPath::parse("/knowledge").expect("literal")],
+            registered_count: 0,
             exclude: Vec::new(),
             declined: BTreeMap::new(),
             markers: MarkerCheck::default(),
+            format: FormatConfig::default(),
         }
     }
 }
@@ -162,8 +262,8 @@ pub fn config_path() -> RepoPath {
 }
 
 /// `load_config` reads `/.sokf/config.toml`, or returns the defaults when
-/// the file is absent. It refuses a file that does not parse, or that has an
-/// unknown key, a glob that is not `/`-rooted or does not parse, or a root
+/// the file is absent. It refuses a file that does not parse, that holds a
+/// `[[pack]]` entry (CONF-1_AC-6), or that has an unknown key, a glob that is not `/`-rooted or does not parse, or a root
 /// that is not a directory.
 pub fn load_config(root: &RepoRoot) -> Result<Config> {
     let path = config_path();
@@ -174,8 +274,7 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
     let text = read_optional(&fs_path)?.unwrap_or_default();
     // sokf-implements: CONF-1_AC-3
     // sokf-implements: CONF-6_AC-1
-    let file: ConfigFile =
-        toml::from_str(&text).map_err(|e| Error::config(path.clone(), e.message().to_string()))?;
+    let file = parse(&text).map_err(|m| Error::config(path.clone(), m))?;
     if let Some(m) = file.bad_with() {
         return Err(Error::config(path, m));
     }
@@ -197,6 +296,20 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
         }
         roots.push(rp);
     }
+    // sokf-implements: CONF-2_AC-48
+    let registered = super::roots_d::read_registered(root, &|p, m| Error::config(p, m))?;
+    for r in &registered {
+        // sokf-implements: CONF-2_AC-52
+        if !r.root.to_fs(root).is_dir() {
+            return Err(Error::config(
+                r.file.clone(),
+                format!("knowledge root `{}` is not a directory", r.root),
+            ));
+        }
+    }
+    super::roots_d::check_apart(&roots, &registered)?;
+    let registered_count = registered.len();
+    roots.extend(registered.into_iter().map(|r| r.root));
     for g in &file.repository.exclude {
         // sokf-implements: CONF-3_AC-5
         if !g.starts_with('/') {
@@ -213,11 +326,18 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
             ));
         }
     }
+    let declined = file.declined();
+    let format = file
+        .format
+        .resolve()
+        .map_err(|m| Error::config(path.clone(), m))?;
     Ok(Config {
         roots,
-        declined: file.declined(),
+        registered_count,
+        declined,
         exclude: file.repository.exclude,
         markers: file.markers.check,
+        format,
     })
 }
 
@@ -228,6 +348,9 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
 pub struct ConfigText {
     /// `knowledge.roots` as written, or the default when the file is absent.
     pub roots: Vec<RepoPath>,
+    /// The roots of `/.sokf/roots.d/` as written, whether or not each one is
+    /// a directory.
+    pub registered: Vec<RepoPath>,
     /// The declined parts of each harness, as written.
     pub declined: BTreeMap<String, Vec<String>>,
     /// The program each harness's hook line runs, where one is set.
@@ -237,8 +360,9 @@ pub struct ConfigText {
 }
 
 /// `read_lenient` reads `/.sokf/config.toml` without requiring its roots to
-/// exist. It refuses a file that does not parse, or a root that is not
-/// `/`-rooted, with an `init` error (CONF-1_AC-3). `init` and the harness
+/// exist. It refuses a file that does not parse, a file that holds a
+/// `[[pack]]` entry, or a root that is not `/`-rooted, with an `init` error
+/// (CONF-1_AC-3, CONF-1_AC-6). `init` and the harness
 /// commands call `read_lenient`, not `load_config`, because `load_config`
 /// refuses a root that is not a directory. That refusal is right for every
 /// other command, but wrong for `init`, the command that creates the roots.
@@ -249,16 +373,19 @@ pub struct ConfigText {
 pub fn read_lenient(root: &RepoRoot) -> Result<ConfigText> {
     let path = config_path();
     let fs_path = path.to_fs(root);
+    // A file of `/.sokf/roots.d/` that doesn't parse registers nothing here,
+    // so that the tool that owns the file can write it again.
+    let registered = super::roots_d::registered_lenient(root);
     let Some(text) = read_optional(&fs_path)? else {
         return Ok(ConfigText {
             roots: Config::default().roots,
+            registered,
             declined: BTreeMap::new(),
             hook_commands: BTreeMap::new(),
             text: None,
         });
     };
-    let file: ConfigFile =
-        toml::from_str(&text).map_err(|e| Error::Init(format!("{path}: {}", e.message())))?;
+    let file = parse(&text).map_err(|m| Error::Init(format!("{path}: {m}")))?;
     if let Some(m) = file.bad_with() {
         return Err(Error::Init(format!("{path}: {m}")));
     }
@@ -273,6 +400,7 @@ pub fn read_lenient(root: &RepoRoot) -> Result<ConfigText> {
     }
     Ok(ConfigText {
         roots,
+        registered,
         declined: file.declined(),
         hook_commands: file.hook_commands(),
         text: Some(text),
@@ -301,6 +429,7 @@ mod tests {
             read_lenient(&root).unwrap(),
             ConfigText {
                 roots: Config::default().roots,
+                registered: vec![],
                 declined: BTreeMap::new(),
                 hook_commands: BTreeMap::new(),
                 text: None
@@ -317,6 +446,7 @@ mod tests {
                     RepoPath::parse("/missing").unwrap(),
                     RepoPath::parse("/docs").unwrap()
                 ],
+                registered: vec![],
                 declined: BTreeMap::from([("claude".to_string(), vec!["hooks".to_string()])]),
                 hook_commands: BTreeMap::new(),
                 text: Some(text.into())
@@ -491,6 +621,79 @@ mod tests {
             assert!(matches!(e, Error::Config { .. }), "{text:?} -> {e}");
             assert!(e.to_string().starts_with("/.sokf/config.toml: "), "{e}");
         }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // A `[[pack]]` entry, or a key `pack` of any other form, stops every
+    // reader with a message that says that packs are no longer part of
+    // sokf.
+    // sokf-tests: CONF-1_AC-6
+    #[test]
+    fn refuses_the_entries_of_the_packs() {
+        let dir = temp("packs");
+        let root = RepoRoot::new(dir.clone());
+        for text in [
+            "[[pack]]\nname = \"@acme/method\"\nsource = \"./\"\n",
+            "[knowledge]\nroots = [\"/knowledge\"]\n\n[[pack]]\nname = \"rust\"\n",
+            "pack = []\n",
+        ] {
+            let e = with(&dir, text).unwrap_err();
+            assert!(matches!(e, Error::Config { .. }), "{text:?} -> {e}");
+            assert!(
+                e.to_string().contains("packs are no longer part of sokf"),
+                "{e}"
+            );
+            let e = read_lenient(&root).unwrap_err();
+            assert!(matches!(e, Error::Init(_)), "{text:?} -> {e}");
+            assert!(
+                e.to_string().contains("packs are no longer part of sokf"),
+                "{e}"
+            );
+        }
+        // The keys that the error of an unknown key lists leave out `pack`.
+        let e = with(&dir, "foo = 1\n").unwrap_err().to_string();
+        assert!(e.contains("unknown field `foo`"), "{e}");
+        assert!(!e.contains("pack"), "{e}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // `[format]` names a command with an element `{files}`, settings, which
+    // the configuration holds as JSON, and a timeout of whole seconds.
+    // sokf-tests: CONF-10_AC-4
+    // sokf-tests: CONF-10_AC-20
+    // sokf-tests: CONF-10_AC-21
+    #[test]
+    fn reads_the_format_table() {
+        let dir = temp("format");
+        for text in [
+            "[format]\ncommand = []\n",
+            "[format]\ncommand = [\"prettier\", \"--write\"]\n",
+            "[format]\ncommand = \"prettier {files}\"\n",
+            "[format]\nwidth = 3\n",
+            "[format]\ntimeout = 0\n",
+            "[format]\ntimeout = -1\n",
+            "[format]\ntimeout = 1.5\n",
+        ] {
+            let e = with(&dir, text).unwrap_err();
+            assert!(matches!(e, Error::Config { .. }), "{text:?} -> {e}");
+        }
+        let config = with(
+            &dir,
+            "[format]\ncommand = [\"fmt\", \"{files}\"]\nsettings = { printWidth = 80, proseWrap = \"never\" }\n",
+        )
+        .unwrap();
+        assert_eq!(
+            config.format.command,
+            Some(vec!["fmt".into(), "{files}".into()])
+        );
+        assert_eq!(
+            config.format.settings.as_deref(),
+            Some(r#"{"printWidth":80,"proseWrap":"never"}"#)
+        );
+        assert_eq!(config.format.timeout, std::time::Duration::from_secs(10));
+        let config = with(&dir, "[format]\ntimeout = 3\n").unwrap();
+        assert_eq!(config.format.timeout, std::time::Duration::from_secs(3));
+        assert_eq!(with(&dir, "").unwrap().format, FormatConfig::default());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

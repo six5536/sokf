@@ -120,8 +120,10 @@ fn arg_header(arg: &clap::Arg) -> String {
 fn value_name(arg: &clap::Arg) -> String {
     arg.get_value_names()
         .and_then(|names| names.first())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| arg.get_id().to_string().to_uppercase())
+        .map_or_else(
+            || arg.get_id().to_string().to_uppercase(),
+            ToString::to_string,
+        )
 }
 
 /// `render_exit_status` writes the exit codes that CLI-1_AC-9, CLI-1_AC-10,
@@ -142,6 +144,8 @@ fn render_files(out: &mut String) {
         ".SH FILES\n\
          .TP\n.I /.sokf/config.toml\nThis optional file lists the knowledge roots and the paths that the repository excludes.\n\
          .TP\n.I /.sokf/formats.yaml\nThis optional file holds the line formats defined for this repository.\n\
+         .TP\n.I /.sokf/roots.d/\nThis optional folder holds files *.toml, at any depth, that each list further knowledge roots.\n\
+         .TP\n.I /.sokf/formats.d/\nThis optional folder holds files *.yaml, at any depth, of further line formats, of which no file takes precedence over another, so /.sokf/formats.yaml decides a format or a type that two files declare differently.\n\
          .TP\n.I /.sokf/cache/\nThis directory holds a cache entry for each file, and git ignores the directory. The \\-\\-no\\-cache flag skips the cache.\n\
          .TP\n.I <root>/manifest.sokf.yaml\nThis file is the manifest of a knowledge store.\n",
     );

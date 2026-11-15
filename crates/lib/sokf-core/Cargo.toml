@@ -11,6 +11,16 @@ repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
+# The tests reach the public mirror and stay out of the published crate.
+exclude = [
+  "tests/",
+  "src/**/tests.rs",
+  "src/**/snapshots/",
+  "src/**/fixtures.rs",
+  "src/proptest_cases.rs",
+  "src/test_support.rs",
+  "src/query/compliance.rs",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -36,3 +46,6 @@ tramlines-md.workspace = true
 [dev-dependencies]
 insta.workspace = true
 proptest.workspace = true
+
+[lints]
+workspace = true

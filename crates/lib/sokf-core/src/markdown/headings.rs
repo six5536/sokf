@@ -9,10 +9,10 @@ use tramlines_md::markdown::{Body, Heading};
 /// point to, in line order: the headings of the document, and each heading
 /// inside a quote or a list item. The engine reads a heading inside a quote
 /// or an item as part of that block, not as a heading of the document
-/// (TLMD_173). A git host still gives such a heading an anchor, so a link to
-/// it resolves (SOKF_FORMAT_71, SOKF_FORMAT_73).
+/// (`TLMD_173`). A git host still gives such a heading an anchor, so a link to
+/// it resolves (`SOKF_FORMAT_71`, `SOKF_FORMAT_73`).
 ///
-/// Each heading carries the slug that GitHub gives it (SOKF_FORMAT_155). The
+/// Each heading carries the slug that GitHub gives it (`SOKF_FORMAT_155`). The
 /// first heading with a slug keeps it. A later heading with the same slug
 /// takes the slug, a hyphen, and a count, and the count rises past each
 /// candidate that an earlier heading holds, so no two headings share a slug.

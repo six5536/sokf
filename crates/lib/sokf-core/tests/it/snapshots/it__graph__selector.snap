@@ -1,0 +1,52 @@
+---
+source: crates/lib/sokf-core/tests/it/graph.rs
+assertion_line: 183
+expression: "json(&tree, selected)"
+---
+{
+  "start": [
+    "/knowledge"
+  ],
+  "nodes": [
+    {
+      "kind": "root",
+      "path": "/knowledge",
+      "name": "example-knowledge",
+      "scope": "test",
+      "description": "The example knowledge of the graph design."
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/config.md",
+      "type": "Subsystem",
+      "id": "config",
+      "title": "Configuration",
+      "status": "stable"
+    },
+    {
+      "kind": "directory",
+      "path": "/knowledge/core"
+    },
+    {
+      "kind": "document",
+      "path": "/knowledge/core/planner.md",
+      "type": "Subsystem",
+      "id": "planner",
+      "title": "Planner",
+      "description": "The planner is a pure planning stage.",
+      "resource": "/crates/lib/example-core/src/planner.rs",
+      "status": "stable"
+    }
+  ],
+  "edges": [],
+  "summary": {
+    "documents": {
+      "shown": 2,
+      "total": 4
+    },
+    "archived": {
+      "shown": 0,
+      "total": 0
+    }
+  }
+}

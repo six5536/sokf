@@ -156,15 +156,14 @@ fn key_reference(model: &Model, path: &RepoPath, slug: &str) -> Option<String> {
 
 /// `id_of` returns the store and the id of the document at `path`.
 fn id_of(model: &Model, path: &RepoPath) -> Option<(usize, String)> {
-    match model.id_at(path) {
-        Some(found) => Some(found),
-        None => {
-            // The run does not hold this document, so the id comes from the
-            // store's row.
-            let k = model.knowledge_of(path)?;
-            let id = model.fallback.as_ref()?.fields(path)?.id?;
-            Some((k, id))
-        }
+    if let Some(found) = model.id_at(path) {
+        Some(found)
+    } else {
+        // The run does not hold this document, so the id comes from the
+        // store's row.
+        let k = model.knowledge_of(path)?;
+        let id = model.fallback.as_ref()?.fields(path)?.id?;
+        Some((k, id))
     }
 }
 
@@ -287,6 +286,10 @@ pub fn resolve_id(model: &Model, keys: Option<&KeyIndex>, id: &str) -> Result<Re
 // sokf-implements: CLI-7_AC-4
 // sokf-implements: CLI-7_AC-19
 // sokf-implements: CLI-7_AC-20
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "a START that ends in a lowercase `.md` is path-shaped, as CLI-7_AC-28 says, so the comparison is case-sensitive on purpose"
+)]
 pub fn resolve_start(
     graph: &mut Graph,
     model: &Model,

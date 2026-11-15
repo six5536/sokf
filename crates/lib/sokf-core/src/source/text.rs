@@ -6,7 +6,6 @@ use std::{fs, path::Path, time::UNIX_EPOCH};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
 use tramlines_md::markdown::{Split, split_frontmatter};
 
 use super::fnv1a64;

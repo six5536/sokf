@@ -17,11 +17,7 @@
       "type": "string"
     }
   },
-  "required": [
-    "id",
-    "path",
-    "document"
-  ],
+  "required": ["id", "path", "document"],
   "$defs": {
     "RepoPath": {
       "description": "A path relative to the repository root, which starts with `/` and uses forward slashes. The path `/` is the root itself.",
