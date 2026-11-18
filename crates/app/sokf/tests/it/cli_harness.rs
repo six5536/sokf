@@ -503,27 +503,16 @@ fn every_harness_writes_the_same_block_with_or_without_the_hook() {
     let agents = installed_block(&["agents"], "AGENTS.md", None);
     assert_eq!(without, claude);
     assert_eq!(agents, claude);
-    for words in [
-        "`/.sokf/config.toml`",
-        "read the `sokf` skill",
-        "Before you end a turn, run `sokf validate --fix` and fix every error it reports.",
-        "A hook may tell you that errors remain; fix them before you finish the work.",
-        "Before modifying a knowledge store document, use `sokf guide <PATH>` to read the update guidance to follow when writing.",
-        "Add `--state <KEY>=<STATE>` when changing document state.",
-    ] {
-        assert!(claude.contains(words), "{words}: {claude}");
-    }
-    // The line about the guidance follows the line about the skill, and
-    // comes before the line about `sokf validate --fix`.
-    assert!(
-        claude.contains("read the `sokf` skill.\nBefore modifying a knowledge store document,"),
-        "{claude}"
+    // The block is the four lines of `harness/instructions.md`, after its
+    // blank line, whatever parts the harness installs.
+    assert_eq!(
+        claude,
+        "<!-- sokf:harness -->\n\n\
+         If a repo contains `/.sokf/config.toml` it holds SOKF knowledge stores:\n\
+         - Before doing anything in a knowledge store, read the `sokf` skill.\n\
+         - Before modifying or to explain a knowledge store document, use `sokf guide <PATH> (--state <KEY>=<STATE>)`, to read the update guidance to follow when writing.\n\
+         - Before you end a turn, run `sokf validate --fix` and fix every error it reports.\n"
     );
-    assert!(
-        claude.contains("when changing document state.\nBefore you end a turn,"),
-        "{claude}"
-    );
-    assert!(!claude.contains("a hook runs `sokf"), "{claude}");
 }
 
 // sokf-tests: CLI-4_AC-40
