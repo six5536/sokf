@@ -17,7 +17,7 @@ preamble:
   guidance: What the data is, then the data.
   blocks:
     - kind: prose
-      max: 1
+      max: { hard: 1, when-at-limit: "Put the meaning of each column in the data itself." }
       example: Exchange rates by day, one currency to a column.
     - kind: include
       repeat: true

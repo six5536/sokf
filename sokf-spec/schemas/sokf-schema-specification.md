@@ -31,11 +31,10 @@ frontmatter:
   title:
     const: "SOKF: Schema specification"
   description:
-    guidance: The description says what the specification defines, in one sentence.
     example: "This specification defines the schemas of a knowledge store: what a schema governs, and its rules, scaffolds, lifecycles, and templates."
   version:
     template: '${:int}.${:int}'
-    example: "0.6"
+    example: "0.7"
     guidance: The version is the SOKF version that the document defines.
   status:
     enum: [draft, stable]
@@ -135,7 +134,8 @@ sections:
       - kind: prose
         rules:
           - text: "This specification defines the schemas of the Superdev Open Knowledge Format (SOKF): how a schema constrains the documents of a knowledge store."
-            max: 1
+            rule-id: defining-sentence
+            max: { hard: 1, when-at-limit: "Write anything more as informative paragraphs after the fixed sentence." }
           - pattern: '.'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -163,7 +163,7 @@ sections:
     guidance: This section is fixed text that says how the specification states its rules.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Put any other text in the section that it concerns." }
         each:
           text: "Each normative rule of this specification is a criterion in the EARS (Easy Approach to Requirements Syntax) form, with a key of the form `SOKF_SCHEMA_NUMBER`, where `NUMBER` is the number of the criterion. The descriptions of the keys in the tramlines-md grammar and in the [SOKF schema extension][sokf:sokf-extension] are normative."
   - heading: "1. Terminology"
@@ -171,12 +171,12 @@ sections:
     rule-id: section-1
     guidance: >
       This section lists the terms that the specification adds to those of the format
-      specification, one in each item: the term in backticks, then its definition. The
+      specification, one in each item: the term in backticks, then its definition. Each further fact about a term has a sentence of its own. The
       subject of each criterion is one of these terms, because the schema declares them as
       the type `sokf-subject`, and the validator checks each subject against that type.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Define each term in an item of the list that follows." }
         each:
           text: "This specification uses the terms of the [format specification][sokf:sokf-format-spec], and adds these:"
       - kind: bullet-list
@@ -210,7 +210,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion
@@ -252,7 +252,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion
@@ -294,7 +294,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion
@@ -337,7 +337,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion
@@ -379,7 +379,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion
@@ -418,7 +418,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion
@@ -460,7 +460,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion
@@ -501,7 +501,7 @@ sections:
         guidance: >
           A list contains criteria, or it is a named list in place of a table. A sentence
           before a named list says what the list contains, and each item describes one thing:
-          its name in backticks, then what it is. A paragraph or an example separates two lists, because
+          its name in backticks, then what it is. Each further fact about the thing has a sentence of its own. A paragraph or an example separates two lists, because
           two lists in a row read as one list.
         rules:
           - format: sokf-criterion

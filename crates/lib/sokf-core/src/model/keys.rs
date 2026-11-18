@@ -1,7 +1,7 @@
 //! This module indexes the captured keys by scope, and resolves `sokf:`
 //! labels and their fragments as the format specification defines.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::{Model, Query};
 use crate::{
@@ -43,6 +43,10 @@ pub struct KeyIndex {
     pub knowledge: HashMap<(usize, String), Vec<KeyEntry>>,
     /// The keys of repository scope, by slug.
     pub repository: HashMap<String, Vec<KeyEntry>>,
+    /// The slugs of the anchors that the engine keeps for the units that
+    /// break their rules, by path. Such a unit captures no key, but a
+    /// fragment can name its anchor (`SOKF_FORMAT_71`).
+    pub anchors: BTreeMap<RepoPath, BTreeSet<String>>,
 }
 
 impl KeyIndex {
@@ -66,6 +70,30 @@ impl KeyIndex {
             .entry((entry.path.clone(), s))
             .or_default()
             .push(entry);
+    }
+
+    /// `add_anchor` records an anchor that the engine keeps in `path` for a
+    /// unit that breaks its rule.
+    pub fn add_anchor(&mut self, path: RepoPath, slug: String) {
+        self.anchors.entry(path).or_default().insert(slug);
+    }
+
+    /// `anchors_of` returns the slugs of the anchors that the engine keeps
+    /// in `path`.
+    pub fn anchors_of(&self, path: &RepoPath) -> impl Iterator<Item = &str> {
+        self.anchors
+            .get(path)
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+    }
+
+    /// `merge` adds the keys and the kept anchors of `other`.
+    pub fn merge(&mut self, other: KeyIndex) {
+        self.extend(other.document.into_values().flatten());
+        for (path, slugs) in other.anchors {
+            self.anchors.entry(path).or_default().extend(slugs);
+        }
     }
 
     /// `of_document` returns the keys that `path` captures.
@@ -184,14 +212,17 @@ impl Unresolved {
     }
 }
 
-/// `resolve_in` resolves a fragment against the headings and keys of one
-/// document, by slug (`SOKF_FORMAT_71`). The headings include each heading
-/// inside a quote or a list item, and each heading has the slug that the
-/// host gives it, so no two headings share one (`SOKF_FORMAT_155`). It returns the fragment itself, which the
+/// `resolve_in` resolves a fragment against the headings, the keys, and the
+/// kept anchors of one document, by slug (`SOKF_FORMAT_71`). The headings
+/// include each heading inside a quote or a list item, and each heading has
+/// the slug that the host gives it, so no two headings share one
+/// (`SOKF_FORMAT_155`). A kept anchor is one that the engine keeps for a
+/// unit that breaks its rule. It returns the fragment itself, which the
 /// definition block appends. When the fragment matches only by its text,
 /// `resolve_in` returns `Unresolved::KeyForm` with the slug.
 // sokf-implements: SOKF_FORMAT_71
 // sokf-implements: SOKF_FORMAT_72
+// sokf-implements: SOKF_FORMAT_73
 pub fn resolve_in(
     keys: &KeyIndex,
     path: &RepoPath,
@@ -201,6 +232,7 @@ pub fn resolve_in(
     let headings = link_headings(body);
     let found = |f: &str| {
         keys.document.contains_key(&(path.clone(), f.to_string()))
+            || keys.anchors.get(path).is_some_and(|a| a.contains(f))
             || headings.iter().any(|h| h.slug == f)
     };
     if found(fragment) {
@@ -424,6 +456,30 @@ mod tests {
             assert!(u.message("sokf:x").contains("[sokf:x]"));
         }
     }
+
+    // sokf-tests: SOKF_FORMAT_71
+    #[test]
+    fn a_kept_anchor_resolves_a_fragment_of_its_document_and_is_no_key() {
+        let mut index = KeyIndex::default();
+        let mut kept = KeyIndex::default();
+        kept.add_anchor(p("/a.md"), "d-5".into());
+        index.merge(kept);
+        assert_eq!(index.anchors_of(&p("/a.md")).collect::<Vec<_>>(), ["d-5"]);
+        assert_eq!(index.of_document(&p("/a.md")).count(), 0);
+        let body = Body::default();
+        assert_eq!(
+            resolve_in(&index, &p("/a.md"), &body, "d-5"),
+            Ok("d-5".into())
+        );
+        assert_eq!(
+            resolve_in(&index, &p("/a.md"), &body, "D-5"),
+            Err(Unresolved::KeyForm("d-5".into()))
+        );
+        assert_eq!(
+            resolve_in(&index, &p("/b.md"), &body, "d-5"),
+            Err(Unresolved::NoFragment)
+        );
+    }
 }
 
 #[cfg(test)]
@@ -450,6 +506,7 @@ mod fragment_tests {
                 roots: vec![RepoPath::parse("/knowledge").unwrap()],
                 registered_count: 0,
                 exclude: vec![],
+                added_exclude: vec![],
                 declined: BTreeMap::default(),
                 markers: MarkerCheck::default(),
                 format: crate::config::FormatConfig::default(),

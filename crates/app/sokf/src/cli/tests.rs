@@ -274,6 +274,47 @@ fn locate_takes_one_or_more_ids() {
 }
 
 #[test]
+fn guide_takes_documents_states_json_and_a_query() {
+    let Some(Command::Guide(args)) = parse(&[
+        "sokf",
+        "guide",
+        "a",
+        "/b.md",
+        "--state",
+        "state=open",
+        "--state",
+        "kind=bug",
+    ])
+    .command
+    else {
+        panic!("expected guide");
+    };
+    assert_eq!(args.documents, vec!["a", "/b.md"]);
+    assert_eq!(
+        args.state,
+        vec![
+            ("state".to_string(), "open".to_string()),
+            ("kind".to_string(), "bug".to_string())
+        ]
+    );
+    assert!(!args.json && args.query.is_none());
+    let Some(Command::Guide(args)) =
+        parse(&["sokf", "guide", "--json", "--query", "documents", "a"]).command
+    else {
+        panic!("expected guide");
+    };
+    assert!(args.json);
+    assert_eq!(args.query.as_deref(), Some("documents"));
+    for args in [
+        vec!["sokf", "guide"],
+        vec!["sokf", "guide", "--query", "documents", "a"],
+        vec!["sokf", "guide", "--state", "state", "a"],
+    ] {
+        assert!(Cli::try_parse_from(&args).is_err(), "{args:?}");
+    }
+}
+
+#[test]
 fn info_has_grammar_and_formats() {
     assert!(matches!(
         parse(&["sokf", "info", "grammar"]).command,

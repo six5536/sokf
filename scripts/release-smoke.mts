@@ -59,7 +59,9 @@ if (!/^sokf \d+\.\d+\.\d+/.test(version)) {
 if (!run(["info", "grammar"], 0).stdout.startsWith("grammar: tramlines\n")) {
   fail("info grammar does not print the schema language");
 }
-if (!run(["info", "formats", "--layer", "embedded"], 0).stdout.includes("source: embedded")) {
+// The embedded layer holds the built-in types and no format.
+const embedded = run(["info", "formats", "--layer", "embedded"], 0).stdout;
+if (!embedded.includes("source: built-in") || !embedded.endsWith("\nregistry: {}\n")) {
   fail("info formats does not print the embedded registry");
 }
 

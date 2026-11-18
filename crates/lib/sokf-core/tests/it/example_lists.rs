@@ -52,7 +52,7 @@ sections:
     level: 2
     blocks:
       - kind: bullet-list
-        max: 2
+        max: { hard: 2, when-at-limit: 'Keep the limits that bind first.' }
         example: [The index fits in memory., One writer holds the lock., A run takes one second.]
   - heading: Notes
     level: 2
@@ -60,8 +60,9 @@ sections:
       - kind: prose
         rules:
           - pattern: '^Note: '
+            rule-id: note
             min: 0
-            max: 2
+            max: { hard: 2, when-at-limit: 'Fold the rest into an aside.' }
             example: ['Note: the cache is local.', 'Note: the lock is advisory.', 'Note: the index is rebuilt.']
           - pattern: '^Aside: '
             min: 0
@@ -271,8 +272,8 @@ fn guidance_that_repeats_a_text_of_a_list_is_reported() {
     tree.write(
         "knowledge/schemas/listed.md",
         &LISTED_SCHEMA.replace(
-            "        max: 2\n        example: [",
-            "        max: 2\n        guidance: One writer holds the lock.\n        example: [",
+            "        max: { hard: 2, when-at-limit: 'Keep the limits that bind first.' }\n        example: [",
+            "        max: { hard: 2, when-at-limit: 'Keep the limits that bind first.' }\n        guidance: One writer holds the lock.\n        example: [",
         ),
     );
     let messages = errors(&tree);
@@ -405,7 +406,7 @@ sections:
         each:
           template: '${name:word}: ${rest:text}'
           key: name
-          rule-id: parts
+          key-of: parts
           example:
             - 'Parser: reads a document into blocks.'
             - 'Checker: matches each block against its rule.'

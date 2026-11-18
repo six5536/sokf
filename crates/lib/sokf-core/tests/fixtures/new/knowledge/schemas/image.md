@@ -20,6 +20,6 @@ preamble:
   guidance: One line under the picture.
   blocks:
     - kind: prose
-      max: 1
+      max: { hard: 1, when-at-limit: "Put more about the picture in a document that links it." }
       example: Flowers on the kitchen table.
 ````

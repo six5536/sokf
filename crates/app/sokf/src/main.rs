@@ -80,6 +80,7 @@ fn run() -> sokf_core::Result<u8> {
         Command::New(args) => commands::new(repo_root, cache, args),
         Command::Graph(args) => commands::graph(repo_root, cache, args),
         Command::Locate(args) => commands::locate(repo_root, cache, &args),
+        Command::Guide(args) => commands::guide(repo_root, cache, args),
         Command::Completions(args) => run_completions(&args),
         Command::Man => run_man(),
     }

@@ -47,6 +47,7 @@ sokf validate --fix               # regenerate blocks and indexes, move each doc
 sokf validate --json              # print one JSON object on stdout; --query EXPR selects parts of it
 sokf graph [START...]             # print the knowledge as a tree from any start point, as text, JSON (--json), or Mermaid (--mermaid)
 sokf locate ID...                 # print the absolute path of each document
+sokf guide ID...                  # print the guidance of each document's schema for its parts, at the document's states
 sokf info grammar                 # describe the schema language that the validator uses
 sokf info formats --schema ID     # list the line formats that a schema can match; --json prints them as one JSON object
 sokf new TYPE --slug SLUG --write # create a document from its schema's template
@@ -71,10 +72,9 @@ optional:
 
 The [sokf repository on GitHub](https://github.com/six5536/sokf#readme) holds
 the documentation. Its `sokf-spec/` store holds the core specifications of the
-format and the guide to the schema grammar, and its `packs/sokf/` holds the
-sokf pack, a method for a project's knowledge, which a project takes with
-[pakf](https://github.com/six5536/pakf). Its README describes every command, and the `sokf` skill in
-`harness/skills/sokf/` is the reference for an AI agent.
+format and the guide to the schema grammar. Its README describes every
+command, and the `sokf` skill in `harness/skills/sokf/` is the reference for
+an AI agent.
 
 ## License
 

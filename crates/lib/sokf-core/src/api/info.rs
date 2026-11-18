@@ -191,7 +191,9 @@ fn registry(
         let cache = Cache::open(root, cache);
         let mut model = super::load_for_lookup(root, &config, &cache)?;
         super::admit_schema_by_id(&mut model, root, &cache, id)?;
-        let compiled = grammar::compile_all(&model, grammar, &repo);
+        // `info` checks no document with these compiled schemas, which list
+        // only the formats, so they hold sokf's English.
+        let compiled = grammar::compile_all(&model, grammar, &repo, crate::Texts::english());
         let found: Vec<SchemaRef> = model
             .knowledges
             .iter()

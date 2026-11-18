@@ -1302,7 +1302,7 @@ checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "sokf"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "agent-harness-adapter-core",
  "assert_cmd",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "sokf-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "agent-harness-adapter-core",
  "dunce",
@@ -1509,9 +1509,9 @@ checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "tramlines-core"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f03b92c886772d763083b5ec0324ff392524fa3f3a66d9b9c873b87785cb139d"
+checksum = "eff6440efb02ccf11862b646f5b0c9015326f188e93b2da424c9bb99926b22a8"
 dependencies = [
  "regex",
  "saphyr",
@@ -1523,9 +1523,9 @@ dependencies = [
 
 [[package]]
 name = "tramlines-md"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2d7c4c7e06bfdf8a5bf49bfb6ba8920a0eee85021e0c9ef9d97dfaf9362d499"
+checksum = "1a1e7ea12ebfeecdb692229558a3115d013a45386061841788103b858fd52912"
 dependencies = [
  "comrak",
  "regex",

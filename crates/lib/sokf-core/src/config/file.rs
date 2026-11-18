@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use super::excludes_d::AddedExclude;
 use crate::{Error, RepoPath, RepoRoot, Result, Severity, source::read_optional};
 
 // sokf-implements: CONF-1_AC-2
@@ -178,7 +179,7 @@ impl Default for KnowledgeSection {
 
 // sokf:begin config-repository
 /// `RepositorySection` holds the `[repository]` table (CONF-3): the
-/// `/`-rooted globs that the tool prunes from its walk of the repository
+/// `/`-rooted globs that the tool skips in its walk of the repository
 /// outside the knowledge roots. That walk finds the files that
 /// `additional-files` globs match.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -233,8 +234,12 @@ pub struct Config {
     /// end of `roots`. The roots before them are the own roots of
     /// `knowledge.roots` (CLI-6_AC-116).
     pub registered_count: usize,
-    /// `/`-rooted globs pruned from the repository walk.
+    /// The `/`-rooted globs of `repository.exclude`, pruned from the
+    /// repository walk.
     pub exclude: Vec<String>,
+    /// The `/`-rooted globs of the files of `/.sokf/excludes.d/`, each with
+    /// its file, pruned from the repository walk too.
+    pub added_exclude: Vec<AddedExclude>,
     /// The declined parts of each harness, by harness name.
     pub declined: BTreeMap<String, Vec<String>>,
     /// How a run reports markers.
@@ -249,6 +254,7 @@ impl Default for Config {
             roots: vec![RepoPath::parse("/knowledge").expect("literal")],
             registered_count: 0,
             exclude: Vec::new(),
+            added_exclude: Vec::new(),
             declined: BTreeMap::new(),
             markers: MarkerCheck::default(),
             format: FormatConfig::default(),
@@ -256,15 +262,43 @@ impl Default for Config {
     }
 }
 
+impl Config {
+    /// `excludes` returns every glob that the walk prunes: those of
+    /// `repository.exclude`, then those of `/.sokf/excludes.d/`.
+    pub fn excludes(&self) -> impl Iterator<Item = &str> {
+        self.exclude
+            .iter()
+            .map(String::as_str)
+            .chain(self.added_exclude.iter().map(|e| e.glob.as_str()))
+    }
+}
+
+/// `glob_fault` returns the message for a glob of the list `key`, such as
+/// `repository.exclude`, that isn't `/`-rooted or doesn't parse, and `None`
+/// for a glob that the walk can prune by.
+// sokf-implements: CONF-3_AC-5
+// sokf-implements: CONF-3_AC-6
+pub(super) fn glob_fault(key: &str, g: &str) -> Option<String> {
+    if !g.starts_with('/') {
+        return Some(format!("{key} glob `{g}` is not /-rooted"));
+    }
+    crate::walk::repo_glob(g)
+        .err()
+        .map(|e| format!("{key} glob `{g}` does not parse: {e}"))
+}
+
 /// `config_path` returns the path of the configuration file.
 pub fn config_path() -> RepoPath {
     RepoPath::parse("/.sokf/config.toml").expect("literal")
 }
 
-/// `load_config` reads `/.sokf/config.toml`, or returns the defaults when
-/// the file is absent. It refuses a file that does not parse, that holds a
-/// `[[pack]]` entry (CONF-1_AC-6), or that has an unknown key, a glob that is not `/`-rooted or does not parse, or a root
-/// that is not a directory.
+/// `load_config` reads `/.sokf/config.toml`, or returns the defaults when the
+/// file is absent. It refuses a file that does not parse, that holds a
+/// `[[pack]]` entry (CONF-1_AC-6), or that has an unknown key, a glob that is
+/// not `/`-rooted or does not parse, or a root that is not a directory. It also
+/// refuses a file of `/.sokf/excludes.d/` that does not parse, that has a key
+/// other than `exclude`, or that lists such a glob (CONF-3_AC-10,
+/// CONF-3_AC-11).
 pub fn load_config(root: &RepoRoot) -> Result<Config> {
     let path = config_path();
     let fs_path = path.to_fs(root);
@@ -311,21 +345,11 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
     let registered_count = registered.len();
     roots.extend(registered.into_iter().map(|r| r.root));
     for g in &file.repository.exclude {
-        // sokf-implements: CONF-3_AC-5
-        if !g.starts_with('/') {
-            return Err(Error::config(
-                path,
-                format!("repository.exclude glob `{g}` is not /-rooted"),
-            ));
-        }
-        // sokf-implements: CONF-3_AC-6
-        if let Err(e) = globset::Glob::new(g) {
-            return Err(Error::config(
-                path,
-                format!("repository.exclude glob `{g}` does not parse: {e}"),
-            ));
+        if let Some(m) = glob_fault("repository.exclude", g) {
+            return Err(Error::config(path, m));
         }
     }
+    let added_exclude = super::excludes_d::read_added(root)?;
     let declined = file.declined();
     let format = file
         .format
@@ -336,6 +360,7 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
         registered_count,
         declined,
         exclude: file.repository.exclude,
+        added_exclude,
         markers: file.markers.check,
         format,
     })
@@ -633,7 +658,7 @@ mod tests {
         let dir = temp("packs");
         let root = RepoRoot::new(dir.clone());
         for text in [
-            "[[pack]]\nname = \"@acme/method\"\nsource = \"./\"\n",
+            "[[pack]]\nname = \"@acme/tool\"\nsource = \"./\"\n",
             "[knowledge]\nroots = [\"/knowledge\"]\n\n[[pack]]\nname = \"rust\"\n",
             "pack = []\n",
         ] {

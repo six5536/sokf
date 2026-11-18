@@ -5,9 +5,10 @@
 
 use std::collections::BTreeMap;
 
+use tramlines_core::grammar::Lowerer;
 use tramlines_md::grammar::lower_common;
 
-use super::{Block, RuleCommon, Schema, Unit};
+use super::{Block, Limit, RegexCache, RuleCommon, Schema, States, TypeRegistry, Unit};
 use crate::{Finding, RepoPath, Spanned};
 
 /// `Dispatch` says which files a schema governs (`SOKF_SCHEMA_3`).
@@ -32,8 +33,10 @@ pub struct LinkRule {
     /// `min` is the fewest links allowed. It defaults to one when the key is
     /// absent.
     pub min: usize,
-    /// `max` is the most links allowed, if the entry sets it.
-    pub max: Option<usize>,
+    /// `max` is the limit on the links, if the entry sets it: a hard limit
+    /// bounds them, and a soft one bounds nothing. Its `when-at-limit` says
+    /// what the writer does at the limit.
+    pub max: Option<Limit>,
     /// `guidance`: the reason for the link, shown with the link.
     pub guidance: Option<String>,
 }
@@ -58,7 +61,7 @@ pub struct CitationRule {
     pub common: RuleCommon,
     /// `from-type` or `from-marker`.
     pub from: CitedFrom,
-    /// `keys` names the rule whose keys must each be cited. `None` means that
+    /// `keys` names the set of keys that must each be cited. `None` means that
     /// the document itself must be cited.
     pub keys: Option<String>,
     /// `message` is the sentence that the entry appends to each finding it
@@ -169,6 +172,14 @@ pub fn glob_inside(glob: &str, dir: &RepoPath) -> bool {
     prefix.starts_with(&dir)
 }
 
+impl LinkRule {
+    /// `banned` reports whether a hard limit of 0 bans the links of the
+    /// rule, so that a scaffold and a guide leave the rule out.
+    pub fn banned(&self) -> bool {
+        self.max.as_ref().and_then(Limit::hard) == Some(0)
+    }
+}
+
 impl SokfSchema {
     /// `type_root` returns the schema's `root`, the directory that holds
     /// the type's documents, as a path in the repository, when the schema
@@ -215,6 +226,7 @@ impl SokfSchema {
         let paths = path_dimensions(&core);
         let root = lw.ext("root").and_then(|r| r.as_str()).map(str::to_string);
         lw.check_archived();
+        lw.check_labels();
         lw.check_lifecycle(&paths, root.as_deref());
         lw.findings.extend(asset_globs(
             path,
@@ -261,6 +273,15 @@ impl SokfSchema {
     /// is, whether the schema declares `asset-files` (`SOKF_SCHEMA_11`).
     pub fn has_assets(&self) -> bool {
         !self.asset_files.is_empty()
+    }
+
+    /// `written_links` returns the link rules that a scaffold and a guide
+    /// show at `states`: each rule that the states admit, less each rule
+    /// that a hard limit of 0 bans.
+    pub fn written_links<'s>(&'s self, states: &'s States) -> impl Iterator<Item = &'s LinkRule> {
+        self.links
+            .iter()
+            .filter(|r| r.common.only.admits(states) && !r.banned())
     }
 
     /// `is_path` reports whether the lifecycle dimension `key` declares `path`.
@@ -398,6 +419,45 @@ impl<'a> Lowering<'a> {
         }
     }
 
+    /// `check_labels` refuses each key of `labels` other than `human` and
+    /// `agent`, the attribution labels, because sokf gives no other label its
+    /// words or a meaning, and `labels` without one of the two, because a
+    /// scaffold would then label what an agent writes `[human]`.
+    // sokf-implements: SOKF_SCHEMA_104
+    fn check_labels(&mut self) {
+        let Some(labels) = self.yaml.get("labels") else {
+            return;
+        };
+        let items = labels.as_seq().unwrap_or_default();
+        for key in crate::config::LABELS {
+            if !items.iter().any(|i| i.as_str() == Some(key)) {
+                self.findings.push(fail(
+                    self.path,
+                    labels.line,
+                    "SOKF_SCHEMA_104",
+                    format!(
+                        "`labels` holds no `{key}`; a schema declares both of sokf's labels, `human` and `agent`"
+                    ),
+                ));
+            }
+        }
+        for item in items {
+            let Some(key) = item.as_str() else {
+                continue;
+            };
+            if !crate::config::LABELS.contains(&key) {
+                self.findings.push(fail(
+                    self.path,
+                    item.line,
+                    "SOKF_SCHEMA_104",
+                    format!(
+                        "`labels` holds `{key}`, which is no label of sokf's; sokf's labels are `human` and `agent`"
+                    ),
+                ));
+            }
+        }
+    }
+
     /// `check_lifecycle` checks `lifecycle` and `root` against the rest of
     /// the schema: `lifecycle` doesn't come with `additional-files`, a
     /// path-enforced dimension of `paths` has a `root`, and `root` is a valid
@@ -438,6 +498,11 @@ impl<'a> Lowering<'a> {
     /// `links` reads the schema's `links` entries into link rules.
     fn links(&mut self) -> Vec<LinkRule> {
         let mut links = Vec::new();
+        // The engine reads the `max` of a link rule as it reads every other
+        // limit, and reports an empty `when-at-limit` and a `min` above it. The grammar's check
+        // has already refused a bare number and a map of the wrong keys.
+        let regexes = RegexCache::default();
+        let mut limits = Lowerer::new(&regexes, self.path, TypeRegistry::default());
         for node in self.ext("links").and_then(|l| l.as_seq()).unwrap_or(&[]) {
             let (common, problems) = lower_common(node, &self.core.core, self.path);
             self.findings.extend(problems);
@@ -446,6 +511,14 @@ impl<'a> Lowering<'a> {
                     .and_then(Spanned::as_int)
                     .map(|i| usize::try_from(i).unwrap_or(0))
             };
+            let min = usize_of("min").unwrap_or(1);
+            // sokf-implements: EXT-8_AC-4
+            let max = limits.limit(node, "max");
+            // A `min` above the count of the `max`, soft or hard, is a
+            // mistake in the schema, as the engine finds for every other
+            // limit.
+            // sokf-implements: EXT-8_AC-7
+            limits.check_bounds(node.line, min, max.as_ref());
             links.push(LinkRule {
                 common,
                 rel: node
@@ -454,24 +527,26 @@ impl<'a> Lowering<'a> {
                     .unwrap_or_default()
                     .to_string(),
                 to_type: node.get("to-type").map(list).unwrap_or_default(),
-                min: usize_of("min").unwrap_or(1),
-                max: usize_of("max"),
+                min,
+                max,
                 guidance: node
                     .get("guidance")
                     .and_then(|g| g.as_str())
                     .map(str::to_string),
             });
         }
+        self.findings.append(&mut limits.findings);
         links
     }
 
     /// `cited_by` reads the schema's `cited-by` entries into citation rules,
-    /// and checks that each entry's `keys` names a rule that captures a key.
+    /// and checks that each entry's `keys` names a set of keys that holds a
+    /// key.
     fn cited_by(&mut self) -> Vec<CitationRule> {
         let path = self.path;
-        // A citation entry's `keys` identifies a rule of this schema that
-        // captures a key, and sokf resolves it as it resolves the rule of
-        // `for-each-key-of`.
+        // A citation entry's `keys` names a set of keys of this schema, the
+        // `rule-id` of a section or a block or a `key-of`, and sokf resolves it
+        // as the engine resolves `for-each-key-of`.
         // sokf-implements: EXT-9_AC-5
         let mut cited_by = Vec::new();
         for node in self.ext("cited-by").and_then(|l| l.as_seq()).unwrap_or(&[]) {

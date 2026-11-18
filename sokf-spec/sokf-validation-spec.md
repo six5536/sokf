@@ -3,7 +3,7 @@ type: SokfValidationSpecification
 id: sokf-validation-spec
 title: "SOKF: Validation specification"
 description: How a validator checks a knowledge store, what it reports, and what its fix repairs.
-version: "0.6"
+version: "0.7"
 status: draft
 ---
 
@@ -62,12 +62,14 @@ The validator runs one deterministic check, the document check, on the working t
 - <a id="sokf_validation_58"></a>SOKF_VALIDATION_58 [unwanted]: IF a marker cites a document whose `status` is `deprecated`, or a key of such a document, THEN the validator SHALL report a warning at the file and line of the marker.
 - <a id="sokf_validation_59"></a>SOKF_VALIDATION_59 [unwanted]: IF the target of an include block is a document whose `status` is `deprecated`, THEN the validator SHALL report a warning at the line of the include block's opening comment.
 - <a id="sokf_validation_60"></a>SOKF_VALIDATION_60 [unwanted]: IF the document that holds a citation of a deprecated document declares a `supersedes` link to the deprecated document, THEN the validator SHALL report no warning for that citation.
+- <a id="sokf_validation_66"></a>SOKF_VALIDATION_66 [unwanted]: IF a deprecated document declares a `superseded-by` link to the document that holds a citation of it, THEN the validator SHALL report no warning for that citation.
 - <a id="sokf_validation_61"></a>SOKF_VALIDATION_61 [unwanted]: IF the document that holds a citation of a deprecated document is archived, THEN the validator SHALL report no warning for that citation.
 - <a id="sokf_validation_62"></a>SOKF_VALIDATION_62 [unwanted]: IF the document that holds a citation of a deprecated document has the `status` `deprecated`, THEN the validator SHALL report no warning for that citation.
 - <a id="sokf_validation_63"></a>SOKF_VALIDATION_63 [ubiquitous]: the validator SHALL report no warning for a frontmatter `links` entry whose target is a deprecated document.
 - <a id="sokf_validation_64"></a>SOKF_VALIDATION_64 [optional]: WHERE a document declares a `supersedes` link to a deprecated document, the validator SHALL name the document that declares the link in each warning that SOKF_VALIDATION_57 to SOKF_VALIDATION_59 report about a citation of the deprecated document.
+- <a id="sokf_validation_65"></a>SOKF_VALIDATION_65 [optional]: WHERE a deprecated document declares a `superseded-by` link to another document, the validator SHALL name the target of the link in each warning that SOKF_VALIDATION_57 to SOKF_VALIDATION_59 report about a citation of the deprecated document.
 
-A citation of a deprecated document is a warning and never a failure, because the document still exists and resolves. SOKF_VALIDATION_57 to SOKF_VALIDATION_59 report the citations that still need to move to the replacement. A `links` entry has a body link that mirrors it ([format specification][sokf:sokf-format-spec] SOKF_FORMAT_75), and SOKF_VALIDATION_57 reports that link. A marker counts only in a run that reads markers.
+A citation of a deprecated document is a warning and never a failure, because the document still exists and resolves. SOKF_VALIDATION_57 to SOKF_VALIDATION_59 report the citations that still need to move to the replacement. A `links` entry has a body link that mirrors it ([format specification][sokf:sokf-format-spec] SOKF_FORMAT_75), and SOKF_VALIDATION_57 reports that link. A marker counts only in a run that reads markers. A `supersedes` link and a `superseded-by` link in the other direction record one relationship. SOKF_VALIDATION_64 and SOKF_VALIDATION_65 therefore name a replacement that both links record only once, and SOKF_VALIDATION_60 and SOKF_VALIDATION_66 leave out the same citations. No warning names the replacement of a replacement, and no warning names the deprecated document as its own replacement.
 
 The document check reports each reference to a former path that the fix (§3) does not rewrite, such as a former path in a `resource` field.
 

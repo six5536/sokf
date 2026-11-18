@@ -42,6 +42,7 @@ fn help_lists_the_visible_commands_and_hides_man() {
         "new",
         "graph",
         "locate",
+        "guide",
         "completions",
     ] {
         assert!(stdout.contains(verb), "{verb} missing from {stdout}");
@@ -266,22 +267,20 @@ fn info_formats_prints_each_layer_and_a_schema_view() {
     let f = Fixture::new("clean");
     let (stdout, _, code) = run(&["info", "formats", "--layer", "embedded"]);
     assert_eq!(code, 0);
-    // The types come first, the built-ins among them, then the formats.
+    // The types come first, the built-ins among them, then the formats, of
+    // which the tool embeds none.
     assert!(stdout.starts_with("types:\n"), "{stdout}");
-    assert!(stdout.contains("\nregistry:\n"), "{stdout}");
     assert!(stdout.contains("source: built-in"), "{stdout}");
-    assert!(stdout.contains("source: embedded"), "{stdout}");
+    assert!(stdout.ends_with("\nregistry: {}\n"), "{stdout}");
     let (_, stderr, code) = f.run(&["info", "formats", "--layer", "repo"]);
     assert_eq!(code, 2);
     assert!(
         stderr.starts_with("error: info: the repository has no /.sokf/formats.yaml"),
         "{stderr}"
     );
-    // The repository layer replaces `requirement-ears`. The requirement schema derives keys from
-    // `requirement-ears`, so the replacement must capture the key, or the schema breaks the grammar.
     f.write(
         ".sokf/formats.yaml",
-        "registry:\n  requirement-ears:\n    key: id\n    template: '${id:criterion-id} ${}'\n    example: CLI-1_AC-1 x\n",
+        "registry:\n  shade:\n    text: Red.\n    example: Red.\n",
     );
     let (stdout, _, code) = f.run(&["info", "formats", "--layer", "repo"]);
     assert_eq!(code, 0);
@@ -292,12 +291,14 @@ fn info_formats_prints_each_layer_and_a_schema_view() {
     let (stdout, _, code) = f.run(&["info", "formats"]);
     assert_eq!(code, 0);
     assert!(
-        stdout.contains("source: repo") && stdout.contains("user-story"),
+        stdout.contains("source: repo") && stdout.contains("shade"),
         "{stdout}"
     );
+    // The view of a schema adds the schema's own formats.
     let (stdout, _, code) = f.run(&["info", "formats", "--schema", "schema-requirement"]);
     assert_eq!(code, 0, "{stdout}");
     assert!(stdout.contains("source: repo"), "{stdout}");
+    assert!(stdout.contains("source: schema-requirement"), "{stdout}");
     let (_, stderr, code) = f.run(&["info", "formats", "--schema", "nope"]);
     assert_eq!(code, 2);
     assert_eq!(

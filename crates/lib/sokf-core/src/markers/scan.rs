@@ -2,7 +2,7 @@
 //! A case-insensitive search finds the lines that contain `sokf-` or
 //! `sokf:`, and the scan parses only those lines.
 
-use std::{ops::RangeInclusive, sync::OnceLock};
+use std::{ops::Range, sync::OnceLock};
 
 use regex::bytes::Regex;
 use serde::{Deserialize, Serialize};
@@ -85,33 +85,35 @@ pub fn is_binary(bytes: &[u8]) -> bool {
 /// `scan` returns the markers of the file at `path` and the faults in the
 /// lines that look like markers, in line order. It returns `None` for a
 /// binary file, which it doesn't read for markers (`SOKF_VALIDATION_50`).
-/// It passes by each line inside a fenced code block of a Markdown file,
-/// which is an example. It parses the file as Markdown only when a line
-/// gives a row or a directive, and parses it whole, as a body with no
-/// marker of a document, because a file outside the roots is no document,
-/// and a `---` that opens it is a rule. A file with a carriage return that
-/// no line feed follows, which the parser reads as a line ending, hides
-/// no line, because its lines would not match.
+/// It skips each line whose first word lies inside a fenced code block of
+/// a Markdown file, because such a block holds an example. It parses the
+/// file as Markdown only when a line holds a marker, or a fault in a line
+/// that looks like one, or when the file holds a directive. It then parses
+/// the whole file, from its first line, as a body without frontmatter and
+/// without the regions of a document's generated blocks, because a file
+/// outside the roots is not a document, and a `---` that opens the file is
+/// a thematic break. The scan then reads the bytes of the text that the
+/// parser read, with each byte that isn't UTF-8 replaced, because the bytes
+/// of the fences count from the start of that text.
 // sokf-implements: SOKF_FORMAT_250
 pub fn scan(path: &RepoPath, bytes: &[u8]) -> Option<Vec<MarkerRow>> {
     let rows = scan_lines(bytes, &[])?;
     let directive = || bytes.windows(DIRECTIVE.len()).any(|w| w == DIRECTIVE);
-    let lone_cr =
-        || bytes.windows(2).any(|w| w[0] == b'\r' && w[1] != b'\n') || bytes.ends_with(b"\r");
-    if !markdown::is_markdown(path) || (rows.is_empty() && !directive()) || lone_cr() {
+    if !markdown::is_markdown(path) || (rows.is_empty() && !directive()) {
         return Some(rows);
     }
     let text = String::from_utf8_lossy(bytes);
     let body = markdown::parse(&text, 1, &markdown::Segments::default());
-    scan_lines(bytes, &markdown::fenced_lines(&body, &text))
+    scan_lines(text.as_bytes(), &markdown::fenced_bytes(&body, &text))
 }
 
 /// `DIRECTIVE` begins every ignore directive.
 const DIRECTIVE: &[u8] = b"sokf:ignore-";
 
-/// `scan_lines` scans `bytes` for markers, and passes by each line of the
-/// ranges of `examples`, in the order of the lines, on which neither a
-/// marker nor a directive begins.
+/// `scan_lines` scans `bytes` for markers, and skips each line whose
+/// first word lies in one of the ranges of bytes of `examples`, in the
+/// order of the bytes: neither a marker nor a directive begins on that
+/// line.
 // sokf-implements: SOKF_FORMAT_142
 // sokf-implements: SOKF_FORMAT_143
 // sokf-implements: SOKF_FORMAT_144
@@ -119,11 +121,11 @@ const DIRECTIVE: &[u8] = b"sokf:ignore-";
 // sokf-implements: SOKF_FORMAT_152
 // sokf-implements: SOKF_FORMAT_153
 // sokf-implements: SOKF_VALIDATION_50
-fn scan_lines(bytes: &[u8], examples: &[RangeInclusive<usize>]) -> Option<Vec<MarkerRow>> {
+fn scan_lines(bytes: &[u8], examples: &[Range<usize>]) -> Option<Vec<MarkerRow>> {
     if is_binary(bytes) {
         return None;
     }
-    // The lines of the hits rise, so the scan passes each range once.
+    // The offsets of the hits rise, so the scan passes each range once.
     let mut example = examples.iter().peekable();
     let mut rows = Vec::new();
     // The scan tracks the line of the last hit and the offset where that
@@ -156,16 +158,18 @@ fn scan_lines(bytes: &[u8], examples: &[RangeInclusive<usize>]) -> Option<Vec<Ma
             continue;
         }
         last_line = line;
-        while example.next_if(|r| *r.end() < line).is_some() {}
-        if example.peek().is_some_and(|r| r.contains(&line)) {
-            continue;
-        }
         let end = bytes[start..]
             .iter()
             .position(|&b| b == b'\n')
             .map_or(bytes.len(), |i| start + i);
         let text = String::from_utf8_lossy(&bytes[start..end]);
         let word = first_word(&text);
+        // `first_word` trims only ASCII, which is one byte in `bytes` too.
+        let at = start + text.len() - word.len();
+        while example.next_if(|r| r.end <= at).is_some() {}
+        if example.peek().is_some_and(|r| r.contains(&at)) {
+            continue;
+        }
         if let Some(directive) = directive(word) {
             match (directive, open) {
                 (Directive::Begin, Some(_)) => rows.push(MarkerRow {
@@ -511,5 +515,17 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // A byte that isn't UTF-8 before a fence moves no fence off its lines,
+    // because the scan reads the text that the parser read.
+    // sokf-tests: SOKF_FORMAT_250
+    #[test]
+    fn a_byte_that_isnt_utf8_moves_no_fence() {
+        let mut bytes = b"# A ".to_vec();
+        bytes.extend([0xFF; 40]);
+        bytes.extend_from_slice(b"\n\n```\n// sokf-tests: X\n```\n\n// sokf-tests: Y\n");
+        let path = RepoPath::parse("/a.md").expect("a path");
+        assert_eq!(scan(&path, &bytes), Some(vec![marker(7, "tests", "Y")]));
     }
 }

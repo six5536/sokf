@@ -1,6 +1,5 @@
 ---
 source: crates/lib/sokf-core/tests/it/validate.rs
-assertion_line: 34
 expression: json(&report)
 ---
 {
@@ -12,7 +11,7 @@ expression: json(&report)
     {
       "path": "/knowledge/manifest.sokf.yaml",
       "line": 1,
-      "message": "the manifest declares sokf `0.5`. This tool implements `0.6` (SOKF_VALIDATION_3)"
+      "message": "the manifest declares sokf `0.5`. This tool implements `0.7`. Version 0.7 changes the schemas: each `max` is a map with its `when-at-limit`, and sokf supplies no line format. Fix the findings on the store's schemas, and then declare `sokf: \"0.7\"`. The changelog lists every change: https://github.com/six5536/sokf/blob/main/sokf-spec/changelog.md#07 (SOKF_VALIDATION_3)"
     },
     {
       "path": "/knowledge/manifest.sokf.yaml",

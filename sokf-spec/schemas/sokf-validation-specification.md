@@ -33,11 +33,10 @@ frontmatter:
   title:
     const: "SOKF: Validation specification"
   description:
-    guidance: The description says what the specification defines.
     example: "This specification defines the validation of a knowledge store: what a validator checks, what it reports, and what its fix repairs."
   version:
     template: '${:int}.${:int}'
-    example: "0.6"
+    example: "0.7"
     guidance: The version is the SOKF version that the document defines.
   status:
     enum: [draft, stable]
@@ -142,7 +141,8 @@ sections:
       - kind: prose
         rules:
           - text: "This specification defines validation in the Superdev Open Knowledge Format (SOKF): what a validator checks, reports, and repairs."
-            max: 1
+            rule-id: defining-sentence
+            max: { hard: 1, when-at-limit: "Write anything more as informative paragraphs after the fixed sentence." }
           - pattern: '.'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -166,7 +166,7 @@ sections:
     guidance: This section says, in fixed text, how the specification states its rules.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Put any other text in the section that it concerns." }
         each:
           text: "Each normative rule of this specification is a criterion in the EARS (Easy Approach to Requirements Syntax) form, and each has a key of the form `SOKF_VALIDATION_N`, where `N` is the number of the criterion."
   - heading: "1. Terminology"
@@ -175,11 +175,11 @@ sections:
     guidance: >
       This section defines each term that the specification adds to the terms of the format
       and schema specifications, one item for each term: the term's name in bold and a colon,
-      then what it is. The type `sokf-subject` lists these terms and those of the two
+      then what it is. Each further fact about a term has a sentence of its own. The type `sokf-subject` lists these terms and those of the two
       specifications, and the validator checks the subject of each criterion against it.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Define each term in an item of the list that follows." }
         each:
           text: "This specification uses the terms of the [format specification][sokf:sokf-format-spec] and the [schema specification][sokf:sokf-schema-spec], and adds these:"
       - kind: bullet-list
@@ -207,8 +207,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A statement of what has to be true is a criterion in a list. Only a
-          criterion has a key that the code and the tests cite.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          statement of what has to be true is a criterion in a list. Only a criterion
+          has a key that the code and the tests cite.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -221,9 +222,10 @@ sections:
           first, because each criterion after it adds to that one.
         rules:
           - template: '${id:sokf-rule-id} [ubiquitous]: the validator SHALL report a failure for each criterion of the [format specification][sokf:sokf-format-spec] and the [schema specification][sokf:sokf-schema-spec] that the knowledge store breaks.'
+            rule-id: first-criterion
             key: id
             unique: repository
-            max: 1
+            max: { hard: 1, when-at-limit: "State each further criterion in an item of its own." }
             example: 'SOKF_VALIDATION_1 [ubiquitous]: the validator SHALL report a failure for each criterion of the [format specification][sokf:sokf-format-spec] and the [schema specification][sokf:sokf-schema-spec] that the knowledge store breaks.'
           - format: sokf-criterion
             unique: repository
@@ -255,8 +257,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A statement of what has to be true is a criterion in a list. Only a
-          criterion has a key that the code and the tests cite.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          statement of what has to be true is a criterion in a list. Only a criterion
+          has a key that the code and the tests cite.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -269,7 +272,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item
-          names one thing in bold, followed by a colon, and then says what it is. A paragraph or a code block
+          names one thing in bold, followed by a colon, and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block
           separates two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion

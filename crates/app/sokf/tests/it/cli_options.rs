@@ -6,8 +6,8 @@ use common::Fixture;
 
 use crate::common;
 
-// `graph`, `locate`, `info`, and `new` without `--write` change no file in
-// the tree. They write only the cache under `/.sokf`.
+// `graph`, `guide`, `locate`, `info`, and `new` without `--write` change no
+// file in the tree. They write only the cache under `/.sokf`.
 // sokf-tests: CLI-9_AC-3
 #[test]
 fn the_commands_that_only_read_write_no_file() {
@@ -18,6 +18,8 @@ fn the_commands_that_only_read_write_no_file() {
         vec!["graph", "--json"],
         vec!["graph", "--mermaid"],
         vec!["locate", "overview"],
+        vec!["guide", "overview"],
+        vec!["guide", "overview", "--json"],
         vec!["info", "grammar"],
         vec!["info", "formats"],
         vec!["new", "Issue", "--slug", "retry-logic"],

@@ -24,7 +24,7 @@ fn demand_markers(tree: &TempTree) {
     let text = tree.read(rel)
         .replace(
             "each: { format: requirement-ears, unique: repository,",
-            "each: { format: requirement-ears, unique: repository, rule-id: criteria,",
+            "each: { format: requirement-ears, unique: repository, key-of: criteria,",
         )
         .replace(
             "    const: Requirement\n",

@@ -2,17 +2,17 @@
 //! `formats.d`, in which no file takes precedence over another (`TL_128`,
 //! CONF-11): it drops the declarations that are alike, refuses those that
 //! clash, gives the folder the types of `/.sokf/formats.yaml` that settle a
-//! clash, parses each file, and refuses a format below the folder that a
-//! type of the folder no longer compiles.
+//! clash, parses each file, and refuses what tramlines' `with_host` finds
+//! in the layer under `/.sokf/formats.yaml`.
 
 use std::collections::{BTreeMap, btree_map::Entry};
+
+use tramlines_core::grammar::BrokenFormat;
 
 use super::formats::{formats_path, layer_of, line_message};
 use crate::{
     Error, RepoPath, Result, Spanned, Yaml,
-    grammar::{
-        Format, FormatRegistry, FormatSource, Grammar, PackLayer, RegexCache, Segment, Shape,
-    },
+    grammar::{FormatRegistry, FormatSource, Grammar, PackLayer, RegexCache},
 };
 
 /// `settled_types` returns `below`, the layers under the folder, with the
@@ -22,7 +22,11 @@ use crate::{
 /// type. It drops each such type from each of `docs`, so that every file of
 /// the folder, and `with_packs` when it compiles a format of the folder
 /// again, compiles against the declaration that the run takes, and
-/// `with_packs` finds no clash in it.
+/// `with_packs` finds no clash in it. It also returns each format of
+/// `below` that no longer compiles against such a type. The layers keep
+/// each such format as `below` compiled it, so that a patch in
+/// `/.sokf/formats.yaml` can merge onto it. `unsettled` refuses the format
+/// unless `/.sokf/formats.yaml` declares it.
 // sokf-implements: CONF-11_AC-10
 pub(super) fn settled_types(
     docs: &mut [(RepoPath, Spanned)],
@@ -30,7 +34,7 @@ pub(super) fn settled_types(
     below: &FormatRegistry,
     grammar: &Grammar,
     regexes: &RegexCache,
-) -> Result<Option<FormatRegistry>> {
+) -> Result<Option<(FormatRegistry, Vec<BrokenFormat>)>> {
     let Some((repo_path, repo_doc)) = repo else {
         return Ok(None);
     };
@@ -86,155 +90,36 @@ pub(super) fn settled_types(
         below,
     )?
     .types;
-    let mut base = below.clone();
-    base.types = base.types.layered(&types);
-    Ok(Some(base))
-}
-
-/// `check_below` refuses each format of `below`, the layers under
-/// `/.sokf/formats.d/`, that a schema sees and that no longer compiles
-/// against a type of the folder that a schema sees, because `layered` keeps
-/// such a format as it was compiled against the type of its own layer. A
-/// schema sees a format that neither a file of `files` nor `repo` declares,
-/// since a patch of either compiles as the entry that it makes, and a type
-/// of `files` that `below` declares otherwise and `repo` doesn't declare.
-/// The format compiles against the types that a schema sees: those of
-/// `folder`, the folder's layer on `below`, with those of `repo` on top.
-/// The error names each such format, with its layer and each type of the
-/// folder or of `repo` that it uses and that differs from the one below,
-/// and lies on the file of the first type of the folder that it uses.
-// sokf-implements: CONF-11_AC-5
-// sokf-implements: CONF-11_AC-11
-pub(super) fn check_below(
-    below: &FormatRegistry,
-    folder: &FormatRegistry,
-    files: &[(RepoPath, FormatRegistry)],
-    repo: &FormatRegistry,
-    grammar: &Grammar,
-    regexes: &RegexCache,
-) -> Result<()> {
-    let mut type_file: BTreeMap<&str, &RepoPath> = BTreeMap::new();
-    for (path, file) in files {
-        for (name, (def, _)) in &file.types.entries {
-            // A type that a layer below declares alike changes nothing.
-            if below.types.get(name).is_some_and(|d| d != def)
-                && !repo.types.entries.contains_key(name)
-            {
-                type_file.entry(name.as_str()).or_insert(path);
-            }
-        }
-    }
-    if type_file.is_empty() {
-        return Ok(());
-    }
-    // A merged entry holds no `patch` key, so only the types of the base
-    // count.
-    let seen = FormatRegistry {
-        types: folder.types.layered(&repo.types),
+    // Each format below that uses a settled type compiles against it, as a
+    // schema sees it. The settled type is the same in `/.sokf/formats.yaml`,
+    // so `with_host` doesn't compile such a format again.
+    let settled = FormatRegistry {
+        types,
         ..FormatRegistry::default()
     };
-    let repo_path = formats_path();
-    let mut errors: Vec<(&RepoPath, String)> = Vec::new();
-    for (name, (format, source)) in &below.entries {
-        if files.iter().any(|(_, f)| f.entries.contains_key(name))
-            || repo.entries.contains_key(name)
-        {
-            continue;
-        }
-        // Each type of the folder that the format uses, and each type of
-        // `/.sokf/formats.yaml` that differs from the one below, which can
-        // be a cause too.
-        let mut used: Vec<(&str, &RepoPath)> = Vec::new();
-        for hole in holes(format) {
-            let file = type_file.get(hole).copied().or_else(|| {
-                repo.types
-                    .get(hole)
-                    .is_some_and(|d| below.types.get(hole) != Some(d))
-                    .then_some(&repo_path)
-            });
-            if let Some(file) = file
-                && !used.iter().any(|(u, _)| *u == hole)
-            {
-                used.push((hole, file));
-            }
-        }
-        let Some(&(_, path)) = used.iter().find(|(_, p)| **p != repo_path) else {
-            continue;
-        };
-        let raw = &format.raw;
-        let entry = Spanned::new(
-            Yaml::Map(vec![(Spanned::new(name.clone(), raw.line), raw.clone())]),
-            raw.line,
-        );
-        let again = FormatRegistry::from_yaml_at(
-            &entry,
-            None,
-            source.clone(),
-            grammar,
-            regexes,
-            path,
-            Some(&seen),
-        );
-        if let Err(findings) = again {
-            // The lines of the findings are those of the format's own file,
-            // and tramlines names the format before each.
-            let prefix = format!("format `{name}`: ");
-            let said: Vec<String> = findings
-                .iter()
-                .map(|f| {
-                    let m = crate::report::message(f);
-                    m.strip_prefix(&prefix).map_or(m.clone(), str::to_string)
-                })
-                .collect();
-            let types: Vec<String> = used
-                .iter()
-                .map(|(t, p)| match p {
-                    p if *p == path => format!("the type `{t}` of this file"),
-                    p => format!("the type `{t}` of `{p}`"),
-                })
-                .collect();
-            errors.push((
-                path,
-                format!(
-                    "the format `{name}` of the layer `{}` no longer compiles against {}: {}",
-                    source.label(),
-                    types.join(" and "),
-                    said.join("; ")
-                ),
-            ));
+    let (mut out, broken) = below.layered(&settled);
+    for b in &broken {
+        if let Some(entry) = below.entries.get(&b.name) {
+            out.entries.insert(b.name.clone(), entry.clone());
         }
     }
-    errors.sort_by(|a, b| a.0.cmp(b.0));
-    match errors.first() {
-        None => Ok(()),
-        Some((first, _)) => {
-            let messages: Vec<String> = errors
-                .iter()
-                .map(|(p, m)| match p {
-                    p if p == first => m.clone(),
-                    p => format!("{p}: {m}"),
-                })
-                .collect();
-            Err(Error::formats((*first).clone(), messages.join("; ")))
-        }
-    }
+    Ok(Some((out, broken)))
 }
 
-/// `holes` returns the type of each hole of each template of `format`.
-fn holes(format: &Format) -> impl Iterator<Item = &str> {
-    format
-        .shape
+/// `unsettled` refuses each format of `broken` unless `repo`, the repository
+/// layer, declares it in full or patches it, and reports tramlines' findings on
+/// `/.sokf/formats.yaml`. A format of `broken` lies below the folder and no
+/// longer compiles against a type that `/.sokf/formats.yaml` settles for the
+/// folder.
+// sokf-implements: CONF-11_AC-12
+pub(super) fn unsettled(broken: &[BrokenFormat], repo: &FormatRegistry) -> Result<()> {
+    let path = formats_path();
+    let findings: Vec<crate::Finding> = broken
         .iter()
-        .chain(format.variants.iter().map(|(_, v)| &v.shape))
-        .filter_map(|shape| match shape {
-            Shape::Template(t) => Some(t.segments.iter()),
-            _ => None,
-        })
-        .flatten()
-        .filter_map(|segment| match segment {
-            Segment::Hole { ty, .. } => Some(ty.as_str()),
-            Segment::Literal(_) => None,
-        })
+        .filter(|b| !repo.entries.contains_key(&b.name))
+        .flat_map(|b| b.findings(&path, None))
+        .collect();
+    refuse(&findings)
 }
 
 /// `folder_files` parses each of `docs`, the files of `/.sokf/formats.d/`,
@@ -277,12 +162,29 @@ pub(super) fn folder_files(
     Ok(files)
 }
 
-/// `refuse_findings` refuses what tramlines' `with_host` finds in the layer
-/// `folder` under `repo`: each format of the layer that no longer compiles,
-/// and any clash that its rule finds and sokf's doesn't, with the findings
-/// of every file.
-pub(super) fn refuse_findings(folder: &PackLayer, repo: &FormatRegistry) -> Result<()> {
-    let (_, findings) = folder.with_host(repo);
+/// `refuse_findings` lays `repo`, the repository layer, on `folder`, the
+/// layer `formats.d`, with tramlines' `with_host`, and returns the registry.
+/// It refuses what `with_host` finds, with the findings of every file:
+///
+/// - each format of the folder that no longer compiles;
+/// - each clash that `with_host`'s rule finds and sokf's `check_clashes`
+///   doesn't;
+/// - on `/.sokf/formats.yaml`, each format of the layers under `repo` that a
+///   type of `repo` breaks;
+/// - on the file that declares the first type of the folder that breaks
+///   the format, each format below the folder that a type of the folder
+///   breaks and `repo` leaves broken.
+// sokf-implements: CONF-11_AC-11
+// sokf-implements: CONF-11_AC-12
+pub(super) fn refuse_findings(folder: &PackLayer, repo: &FormatRegistry) -> Result<FormatRegistry> {
+    let (registry, findings) = folder.with_host(repo, &formats_path());
+    refuse(&findings)?;
+    Ok(registry)
+}
+
+/// `refuse` stops the run with the findings `findings` of formats files, on
+/// the file of the first, each of another file with its path.
+fn refuse(findings: &[crate::Finding]) -> Result<()> {
     if let Some(first) = findings.first() {
         let messages: Vec<String> = findings
             .iter()

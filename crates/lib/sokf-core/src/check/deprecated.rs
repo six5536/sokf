@@ -1,16 +1,17 @@
-//! This module reports the citations of a deprecated document. The link
-//! check, the include check, and the marker check record each citation with
-//! what the citing document says about itself, and the pass of each
-//! deprecated document reads them after every document is checked
-//! (`SOKF_VALIDATION_57` to `SOKF_VALIDATION_64`).
+//! This module reports the citations of a deprecated document. The link check,
+//! the include check, and the marker check record each citation with what the
+//! citing document says about itself. After every document is checked, a pass
+//! over each deprecated document reads these citations, with the document's own
+//! `superseded-by` links (`SOKF_VALIDATION_57` to `SOKF_VALIDATION_66`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Citation, Citations, Ctx, DocView};
 use crate::{
     Document, Finding, MarkerCheck, Model, RepoPath,
     graph::{Target, resolve_to},
-    model::{Query, Status},
+    model::{LinkEntry, Query, Status},
+    report::and_list,
 };
 
 /// A `Citer` describes the file that holds a citation, as the citation
@@ -49,15 +50,7 @@ impl Citer {
             || ctx
                 .model
                 .is_archived(k, core.type_.as_deref(), doc.frontmatter);
-        citer.superseded = core
-            .links
-            .iter()
-            .filter(|l| l.rel == "supersedes")
-            .filter_map(|l| match resolve_to(ctx.model, k, &l.to)? {
-                Target::Document { path, .. } => Some(path),
-                Target::File(_) => None,
-            })
-            .collect();
+        citer.superseded = linked_documents(ctx.model, k, &core.links, "supersedes");
         Some(citer)
     }
 
@@ -102,14 +95,17 @@ impl Citer {
     }
 }
 
-/// `check_document` reports each citation of `doc` when its status is
-/// `deprecated`. Each finding is a warning at the line of the citation, in
-/// the file that holds it. The pass leaves out a citation from a document
-/// that supersedes `doc` or that is retired, and a marker when the run reads
-/// no markers. Each warning names the documents that supersede `doc`: each
-/// document that declares a `supersedes` entry for it, with or without a
-/// body link. A frontmatter `links` entry is no citation, so it gets no
-/// warning.
+/// `check_document` reports each citation of `doc`, a document of the
+/// knowledge `k`, when its status is `deprecated`. Each finding is a warning
+/// at the line of the citation, in the file that holds it. The pass leaves
+/// out a citation from a document that supersedes `doc` or that is retired,
+/// and a marker when the run reads no markers. A document supersedes `doc`
+/// whichever end records the link: it declares a `supersedes` entry for
+/// `doc`, with or without a body link, or a `superseded-by` entry of `doc`
+/// resolves to it. Each warning names the documents that supersede `doc`,
+/// but not the documents that supersede those, and spells each id as the
+/// store of the citing file spells it. A frontmatter `links` entry is no
+/// citation, so it gets no warning.
 // sokf-implements: SOKF_VALIDATION_57
 // sokf-implements: SOKF_VALIDATION_58
 // sokf-implements: SOKF_VALIDATION_59
@@ -118,8 +114,15 @@ impl Citer {
 // sokf-implements: SOKF_VALIDATION_62
 // sokf-implements: SOKF_VALIDATION_63
 // sokf-implements: SOKF_VALIDATION_64
+// sokf-implements: SOKF_VALIDATION_65
+// sokf-implements: SOKF_VALIDATION_66
 // sokf-implements: CLI-4_AC-36
-pub fn check_document(model: &Model, citations: &Citations, doc: &Document) -> Vec<Finding> {
+pub fn check_document(
+    model: &Model,
+    citations: &Citations,
+    k: usize,
+    doc: &Document,
+) -> Vec<Finding> {
     if doc.core.status != Some(Status::Deprecated) {
         return Vec::new();
     }
@@ -135,22 +138,44 @@ pub fn check_document(model: &Model, citations: &Citations, doc: &Document) -> V
     for c in &cited {
         model.note(Query::Body(c.source.clone()));
     }
-    let mut superseders: Vec<String> = cited
+    // Only a citation from a document that is neither retired nor a
+    // replacement can warn. Without one, the pass looks up no replacement,
+    // and a new citation runs the pass again.
+    let warnable: Vec<&Citation> = cited
         .iter()
-        .filter(|c| c.supersedes)
-        .map(|c| match model.id_of(&c.source) {
-            Some((_, id)) => id,
-            None => c.source.to_string(),
-        })
+        .copied()
+        .filter(|c| !c.retired && !c.supersedes)
         .collect();
-    superseders.sort();
-    superseders.dedup();
+    if warnable.is_empty() {
+        return Vec::new();
+    }
+    // The model records the lookup of each `superseded-by` target, so a
+    // target that comes, goes, or changes its id checks `doc` again. A
+    // citation from such a target draws no warning. The replacements leave
+    // out `doc` itself, which can't replace itself.
+    let mut named = linked_documents(model, k, &doc.core.links, "superseded-by");
+    named.remove(&doc.path);
+    let mut replacements = named.clone();
+    replacements.extend(
+        cited
+            .iter()
+            .filter(|c| c.supersedes && c.source != doc.path)
+            .map(|c| c.source.clone()),
+    );
+    // Each warning spells each replacement as the store of the citing file
+    // spells it, so that the author can write the name there. A file
+    // outside every store takes the spelling of `doc`'s store.
+    let mut clauses: BTreeMap<usize, String> = BTreeMap::new();
     let name = doc.id().unwrap_or(doc.path.as_str());
-    let replaced = replaced_by(&superseders);
-    cited
+    warnable
         .iter()
-        .filter(|c| !c.supersedes && !c.retired)
+        .filter(|c| !named.contains(&c.source))
         .map(|c| {
+            let citing = model.knowledge_of(&c.source).unwrap_or(k);
+            let replaced = clauses
+                .entry(citing)
+                .or_insert_with(|| replaced_by(&spellings(model, citing, &replacements)))
+                .as_str();
             let at = match &c.slug {
                 Some(slug) => format!("`{name}#{slug}`, in `{name}`"),
                 None => format!("`{name}`"),
@@ -174,17 +199,52 @@ pub fn check_document(model: &Model, citations: &Citations, doc: &Document) -> V
         .collect()
 }
 
+/// `spellings` returns the name of each document of `replacements`, as a
+/// document of the knowledge `citing` spells its id, in alphabetical order
+/// and each once. A document in another store keeps its store prefix, so
+/// two replacements with one id in two stores keep two names. A document
+/// whose spelling is unknown, such as one in a store without an identity,
+/// is named by its path.
+fn spellings(model: &Model, citing: usize, replacements: &BTreeSet<RepoPath>) -> Vec<String> {
+    let mut names: Vec<String> = replacements
+        .iter()
+        .map(|path| {
+            model
+                .id_of(path)
+                .and_then(|(store, id)| model.canonical_include(citing, store, &id, None))
+                .unwrap_or_else(|| path.to_string())
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// `linked_documents` returns each document that an entry of `links` with
+/// the relationship `rel` resolves to, from the knowledge `k`. An entry
+/// that resolves to a file that isn't a document names none.
+fn linked_documents(model: &Model, k: usize, links: &[LinkEntry], rel: &str) -> BTreeSet<RepoPath> {
+    links
+        .iter()
+        .filter(|l| l.rel == rel)
+        .filter_map(|l| match resolve_to(model, k, &l.to)? {
+            Target::Document { path, .. } => Some(path),
+            Target::File(_) => None,
+        })
+        .collect()
+}
+
 /// `replaced_by` returns the clause that names the documents that supersede
 /// a deprecated one, such as `` : `design-cache` supersedes it ``, or an
 /// empty string when no document does.
 fn replaced_by(superseders: &[String]) -> String {
     let names: Vec<String> = superseders.iter().map(|s| format!("`{s}`")).collect();
-    match names.as_slice() {
-        [] => String::new(),
-        [one] => format!(": {one} supersedes it"),
-        [first, second] => format!(": {first} and {second} supersede it"),
-        [rest @ .., last] => format!(": {}, and {last} supersede it", rest.join(", ")),
-    }
+    let verb = match names.as_slice() {
+        [] => return String::new(),
+        [_] => "supersedes",
+        _ => "supersede",
+    };
+    format!(": {} {verb} it", and_list(&names))
 }
 
 #[cfg(test)]

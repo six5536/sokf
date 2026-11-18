@@ -13,12 +13,12 @@ use super::{
 };
 use crate::{
     Compiled, Expected, Finding, LineEnding, Located, Locator, Model, RepoPath, Result, Scope,
-    check::{self, Ctx, DocView, Placement, Repair},
+    check::{self, Ctx, DocView, LabelRepair, Placement, Repair},
     grammar::{SokfSchema, States},
     graph::{Target, resolve_to},
     include::{self, DefinitionEntry, render_definitions},
     index,
-    markdown::{IncludeTarget, LinkTarget, sokf_label},
+    markdown::{Body, IncludeTarget, LinkTarget, sokf_label},
     model::{
         KeyIndex,
         keys::{self, Label},
@@ -90,13 +90,20 @@ pub fn plan(
 
     let ctx = |knowledge: Option<usize>| Ctx::new(model, compiled, expected, keys, knowledge);
     // A fix touches no file of a store whose `extends` is broken
-    // (FORMAT-5_AC-12).
+    // (FORMAT-5_AC-12), and no file whose schema breaks the grammar, because
+    // without the schema's rules every anchor of the file reads as one that
+    // names no key, and the repair of the anchors would remove them all
+    // (CLI-4_AC-106).
     // sokf-implements: FORMAT-5_AC-12
+    // sokf-implements: CLI-4_AC-106
     for (k, doc) in model.documents() {
         if only.is_some_and(|o| !o.contains(&doc.path)) || model.in_broken_store(&doc.path) {
             continue;
         }
         let schema = compiled.for_doc(model, k, doc).map(|(_, c)| c);
+        if schema.is_none() && compiled.broken_for_doc(model, k, doc) {
+            continue;
+        }
         let states = schema
             .map(|c| check::states_of(doc.frontmatter.as_ref(), c))
             .unwrap_or_default();
@@ -137,6 +144,10 @@ pub fn plan(
     }
     for file in &model.additional {
         let schema = file.schema.and_then(|r| compiled.schema(r));
+        // sokf-implements: CLI-4_AC-106
+        if file.schema.is_some() && schema.is_none() {
+            continue;
+        }
         let view = check::additional_view(file);
         let k = include::knowledge_of_additional(model, file);
         plan_file(
@@ -507,6 +518,7 @@ fn plan_file(
     let in_scope = scope.contains(path);
     let mut includes: Vec<Edit> = Vec::new();
     let mut repairs: Vec<Repair> = Vec::new();
+    let mut labels: Vec<LabelRepair> = Vec::new();
     let mut placements: Option<(Vec<Placement>, Vec<Rename>)> = None;
     // A sidecar's `resource` is its asset's path after the moves
     // (SOKF_VALIDATION_22). The edit replaces the whole value, which can run
@@ -535,6 +547,8 @@ fn plan_file(
             schema.map(|c| check::check_against(view, c, states, ctx, Locator::schema("")));
         if let Some(checked) = checked {
             repairs = checked.repairs;
+            // sokf-implements: CLI-4_AC-108
+            labels = checked.label_repairs;
             if checked.anchors_stale || !renames.is_empty() {
                 placements = Some((checked.anchors, renames));
             }
@@ -542,7 +556,63 @@ fn plan_file(
             placements = Some((Vec::new(), renames));
         }
     }
-    let definition: Option<Edit> = expected
+    let definition = definition_of(view, expected, remap, in_scope);
+    if includes.is_empty()
+        && repairs.is_empty()
+        && labels.is_empty()
+        && definition.is_none()
+        && resource.is_none()
+        && placements.is_none()
+    {
+        return Ok(());
+    }
+    // Without a schema, the edit of the anchors places none, so over the body
+    // as parsed it would remove each anchor of the file. Over the body as
+    // written, it keeps each anchor as text and still respells the
+    // references (CLI-4_AC-107).
+    // sokf-implements: CLI-4_AC-107
+    let written = (schema.is_none() && placements.is_some() && !view.body.anchors.is_empty())
+        .then(|| as_written(view.body));
+    let anchors = placements.as_ref().map(|(placements, renames)| AnchorEdit {
+        body: written.as_ref().unwrap_or(view.body),
+        placements,
+        text: view.text,
+        renames,
+    });
+    let mut edits = includes;
+    edits.extend(definition);
+    edits.extend(resource.map(|r| r.edit()));
+    let text = rewrite(
+        view.text,
+        view.segments,
+        edits,
+        &repairs,
+        &labels,
+        anchors.as_ref(),
+    )?;
+    if text == view.text {
+        return Ok(());
+    }
+    out.rewrites.push(Rewrite {
+        path: remap.get(path).cloned().unwrap_or_else(|| path.clone()),
+        text,
+        eol,
+    });
+    Ok(())
+}
+
+/// `definition_of` returns the edit that regenerates the definition block of
+/// `view`, with each target that `remap` moves at its new path, where the
+/// block differs from what `expected` holds for it. Outside `in_scope`, it
+/// regenerates only a block that a move changes.
+fn definition_of(
+    view: DocView<'_>,
+    expected: &Expected,
+    remap: &HashMap<RepoPath, RepoPath>,
+    in_scope: bool,
+) -> Option<Edit> {
+    let path = view.path;
+    expected
         .definitions
         .get(path)
         .and_then(|d| d.as_ref())
@@ -574,178 +644,35 @@ fn plan_file(
                 }
             };
             differs.then(|| definition_edit(view.text, current.map(|d| d.line), &rendered))
-        });
-    if includes.is_empty()
-        && repairs.is_empty()
-        && definition.is_none()
-        && resource.is_none()
-        && placements.is_none()
-    {
-        return Ok(());
+        })
+}
+
+/// `as_written` returns `body` without its anchors, with each code span at
+/// its columns in the text as written, where the anchors still stand. An
+/// edit of the anchors over it removes no anchor, and makes each rename
+/// outside the code spans.
+fn as_written(body: &Body) -> Body {
+    // The anchors on `line` that stand before column `col` of the text
+    // without anchors, or at it when `at` holds, in bytes.
+    let before = |line: usize, col: usize, at: bool| -> usize {
+        body.anchors
+            .iter()
+            .filter(|a| a.line == line && (a.col < col || at && a.col == col))
+            .map(|a| a.rendered().len())
+            .sum()
+    };
+    let mut out = body.clone();
+    for span in &mut out.code_spans {
+        let (line, start, end) = *span;
+        *span = (
+            line,
+            start + before(line, start, true),
+            end + before(line, end, false),
+        );
     }
-    let anchors = placements.as_ref().map(|(placements, renames)| AnchorEdit {
-        body: view.body,
-        placements,
-        text: view.text,
-        renames,
-    });
-    let mut edits = includes;
-    edits.extend(definition);
-    edits.extend(resource.map(|r| r.edit()));
-    let text = rewrite(view.text, view.segments, edits, &repairs, anchors.as_ref())?;
-    if text == view.text {
-        return Ok(());
-    }
-    out.rewrites.push(Rewrite {
-        path: remap.get(path).cloned().unwrap_or_else(|| path.clone()),
-        text,
-        eol,
-    });
-    Ok(())
+    out.anchors.clear();
+    out
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{fs, path::Path};
-
-    use super::*;
-    use crate::{
-        Cache, CacheMode, RepoRoot, api::load_repository, config, config::RepoFormats, grammar,
-    };
-
-    /// `fixture` copies the `indexes` fixture to a directory, named for
-    /// `name`, under the temp directory, and returns its path.
-    fn fixture(name: &str) -> std::path::PathBuf {
-        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/indexes");
-        let dir = crate::test_support::fresh_dir(&format!("plan-{name}"));
-        copy(&source, &dir);
-        dir
-    }
-
-    fn copy(from: &Path, to: &Path) {
-        fs::create_dir_all(to).unwrap();
-        for entry in fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let target = to.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy(&entry.path(), &target);
-            } else {
-                fs::copy(entry.path(), target).unwrap();
-            }
-        }
-    }
-
-    fn plan_on(dir: &Path, scope: &Scope) -> FixPlan {
-        let root = RepoRoot::new(dir.to_path_buf());
-        let config = config::load_config(&root).unwrap();
-        let grammar = grammar::load_grammar().unwrap();
-        let cache = Cache::open(&root, CacheMode::Off);
-        let loaded =
-            load_repository(&root, &config, &grammar, &RepoFormats::default(), &cache).unwrap();
-        plan(
-            &loaded.model,
-            &loaded.compiled,
-            &loaded.expected,
-            &loaded.keys,
-            scope,
-            None,
-        )
-        .unwrap()
-    }
-
-    fn p(s: &str) -> RepoPath {
-        RepoPath::parse(s).unwrap()
-    }
-
-    fn paths(rewrites: &[Rewrite]) -> Vec<&str> {
-        rewrites.iter().map(|r| r.path.as_str()).collect()
-    }
-
-    // sokf-tests: SOKF_VALIDATION_33
-    // sokf-tests: SOKF_VALIDATION_36
-    // sokf-tests: CLI-4_AC-5
-    // sokf-tests: SOKF_VALIDATION_55
-    #[test]
-    fn indexes_are_planned_in_scope_and_where_a_move_touches() {
-        let dir = fixture("scope");
-        // With everything in scope, the plan moves the document, then
-        // creates some indexes and rewrites others to match the moved tree.
-        let all = plan_on(&dir, &Scope::all());
-        assert_eq!(all.moves.len(), 1);
-        assert_eq!(
-            paths(&all.creates),
-            vec![
-                "/knowledge/issues/closed/index.md",
-                "/knowledge/none/index.md"
-            ]
-        );
-        assert_eq!(
-            paths(&all.rewrites),
-            vec![
-                "/knowledge/issues/index.md",
-                "/knowledge/issues/open/index.md",
-                "/knowledge/sub/index.md"
-            ]
-        );
-        assert!(all.creates.iter().all(|c| c.eol == LineEnding::Lf));
-        // When `PATHS` contains only the document, the plan repairs the
-        // indexes that the move touches: the directory it leaves, the one it
-        // creates, and the parent that gains the new directory. It repairs
-        // nothing outside them.
-        let mut scope = Scope::default();
-        scope.add(p("/knowledge/issues/open/issue-001-move.md"));
-        let narrowed = plan_on(&dir, &scope);
-        assert_eq!(narrowed.moves.len(), 1);
-        assert_eq!(
-            paths(&narrowed.creates),
-            vec!["/knowledge/issues/closed/index.md"]
-        );
-        assert_eq!(
-            paths(&narrowed.rewrites),
-            vec![
-                "/knowledge/issues/index.md",
-                "/knowledge/issues/open/index.md"
-            ]
-        );
-        // When `PATHS` contains a directory, the plan repairs only that
-        // directory's index.
-        let mut scope = Scope::default();
-        scope.dirs.insert(p("/knowledge/sub"));
-        let sub = plan_on(&dir, &scope);
-        assert!(sub.moves.is_empty() && sub.creates.is_empty());
-        assert_eq!(paths(&sub.rewrites), vec!["/knowledge/sub/index.md"]);
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn a_value_ends_before_the_next_key() {
-        let text = "---\nresource: /k/a.png\ntitle: T\n---\n";
-        assert_eq!(value_end(text, 2), 3);
-        let text = "---\nresource:\n  - /a\n\n  - /b\n- /c\ntitle: T\n---\n";
-        assert_eq!(value_end(text, 2), 7);
-        let text = "---\nresource: |\n  /a\n\ntitle: T\n---\n";
-        assert_eq!(value_end(text, 2), 4);
-        let text = "---\nresource: /a\n---\n  indented body\n";
-        assert_eq!(value_end(text, 2), 3);
-    }
-
-    // sokf-tests: SOKF_VALIDATION_20
-    // sokf-tests: SOKF_VALIDATION_21
-    #[test]
-    fn a_refused_move_touches_no_index() {
-        let dir = fixture("refused");
-        fs::create_dir_all(dir.join("knowledge/issues/closed")).unwrap();
-        fs::write(
-            dir.join("knowledge/issues/closed/issue-001-move.md"),
-            "occupied\n",
-        )
-        .unwrap();
-        let mut scope = Scope::default();
-        scope.add(p("/knowledge/issues/open/issue-001-move.md"));
-        let out = plan_on(&dir, &scope);
-        assert_eq!(out.moves, [] as [crate::fix::plan::Move; 0]);
-        assert_eq!(out.refused.len(), 1);
-        assert!(out.creates.is_empty() && out.rewrites.is_empty(), "{out:?}");
-        fs::remove_dir_all(&dir).unwrap();
-    }
-}
+mod tests;

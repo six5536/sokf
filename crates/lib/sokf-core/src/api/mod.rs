@@ -4,6 +4,7 @@
 mod admit;
 mod dirty;
 mod graph;
+mod guide;
 mod harness;
 mod harness_stale;
 mod info;
@@ -16,6 +17,11 @@ mod validate;
 
 pub use admit::{admit_schema_by_id, admit_schemas_of_type};
 pub use graph::{GraphOptions, graph};
+pub use guide::{
+    BlockGuide, DocumentGuide, GuideCounts, GuideLabel, GuideLimit, GuideLimitKind, GuideOptions,
+    GuideReport, KeyGuide, LabelGuide, LinkGuide, PreambleGuide, RuleLabel, RuleLimit,
+    SectionGuide, guide,
+};
 pub use harness::{
     ALL_HARNESSES, HarnessDirs, HarnessOptions, HarnessReport, HarnessResult, PartResult,
     diff as harness_diff, harness_ids, install as harness_install, status as harness_status,

@@ -2,10 +2,12 @@
 //! `links`, which list the edges a document must declare and the edges it may
 //! declare.
 
+use tramlines_core::text;
+
 use super::{CheckOutput, Ctx, Gate};
 use crate::{
     Finding, Locator, RepoPath,
-    grammar::{SokfSchema, States},
+    grammar::{LinkRule, SokfSchema, States},
     graph::{Target, resolve_to},
     model::CoreFields,
 };
@@ -99,13 +101,8 @@ pub fn check(
                 if rule.min == 1 { "y" } else { "ies" }
             ));
         }
-        if let Some(max) = rule.max
-            && count > max
-        {
-            emit(format!(
-                "`links` allows at most {max} `{}` entries, but it has {count}",
-                rule.rel
-            ));
+        if let Some(message) = too_many(rule, count) {
+            emit(message);
         }
     }
     if !schema.links_open {
@@ -126,4 +123,24 @@ pub fn check(
             }
         }
     }
+}
+
+/// `too_many` returns the words of the finding on `count` links of `rule`,
+/// ending with the way out of its limit, where the links pass its hard
+/// limit, or `None` where they don't or the rule has no hard limit. A soft
+/// limit bounds nothing.
+// sokf-implements: EXT-8_AC-2
+// sokf-implements: EXT-8_AC-3
+// sokf-implements: SOKF_SCHEMA_103
+fn too_many(rule: &LinkRule, count: usize) -> Option<String> {
+    let limit = rule.max.as_ref()?;
+    let max = limit.hard().filter(|&max| count > max)?;
+    let entries = if max == 1 { "entry" } else { "entries" };
+    Some(text::at_limit(
+        format!(
+            "`links` allows at most {max} `{}` {entries}, but it has {count}",
+            rule.rel
+        ),
+        &limit.when_at_limit,
+    ))
 }

@@ -79,6 +79,24 @@ pub struct NewResult {
     pub index_error: Option<String>,
 }
 
+/// `refused` says that the schema of `type_name` in the store `knowledge`
+/// derives no scaffold, with one line for each of `refusals`, each with the
+/// line of its rule.
+// sokf-implements: CLI-6_AC-16
+// sokf-implements: CLI-6_AC-59
+fn refused(
+    model: &Model,
+    compiled: &grammar::Compiled,
+    knowledge: Option<usize>,
+    type_name: &str,
+    refusals: &[scaffold::Refusal],
+) -> Error {
+    let schema = knowledge
+        .and_then(|k| compiled.for_type(model, k, type_name))
+        .map(|(r, _)| model.schema(r).doc.path.clone());
+    Error::New(scaffold::no_template(type_name, schema.as_ref(), refusals))
+}
+
 /// `new` builds a document of a type from the scaffold of the type's schema,
 /// and writes it when `write` is set. When it refuses, it has written
 /// nothing.
@@ -100,7 +118,9 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
     let cache = Cache::open(root, opts.cache);
     let mut model = super::load_for_lookup(root, &config, &cache)?;
     super::admit_schemas_of_type(&mut model, root, &cache, type_name)?;
-    let compiled = grammar::compile_all(&model, grammar, &repo);
+    // sokf-implements: CONF-12_AC-7
+    let texts = config::load_texts(root)?;
+    let compiled = grammar::compile_all(&model, grammar, &repo, texts);
     let chosen = chosen_store(root, &model, opts, store, type_name)?;
     let (knowledge, schema) = scaffold::schema_for(&model, &compiled, type_name, chosen)?;
     // A qualified `Schema` goes in the `schemas/` directory of its store.
@@ -165,14 +185,11 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
     // The title comes before the scaffold, so that a type whose schema sets a
     // rule for `title` refuses before anything is built.
     let title = scaffold::title(type_name, schema, &states, opts.title.as_deref())?;
-    // sokf-implements: CLI-6_AC-16
-    // sokf-implements: CLI-6_AC-59
-    let seed = scaffold::seed(schema, &states).map_err(|refusals| {
-        let schema = knowledge
-            .and_then(|k| compiled.for_type(&model, k, type_name))
-            .map(|(r, _)| model.schema(r).doc.path.clone());
-        Error::New(scaffold::no_template(type_name, schema.as_ref(), &refusals))
-    })?;
+    let at = model.knowledge_of(&path);
+    let language = scaffold::language(&model, &compiled, schema, type_name, knowledge, at);
+    let words = scaffold::Words::new(&compiled.texts, language);
+    let seed = scaffold::seed(schema, &states, &words)
+        .map_err(|r| refused(&model, &compiled, knowledge, type_name, &r))?;
     let gated = scaffold::gate(&seed.document, &states);
     let identity = scaffold::identity(
         &id,

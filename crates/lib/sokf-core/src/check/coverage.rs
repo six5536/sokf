@@ -18,8 +18,8 @@ use crate::{
 /// block, seen from its target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Citation {
-    /// The slug of the fragment, which is a key or a heading, or `None`
-    /// when the citation links to the whole document.
+    /// The slug of the fragment, which is a key, a heading, or a kept
+    /// anchor, or `None` when the citation links to the whole document.
     pub slug: Option<String>,
     /// The citing document, or the file of the marker.
     pub source: RepoPath,

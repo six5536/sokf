@@ -130,6 +130,7 @@ proptest! {
     #[test]
     fn a_bound_unit_is_captured_or_reported(shapes in prop::collection::vec(any::<bool>(), 1..8)) {
         let tree = TempTree::fixture("clean");
+        tree.take_requirement_formats();
         tree.write("knowledge/schemas/capture.md", CAPTURE_SCHEMA);
         let items: Vec<String> = shapes
             .iter()
@@ -247,14 +248,16 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        example: 'One line of prose.'
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the detail in the list.' }
+        each:
+          pattern: '^[A-Z][a-z]'
+          example: 'The lead.'
       - kind: blockquote
         example: 'One quoted line.'
         optional: true
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the rest of the reason in the lead.' }
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: 'Remove the repeated CRITERIA line.' }
         each:
           text: CRITERIA
       - kind: bullet-list
@@ -267,8 +270,8 @@ proptest! {
 
     /// However many paragraphs a run holds, one rule matches each paragraph
     /// or the validator reports it once. The shape passes with the quote and
-    /// without it. A finding comes only from a paragraph that no rule has
-    /// room for, because each rule already holds its maximum.
+    /// without it. A finding comes only from a paragraph that no rule's shape
+    /// takes, because the text of each paragraph alone divides the run.
     #[test]
     fn dividing_a_run_conserves_its_paragraphs(quote in any::<bool>(), extra in 0usize..3) {
         let tree = TempTree::fixture("clean");
@@ -316,12 +319,12 @@ sections:
     blocks:
       - kind: prose
         optional: true
-        max: 2
+        max: { hard: 2, when-at-limit: 'Fold the rest into the claim.' }
         each:
           pattern: '^ASIDE '
           example: 'ASIDE one'
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: 'Write another claim in a document of its own.' }
         each:
           pattern: '^CLAIM '
           example: 'CLAIM one'

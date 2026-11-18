@@ -275,7 +275,7 @@ fn a_nested_store_keeps_its_numbers_to_itself() {
     );
     tree.write(
         "knowledge/vendor/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: vendor\nscope: test\n",
+        "sokf: \"0.7\"\nname: vendor\nscope: test\n",
     );
     committed(&tree);
     git(tree.dir(), &["switch", "-q", "-c", "vendored"]);

@@ -27,6 +27,16 @@ use crate::common;
 )]
 fn a_change_dirties_its_readers_and_no_other_document() {
     let tree = TempTree::fixture("clean");
+    // The requirement schema takes `requirement-ears` from the repository
+    // layer, rather than from its own formats, so that a change of that
+    // layer reaches it.
+    let rel = "knowledge/schemas/requirement.md";
+    let schema = tree.read(rel);
+    let own = schema
+        .find("\ntypes:\n")
+        .expect("the schema declares its formats");
+    tree.write(rel, &format!("{}\n````\n", &schema[..own]));
+    tree.take_requirement_formats();
     age(tree.dir(), 10);
     let (dirty, full, findings, _) = run(&tree);
     assert!(full);
@@ -111,7 +121,7 @@ fn a_change_dirties_its_readers_and_no_other_document() {
     // no other document.
     let rel = "knowledge/schemas/decision.md";
     let text = tree.read(rel);
-    edit(&tree, rel, &text.replacen("max: 8", "max: 1", 1));
+    edit(&tree, rel, &text.replacen("hard: 8", "hard: 1", 1));
     let (dirty, full, findings, _) = run(&tree);
     assert!(!full);
     assert_eq!(
@@ -131,10 +141,11 @@ fn a_change_dirties_its_readers_and_no_other_document() {
 
     // An edit to the formats file that adds a type that no schema uses
     // dirties no document.
+    let formats = crate::common::requirement_formats();
     edit(
         &tree,
         ".sokf/formats.yaml",
-        "registry: {}\ntypes:\n  extra: '[a-z]+'\n",
+        &formats.replacen("types:\n", "types:\n  extra: '[a-z]+'\n", 1),
     );
     let (dirty, full, findings, _) = run(&tree);
     assert!(!full);
@@ -148,7 +159,7 @@ fn a_change_dirties_its_readers_and_no_other_document() {
     edit(
         &tree,
         ".sokf/formats.yaml",
-        "registry: {}\ntypes:\n  criterion-id: '[A-Z]{1,12}-\\d+_AC-\\d+'\n",
+        &formats.replacen("_AC-\\d+'", "_AC-\\d{1,4}'", 1),
     );
     let (dirty, full, findings, _) = run(&tree);
     assert!(!full);

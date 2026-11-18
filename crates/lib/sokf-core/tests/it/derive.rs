@@ -44,7 +44,7 @@ sections:
     blocks:
       - kind: prose
         example: 'One line of prose.'
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the detail in the criteria.' }
   - heading: Criteria
     level: 2
     rule-id: criteria
@@ -74,13 +74,13 @@ sections:
           example: one | what it means
       - kind: blockquote
         example: 'One quoted line.'
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the rest of the shape in the table.' }
   - heading: Outcome
     level: 2
     only: { state: done }
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the detail of the work in its issue.' }
         each:
           example: What was done.
 ````
@@ -93,6 +93,7 @@ fn write_schema(tree: &TempTree, text: &str) {
 #[test]
 fn a_schema_with_no_templates_derives_one_per_state_and_passes() {
     let tree = TempTree::fixture("clean");
+    tree.take_requirement_formats();
     write_schema(&tree, DERIVED_SCHEMA);
     let report = tree.validate(false, CacheMode::Off);
     assert!(
@@ -111,6 +112,7 @@ fn a_schema_with_no_templates_derives_one_per_state_and_passes() {
 #[test]
 fn new_creates_a_document_from_the_derived_template() {
     let tree = TempTree::fixture("clean");
+    tree.take_requirement_formats();
     write_schema(&tree, DERIVED_SCHEMA);
     for state in ["draft", "done"] {
         let result = new(
@@ -142,6 +144,7 @@ fn new_creates_a_document_from_the_derived_template() {
 #[test]
 fn a_rule_the_derivation_cannot_satisfy_is_named() {
     let tree = TempTree::fixture("clean");
+    tree.take_requirement_formats();
     write_schema(
         &tree,
         &DERIVED_SCHEMA.replace(
@@ -255,7 +258,7 @@ sections:
     blocks:
       - kind: prose
         example: 'One line of prose.'
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the detail in a document of its own.' }
 ````
 ";
 
@@ -539,7 +542,7 @@ fn guidance_stands_before_what_it_guides_and_may_not_stay() {
     for wanted in [
         "title: Thing\n# sokf:guidance The person who answers for the decision.\nowner: someone\n",
         "links:\n  # sokf:guidance A decision this one depends on.\n  - rel: relates-to\n",
-        "---\n\n<!-- sokf:guidance The writer replaces each of the following examples with their own text. One decision, and the reason it was taken. -->\n\n# Thing\n",
+        "---\n\n<!-- sokf:guidance One decision, and the reason it was taken. -->\n\n# Thing\n",
         "<!-- sokf:guidance What made the other options worse. -->\n## Reason\n",
     ] {
         assert!(doc.contains(wanted), "{wanted}\n---\n{doc}");
@@ -615,7 +618,7 @@ sections:
               each:
                 template: 'Code: ${}'
                 example: 'Code: lookup.go'
-              max: 1
+              max: { hard: 1, when-at-limit: 'Name the other files of the part in its text.' }
 ````
 "#;
 
@@ -640,7 +643,7 @@ fn a_list_item_is_written_with_its_nested_blocks() {
     let made = new(&tree.root(), &o).unwrap();
     assert!(
         made.document
-            .contains("`Lookup` finds the address of a code.\n  - Code: lookup.go\n"),
+            .contains("`Lookup` finds the address of a code.\n  <!-- sokf:guidance At most 1 item. Never leave out or merge content to stay within the count. When at the limit: Name the other files of the part in its text. -->\n  - Code: lookup.go\n"),
         "{}",
         made.document
     );

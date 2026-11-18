@@ -1,10 +1,10 @@
 //! This module gates the text of a scaffold by its `sokf:only` markers. It
-//! follows the rule in the agent reference for what `sokf new` copies from a
-//! scaffold.
+//! follows the rule in the SOKF schema specification (§5) for what `sokf new`
+//! copies from a scaffold.
 
 use crate::{
     RepoPath, Source,
-    grammar::{Only, States},
+    grammar::States,
     markdown::{is_guidance_marker, is_only_marker, is_optional_mark, only_marker},
     model::{ParseMode, parse_source},
     source::split,
@@ -108,7 +108,7 @@ pub fn gate(document: &str, states: &States) -> String {
 /// `admitted` reports whether a marker admits the states. A malformed
 /// marker admits them, because the validator has already reported it.
 fn admitted(line: &str, states: &States) -> bool {
-    only_marker(line).is_none_or(|map| Only(map).admits(states))
+    only_marker(line).is_none_or(|condition| condition.admits(states))
 }
 
 /// `continuation_end` returns the index after the last continuation line of
@@ -222,6 +222,13 @@ mod tests {
             gate(top, &states(&[("a", "x")])),
             "# A\n\n# B\n\nb\n\n## B1\n\nb1\n"
         );
+        // A marker of several maps joined by ` | ` admits the states that any
+        // one of its maps admits.
+        let either = "# A\n\n<!-- sokf:only a=x | b=y -->\n## B\n\nb\n";
+        for kept in [&[("a", "x"), ("b", "z")], &[("a", "w"), ("b", "y")]] {
+            assert_eq!(gate(either, &states(kept)), "# A\n\n## B\n\nb\n");
+        }
+        assert_eq!(gate(either, &states(&[("a", "w"), ("b", "z")])), "# A\n\n");
         // A marker on the last line marks nothing.
         assert_eq!(
             gate("# A\n\n<!-- sokf:only a=x -->\n", &states(&[("a", "y")])),

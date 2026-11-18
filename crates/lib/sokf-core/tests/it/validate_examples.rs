@@ -158,7 +158,7 @@ sections:
     level: 1
     blocks:
       - kind: bullet-list
-        max: 3
+        max: { hard: 3, when-at-limit: 'Fold the rest into the include.' }
         each:
           pattern: '^NOTE: '
       - kind: include
@@ -172,8 +172,9 @@ sections:
 
 // A regex alone doesn't tell the writer what text to write, so a rule needs
 // an example. Each of the four rules whose error quotes a regex must declare
-// an `example`. `max: 3` needs none: a reader understands a count without
-// help. A prohibited pattern needs none: its error quotes the text it matched.
+// an `example`. A `max` needs none: its `when-at-limit` tells the writer
+// what to do past it. A prohibited pattern needs none: its error quotes the
+// text it matched.
 #[test]
 fn a_rule_that_declares_a_regex_explains_itself() {
     let tree = TempTree::fixture("clean");
@@ -236,10 +237,12 @@ sections:
       - kind: bullet-list
         rules:
           - select-pattern: '^NOTE: '
+            rule-id: note
             min: 0
-            max: 3
+            max: { hard: 3, when-at-limit: 'Fold the rest into the code.' }
           - select-pattern: '^TODO: '
-            max: 0
+            rule-id: todo
+            max: { hard: 0, when-at-limit: 'Finish the work that the line names, and remove the line.' }
       - kind: code
         lang: text
         each:
@@ -263,7 +266,7 @@ fn a_guarded_rule_states_its_own_lower_bound() {
     assert_eq!(
         messages,
         vec![
-            "21: a guarded rule states `min`: `min: 0` governs such units without demanding one, and a number demands that many (TLMD_92)",
+            "22: a guarded rule states `min`: `min: 0` governs such units without demanding one, and a number demands that many (TLMD_92)",
         ]
     );
 }

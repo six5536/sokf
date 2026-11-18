@@ -27,7 +27,8 @@ use crate::{
 pub struct CitationRow {
     /// The cited document.
     pub target: RepoPath,
-    /// The cited key or heading, or `None` for the whole document.
+    /// The cited key, heading, or kept anchor, or `None` for the whole
+    /// document.
     pub slug: Option<String>,
     /// The citing document.
     pub source: RepoPath,
@@ -59,7 +60,8 @@ pub struct CitationRow {
 pub struct CitedFact {
     /// The cited document.
     pub target: RepoPath,
-    /// The cited key or heading, or `None` for the whole document.
+    /// The cited key, heading, or kept anchor, or `None` for the whole
+    /// document.
     pub slug: Option<String>,
     /// The type of the citing document, or empty for a marker.
     pub source_type: String,
@@ -357,9 +359,10 @@ impl Cache {
             .insert(source.clone(), rows);
     }
 
-    /// `record_keys_of` keeps the keys that each document in `checked`
-    /// declares in this run. The commit writes them in place of the
-    /// document's rows in the cache.
+    /// `record_keys_of` records the keys that each document in `checked`
+    /// declares in this run, and the anchors that the engine keeps in the
+    /// document. The commit writes them in place of the document's rows in the
+    /// cache.
     pub fn record_keys_of(&self, keys: &KeyIndex, checked: &BTreeSet<RepoPath>) {
         let mut rows: BTreeMap<RepoPath, Vec<KeyEntry>> =
             checked.iter().map(|p| (p.clone(), Vec::new())).collect();
@@ -373,7 +376,12 @@ impl Cache {
         for list in rows.values_mut() {
             list.sort_by(|a, b| (a.line, &a.key).cmp(&(b.line, &b.key)));
         }
-        self.state.borrow_mut().keys_of.extend(rows);
+        let anchors = checked
+            .iter()
+            .map(|p| (p.clone(), keys.anchors.get(p).cloned().unwrap_or_default()));
+        let mut state = self.state.borrow_mut();
+        state.keys_of.extend(rows);
+        state.anchors_of.extend(anchors);
     }
 
     /// `record_probe` records what a path outside the walk names on disk,
@@ -513,25 +521,6 @@ impl Cache {
             .collect()
     }
 
-    /// `old_keys_of` returns the keys that the document at `path` declares,
-    /// as the cache recorded them, each as `(scope, slug, knowledge)`.
-    pub fn old_keys_of(&self, path: &RepoPath) -> BTreeSet<(String, String, usize)> {
-        self.conn()
-            .rows(
-                "SELECT scope, key, knowledge FROM keys WHERE path = ?1",
-                [path.as_str()],
-                |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        crate::markdown::slug(&r.get::<_, String>(1)?),
-                        r.get::<_, usize>(2)?,
-                    ))
-                },
-            )
-            .into_iter()
-            .collect()
-    }
-
     /// `stored_outputs` returns the stored findings of every document
     /// except those in `except`, whose checks this run ran (CLI-4_AC-20).
     pub fn stored_outputs(&self, except: &BTreeSet<RepoPath>) -> Vec<Finding> {
@@ -550,7 +539,8 @@ impl Cache {
 
     /// `commit_outputs` writes what the run recorded, inside the commit's
     /// transaction. It writes the outputs, queries, citations, edges, keys,
-    /// and probes, and it replaces all the rows of each checked document.
+    /// kept anchors, and probes, and it replaces all the rows of each checked
+    /// document.
     /// It also writes the asset pairings, the schemas, the fingerprint of
     /// the formats file, the additional files, the identities of the
     /// knowledge stores, and the hash of the formats file.
@@ -575,7 +565,8 @@ impl Cache {
     }
 
     /// `delete_gone` deletes the outputs, dependencies, citations, edges,
-    /// keys, and probes of each file that the walk no longer lists.
+    /// keys, kept anchors, and probes of each file that the walk no longer
+    /// lists.
     fn delete_gone(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut gone: Vec<&str> = state.removed.iter().map(RepoPath::as_str).collect();
         // When a directory is removed, the commit also deletes the rows of
@@ -594,6 +585,7 @@ impl Cache {
                 "DELETE FROM citations WHERE source = ?1",
                 "DELETE FROM edges WHERE source = ?1",
                 "DELETE FROM keys WHERE path = ?1",
+                "DELETE FROM anchors WHERE path = ?1",
                 "DELETE FROM probes WHERE path = ?1",
             ] {
                 conn.execute(sql, [path])?;
@@ -662,36 +654,6 @@ impl Cache {
                     i64::from(c.supersedes),
                     i64::from(c.retired),
                     i64::from(c.declared)
-                ])?;
-            }
-        }
-        Ok(())
-    }
-
-    /// `commit_keys` writes the keys of each checked document, in place of
-    /// the document's stored keys.
-    fn commit_keys(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
-        let mut del_keys = conn.prepare("DELETE FROM keys WHERE path = ?1")?;
-        let mut put_key = conn.prepare(
-            "INSERT INTO keys (path, key, slug, line, heading_slug, scope, knowledge, rule_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        )?;
-        for (path, entries) in &state.keys_of {
-            del_keys.execute([path.as_str()])?;
-            for e in entries {
-                let scope = match &e.scope {
-                    crate::grammar::KeyScope::Document => "document".to_string(),
-                    crate::grammar::KeyScope::Host(h) => h.clone(),
-                };
-                put_key.execute(params![
-                    path.as_str(),
-                    e.key,
-                    crate::markdown::slug(&e.key),
-                    e.line,
-                    e.heading_slug,
-                    scope,
-                    e.knowledge,
-                    e.rule_id
                 ])?;
             }
         }

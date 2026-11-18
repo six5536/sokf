@@ -195,16 +195,6 @@ pub fn project() -> Fixture {
     f
 }
 
-/// `METHOD` is the folder of the files of the sokf pack, each at the path
-/// where it lands in a project.
-pub const METHOD: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../packs/sokf/files");
-
-/// `take_method` copies each file of the sokf pack into the repository `f`,
-/// at its path, as pakf places it.
-pub fn take_method(f: &Fixture) {
-    copy_dir(Path::new(METHOD), &f.0);
-}
-
 /// `tree` returns every file of the repository `f`, `/.sokf/cache` and
 /// `/.git` aside, by its path from the root.
 pub fn tree(f: &Fixture) -> Vec<(String, Vec<u8>)> {
@@ -239,7 +229,7 @@ pub fn rand() -> u64 {
         .finish()
 }
 
-pub fn copy_dir(from: &Path, to: &Path) {
+fn copy_dir(from: &Path, to: &Path) {
     fs::create_dir_all(to).unwrap();
     for entry in fs::read_dir(from).unwrap() {
         let entry = entry.unwrap();

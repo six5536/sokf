@@ -218,7 +218,7 @@ mod tests {
         write(
             dir,
             "knowledge/manifest.sokf.yaml",
-            "sokf: \"0.6\"\nname: Project KB\nscope: test\n",
+            "sokf: \"0.7\"\nname: Project KB\nscope: test\n",
         );
         write(
             dir,
@@ -320,12 +320,12 @@ mod tests {
         write(
             &dir,
             "knowledge/manifest.sokf.yaml",
-            "sokf: \"0.6\"\nname: \"\"\n",
+            "sokf: \"0.7\"\nname: \"\"\n",
         );
         write(
             &dir,
             "knowledge/inner/manifest.sokf.yaml",
-            "sokf: \"0.6\"\nname: Inner\nscope: test\n",
+            "sokf: \"0.7\"\nname: Inner\nscope: test\n",
         );
         write(
             &dir,
@@ -335,7 +335,7 @@ mod tests {
         write(
             &dir,
             "docs/manifest.sokf.yaml",
-            "sokf: \"0.6\"\nname: [1]\n",
+            "sokf: \"0.7\"\nname: [1]\n",
         );
         let m = model_at(&dir, &["/knowledge", "/knowledge/inner", "/docs"]);
         let idx = expected(&m, &[]);

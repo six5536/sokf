@@ -181,7 +181,7 @@ impl Rng {
 pub fn write(tree: &TempTree, shape: &Shape) -> Synthetic {
     tree.write(
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: synthetic\nscope: test\ndescription: A synthetic store.\n",
+        "sokf: \"0.7\"\nname: synthetic\nscope: test\ndescription: A synthetic store.\n",
     );
     tree.write("knowledge/schemas/spec.md", SPEC_SCHEMA);
     tree.write("knowledge/schemas/note.md", NOTE_SCHEMA);

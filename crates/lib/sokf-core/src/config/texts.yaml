@@ -1,0 +1,44 @@
+# sokf's own texts in English. Each file `*.yaml` below /.sokf/texts.d/, and
+# /.sokf/texts.yaml, holds texts in the same shape, of another language or in
+# place of an entry of this file.
+en:
+  # The rule for writing a description, which `sokf new` writes before the
+  # `description` key of a scaffold: the format specification's definition
+  # of `description`.
+  description: >-
+    The text that the index shows beside the title, for a reader deciding
+    whether to open the document. It tells that reader what they need
+    beyond the title, in terms they already know, usually in one sentence.
+  # The words before the `when-at-limit` of a limit.
+  limit:
+    hard: "At most {count} {unit}. Never leave out or merge content to stay within the count. When at the limit:"
+    soft: "Usually up to {count} {unit}. Never leave out or merge content to stay within the count. When at the limit:"
+    # A hard limit of 0.
+    ban: "No {unit}. Instead:"
+  # The unit of a rule that binds a format or has a `rule-id`, and of a `links`
+  # rule. `{name}` is the format or the `rule-id`, or the `links` rule's `rel`.
+  rule-unit: "`{name}` {unit}"
+  # What a limit counts: `one` for a count of 1, `other` for any other
+  # count and for a ban.
+  units:
+    paragraph: { one: paragraph, other: paragraphs }
+    item: { one: item, other: items }
+    row: { one: row, other: rows }
+    line: { one: line, other: lines }
+    fence: { one: fence, other: fences }
+    image: { one: image, other: images }
+    definition: { one: definition, other: definitions }
+    repetition: { one: repetition, other: repetitions }
+    value: { one: value, other: values }
+    link: { one: link, other: links }
+    unit: { one: unit, other: units }
+  # The words of each attribution label, which a document writes between the
+  # label's brackets, such as `[agent]`. The English words are the keys.
+  labels:
+    human: human
+    agent: agent
+  # The meaning of each attribution label, which `sokf guide` prints after
+  # the label's words.
+  attribution:
+    human: A person said all of the text that the label covers, or confirmed all of it in so many words.
+    agent: An agent proposed the text that the label covers, or some of it.

@@ -65,7 +65,7 @@ fn init_in_another_directory_registers_it_and_prints_json() {
     );
     assert_eq!(
         fs::read_to_string(f.0.join("docs/kb/manifest.sokf.yaml")).unwrap(),
-        "sokf: \"0.6\"\nname: project-kb\nscope: test\ndescription: Knowledge for the project.\n"
+        "sokf: \"0.7\"\nname: project-kb\nscope: test\ndescription: Knowledge for the project.\n"
     );
     // `init` for a second store edits the config and reports it as `updated`.
     let (stdout, _, code) = f.run_here(&["init", "/knowledge", "--scope", "test"]);
@@ -159,7 +159,7 @@ fn init_without_scope_reads_the_owner_of_origin_in_lower_case() {
     assert_eq!(code, 0, "{stdout}{stderr}");
     assert_eq!(
         fs::read_to_string(f.0.join("knowledge/manifest.sokf.yaml")).unwrap(),
-        "sokf: \"0.6\"\nname: knowledge\nscope: ncoderz\n"
+        "sokf: \"0.7\"\nname: knowledge\nscope: ncoderz\n"
     );
 }
 
@@ -181,7 +181,7 @@ fn init_reads_the_origin_of_the_root_whatever_git_dir_names() {
     assert_eq!(code, 0, "{stdout}{stderr}");
     assert_eq!(
         fs::read_to_string(a.0.join("knowledge/manifest.sokf.yaml")).unwrap(),
-        "sokf: \"0.6\"\nname: knowledge\nscope: alpha\n"
+        "sokf: \"0.7\"\nname: knowledge\nscope: alpha\n"
     );
 }
 
@@ -269,27 +269,4 @@ fn init_over_documents_writes_the_manifest_and_warns_of_a_hand_written_index() {
         stdout.contains("/analysis/chuckie-egg/b.md: error:"),
         "{stdout}"
     );
-}
-
-// The files of the sokf pack, copied into a repository that `sokf init`
-// created, validate with no error, because the pack carries every format and
-// type that its schemas name in its file of `/.sokf/formats.d/`, and the new
-// repository has no `/.sokf/formats.yaml` to lend one.
-// sokf-tests: CLI-10_AC-5
-#[test]
-fn the_sokf_pack_validates_in_a_repository_that_init_created() {
-    let f = empty();
-    let (out, err, code) = f.run(&["init", "--scope", "example"]);
-    assert_eq!(code, 0, "{out}{err}");
-    crate::common::take_method(&f);
-    assert!(
-        f.path(".sokf/formats.d/pakf/@sokf/sokf/formats.yaml")
-            .is_file()
-    );
-    let (out, err, code) = f.run(&["validate", "--fix"]);
-    assert_eq!(code, 0, "{out}{err}");
-    assert!(!f.path(".sokf/formats.yaml").exists());
-    // A second run fixes nothing and finds nothing.
-    let (out, err, code) = f.run(&["validate", "--fix"]);
-    assert_eq!((code, out.as_str()), (0, "0 errors, 0 warnings\n"), "{err}");
 }

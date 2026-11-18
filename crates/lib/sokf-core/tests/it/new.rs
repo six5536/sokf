@@ -59,7 +59,7 @@ fn each_state_combination_is_seeded_gated_filled_and_placed() {
     );
     assert_eq!(
         r.document,
-        "---\ntype: Issue\nid: issue-002-retry-logic\ntitle: Retry logic\nstate: open\nkind: bug\nlinks:\n  # sokf:guidance The decision the issue delivers.\n  - rel: implements\n    to: target-id\n---\n\n<!-- sokf:guidance The writer replaces each of the following examples with their own text. -->\n\n# Retry logic\n\nThe index writer drops the entry of a moved file.\n\n<!-- sokf:guidance Steps that show the bug. -->\n## Reproduction\n\n1. Move a document with `--fix`.\n"
+        "---\ntype: Issue\nid: issue-002-retry-logic\ntitle: Retry logic\nstate: open\nkind: bug\nlinks:\n  # sokf:guidance The decision the issue delivers.\n  - rel: implements\n    to: target-id\n---\n\n# Retry logic\n\nThe index writer drops the entry of a moved file.\n\n<!-- sokf:guidance Steps that show the bug. -->\n## Reproduction\n\n1. Move a document with `--fix`.\n"
     );
     assert!(!r.created);
     // An open feature drops its Reproduction section.
@@ -84,7 +84,7 @@ fn each_state_combination_is_seeded_gated_filled_and_placed() {
     let r = issue(&tree, "done", &[("state", "closed"), ("kind", "feature")]).unwrap();
     assert_eq!(
         r.document,
-        "---\ntype: Issue\nid: issue-002-done\ntitle: Done\nstate: closed\nkind: feature\nlinks:\n  # sokf:guidance The decision the issue delivers.\n  - rel: implements\n    to: target-id\n---\n\n<!-- sokf:guidance The writer replaces each of the following examples with their own text. -->\n\n# Done\n\nThe index writer drops the entry of a moved file.\n\n<!-- sokf:guidance What was done. -->\n## Conclusion\n\nThe move now rewrites both indexes it touches.\n"
+        "---\ntype: Issue\nid: issue-002-done\ntitle: Done\nstate: closed\nkind: feature\nlinks:\n  # sokf:guidance The decision the issue delivers.\n  - rel: implements\n    to: target-id\n---\n\n# Done\n\nThe index writer drops the entry of a moved file.\n\n<!-- sokf:guidance What was done. -->\n## Conclusion\n\nThe move now rewrites both indexes it touches.\n"
     );
 }
 
@@ -187,7 +187,7 @@ fn a_type_with_no_template_takes_an_id_and_a_dir() {
     assert_eq!(r.path.as_str(), "/knowledge/note-retry.md");
     assert_eq!(
         r.document,
-        "---\ntype: Note\nid: note-retry\ntitle: Retry\n---\n\n<!-- sokf:guidance The writer replaces each of the following examples with their own text. -->\n\n# Retry\n\nMilk, bread, and the good coffee.\n"
+        "---\ntype: Note\nid: note-retry\ntitle: Retry\n---\n\n# Retry\n\n<!-- sokf:guidance At most 3 paragraphs. Never leave out or merge content to stay within the count. When at the limit: Start another note for the rest. -->\nMilk, bread, and the good coffee.\n"
     );
     // `--dir` accepts a path with or without a leading slash.
     for dir in ["knowledge/notes", "/knowledge/notes"] {
@@ -320,7 +320,7 @@ fn a_sidecar_is_created_beside_its_asset() {
     assert_eq!(r.path.as_str(), "/knowledge/media/draft/flowers.png.md");
     assert_eq!(
         r.document,
-        "---\ntype: Image\nid: flowers\ntitle: Flowers\nresource: /knowledge/media/draft/flowers.png\nstate: draft\n---\n\n<!-- sokf:guidance The writer replaces each of the following examples with their own text. -->\n\n<!-- sokf:guidance One line under the picture. -->\nFlowers on the kitchen table.\n"
+        "---\ntype: Image\nid: flowers\ntitle: Flowers\nresource: /knowledge/media/draft/flowers.png\nstate: draft\n---\n\n<!-- sokf:guidance One line under the picture. -->\n<!-- sokf:guidance At most 1 paragraph. Never leave out or merge content to stay within the count. When at the limit: Put more about the picture in a document that links it. -->\nFlowers on the kitchen table.\n"
     );
     // After the sidecar is written, its guidance deleted, and the index fixed,
     // the asset and its sidecar validate clean.
@@ -445,15 +445,17 @@ fn a_bound_paragraph_follows_the_filled_title() {
     tree.write(
         "knowledge/schemas/note.md",
         &schema.replace(
-            "        max: 3\n        example: Milk, bread, and the good coffee.\n",
-            "        max: 3\n        each: { text: { from: title } }\n",
+            "        max: { hard: 3, when-at-limit: \"Start another note for the rest.\" }\n        example: Milk, bread, and the good coffee.\n",
+            "        max: { hard: 3, when-at-limit: \"Start another note for the rest.\" }\n        each: { text: { from: title } }\n",
         ),
     );
     let mut o = new_options(tree.dir(), "Note");
     o.id = Some("note-retry".into());
     o.title = Some("Retry".into());
     let r = new(&tree.root(), &o).unwrap();
-    assert!(r.document.ends_with("# Retry\n\nRetry\n"), "{}", r.document);
+    assert!(r.document.ends_with(
+            "# Retry\n\n<!-- sokf:guidance At most 3 paragraphs. Never leave out or merge content to stay within the count. When at the limit: Start another note for the rest. -->\nRetry\n"
+        ), "{}", r.document);
 }
 
 // sokf-tests: CLI-6_AC-23

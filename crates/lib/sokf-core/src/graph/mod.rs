@@ -21,6 +21,6 @@ pub use json::{GraphJson, bounded, edge_json, node_json};
 pub use locate::{LocateReport, Location, locate};
 pub use model::{Edge, EdgeKind, Graph, Hydrator, Node, NodeKey, NodeKind};
 pub(crate) use near::{EdgeStore, edges_near};
-pub use start::{Start, is_key_reference, key_entry, resolve_id, resolve_start};
+pub use start::{Start, is_key_reference, key_entry, resolve_document, resolve_id, resolve_start};
 pub(crate) use traverse::starts;
 pub use traverse::{Count, Entry, GraphQuery, GraphResult, LIMIT, Row, Summary, run};

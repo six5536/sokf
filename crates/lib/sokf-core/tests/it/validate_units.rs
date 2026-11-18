@@ -11,6 +11,7 @@ use crate::common;
 #[test]
 fn a_format_patch_states_only_its_difference() {
     let tree = TempTree::fixture("clean");
+    tree.take_requirement_formats();
     // The schema patches the shared story format and drops its key, because
     // the heading holds the key. A null in the patch removes the field, as
     // in an RFC 7386 merge patch, so the patch also removes the template.
@@ -81,14 +82,16 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        example: 'One line of prose.'
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the detail in the list.' }
+        each:
+          pattern: '^[A-Z][a-z]'
+          example: 'The lead.'
       - kind: blockquote
         example: 'One quoted line.'
         optional: true
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the rest of the reason in the lead.' }
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: 'Remove the repeated CRITERIA line.' }
         each:
           text: CRITERIA
       - kind: bullet-list
@@ -147,7 +150,7 @@ fn lines_govern_an_html_block_and_bounds_hold_over_units() {
     let tree = TempTree::fixture("clean");
     tree.write(
         "knowledge/schemas/page.md",
-        "---\ntype: Schema\nid: schema-page\ndescription: An html block and a bounded list.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Page\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks:\n      - kind: html\n        each:\n          lines-open: true\n          lines:\n            - select-pattern: '<script'\n              min: 0\n              max: 0\n      - kind: bullet-list\n        rules:\n          - pattern: '^NOTE: '\n            min: 2\n            example: 'NOTE: one'\n````\n",
+        "---\ntype: Schema\nid: schema-page\ndescription: An html block and a bounded list.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Page\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks:\n      - kind: html\n        each:\n          lines-open: true\n          lines:\n            - select-pattern: '<script'\n              rule-id: script\n              min: 0\n              max: { hard: 0, when-at-limit: 'Remove the script: the page runs no code.' }\n      - kind: bullet-list\n        rules:\n          - pattern: '^NOTE: '\n            min: 2\n            example: 'NOTE: one'\n````\n",
     );
     // The line rule for `<script` allows no such line, so a block with no
     // script, such as the template's, passes. The `NOTE: ` rule on the
@@ -162,7 +165,7 @@ fn lines_govern_an_html_block_and_bounds_hold_over_units() {
     assert_eq!(
         messages,
         vec![
-            "10: the lines matching `<script`: at most 0 are allowed; there is 1",
+            "10: the lines matching `<script`: at most 0 are allowed; there is 1. When at the limit: Remove the script: the page runs no code.",
             "13: the items matching `^NOTE: `: at least 2 are needed; there is 1"
         ]
     );
@@ -173,7 +176,7 @@ fn a_free_block_order_never_divides_a_run() {
     let tree = TempTree::fixture("clean");
     tree.write(
         "knowledge/schemas/free.md",
-        "---\ntype: Schema\nid: schema-free\ndescription: Two prose rules, order free.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Free\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks-ordered: false\n    blocks:\n      - kind: prose\n        example: 'One line of prose.'\n        max: 1\n      - kind: prose\n        max: 1\n        optional: true\n        each:\n          text: LABEL\n````\n",
+        "---\ntype: Schema\nid: schema-free\ndescription: Two prose rules, order free.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Free\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks-ordered: false\n    blocks:\n      - kind: prose\n        example: 'One line of prose.'\n        max: { hard: 1, when-at-limit: 'Put the label in a block of its own.' }\n      - kind: prose\n        max: { hard: 1, when-at-limit: 'Remove the repeated LABEL line.' }\n        optional: true\n        each:\n          text: LABEL\n````\n",
     );
     // One run of two paragraphs stays one block, so the label never reaches
     // the second rule and the block holds one paragraph too many.
@@ -186,7 +189,9 @@ fn a_free_block_order_never_divides_a_run() {
         .collect();
     assert_eq!(
         messages,
-        vec!["the prose block allows at most 1 paragraph; it has 2"]
+        vec![
+            "the prose block allows at most 1 paragraph; it has 2. When at the limit: Put the label in a block of its own."
+        ]
     );
 }
 
@@ -300,6 +305,7 @@ sections:
 #[test]
 fn a_unit_ban_and_a_format_ban_read_what_their_rule_governs() {
     let tree = TempTree::fixture("clean");
+    tree.take_requirement_formats();
     tree.write("knowledge/schemas/banned.md", BANNED_SCHEMA);
     tree.write(
         "knowledge/banned-a.md",

@@ -13,7 +13,7 @@ use crate::{CACHE_DIR, CacheMode, Config, RepoRoot, collect, source};
 fn temp(name: &str) -> PathBuf {
     let dir = crate::test_support::fresh_dir(&format!("sync-{name}"));
     fs::create_dir_all(dir.join("knowledge")).unwrap();
-    fs::write(dir.join("knowledge/manifest.sokf.yaml"), "sokf: \"0.6\"\n").unwrap();
+    fs::write(dir.join("knowledge/manifest.sokf.yaml"), "sokf: \"0.7\"\n").unwrap();
     fs::write(
         dir.join("knowledge/a.md"),
         "---\ntype: A\nid: a\n---\n# A\n",

@@ -21,7 +21,7 @@ sections:
     guidance: The forces in play.
     blocks:
       - kind: prose
-        max: 2
+        max: { hard: 2, when-at-limit: "Put the history of the forces in a document of its own." }
         example: The index grows faster than a reader can scan it.
   - heading: Decision
     level: 2
@@ -34,7 +34,7 @@ sections:
     guidance: What follows, one consequence per item.
     blocks:
       - kind: bullet-list
-        max: 8
+        max: { hard: 8, when-at-limit: "Split the decision into smaller decisions." }
         example: An agent reads the index before it reads a document.
 prohibited-patterns:
   - pattern: '\bTODO\b'

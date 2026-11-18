@@ -6,6 +6,12 @@ mod lower;
 
 use super::*;
 
+/// `requirements` returns the fixture's formats of the lines of
+/// requirements documents, as an embedded layer.
+fn requirements() -> FormatRegistry {
+    crate::test_support::requirement_formats(&load_grammar().unwrap())
+}
+
 #[test]
 fn the_extension_adds_to_the_core() {
     let core = tramlines_md::grammar::load_grammar().unwrap();

@@ -1,0 +1,33 @@
+---
+source: crates/app/sokf/tests/it/cli_guide.rs
+expression: text
+---
+/knowledge/tasks/open/task-001-descale.md (Task, state=open)
+
+A task records one piece of work for one person. The text holds no TODO, because the task itself records what remains.
+
+Frontmatter:
+  tags: Usually up to 3 values. Never leave out or merge content to stay within the count. When at the limit: Keep the tags that a reader searches for.
+  owner: The owner is the person who does the work.
+  state: A task is open while its work remains.
+  links (depends-on): A depends-on link points to a task that has to finish first. At most 2 `depends-on` links. Never leave out or merge content to stay within the count. When at the limit: Merge the tasks that this one waits for.
+
+# <title>
+  The opening says why the work matters.
+  prose: The summary says what the work changes. Usually up to 1 paragraph. Never leave out or merge content to stay within the count. When at the limit: Put the details in the steps.
+
+## Steps
+  This section lists the steps in order.
+  numbered-list: Each step holds one action. A step holds no "then", because each step is one action.
+
+### Notes (absent, optional)
+  This section holds what a later step needs to know.
+
+/knowledge/notes/note-kettle.md (Note)
+
+Preamble:
+  The preamble says what the note is about.
+  prose: One paragraph introduces the note.
+
+## Details
+  bullet-list: Each item names one quirk, with its key before a colon.

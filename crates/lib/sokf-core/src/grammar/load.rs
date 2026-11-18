@@ -35,8 +35,8 @@ pub fn formats_text() -> &'static str {
 }
 
 /// `embedded_formats` builds the registry of the formats that the tool embeds:
-/// SOKF's reference types, followed by its shared formats.
-// sokf-implements: EXT-11_AC-1
+/// SOKF's reference types, followed by its shared formats, which hold
+/// none.
 pub fn embedded_formats(grammar: &Grammar, regexes: &RegexCache) -> crate::Result<FormatRegistry> {
     Ok(FormatRegistry::from_text(
         formats_text(),

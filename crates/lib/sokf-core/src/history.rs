@@ -20,15 +20,16 @@ use crate::{
 /// working tree and the index, against `HEAD`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum When {
-    /// A commit of the first-parent history of `HEAD`.
+    /// A commit of the first-parent history of `HEAD`, or of a merged
+    /// branch.
     Commit(String),
     /// The working tree or the index, against `HEAD`.
     WorkingTree,
 }
 
 /// A `Change` is one change to a file: where it lies, when it happened, in
-/// seconds since the epoch, and the text of the file before and after it.
-/// A text is `None` where the file is absent, where its blob is missing or
+/// seconds since the epoch, the text of the file before and after it, and
+/// the merge, for a change of a merge commit. A text is `None` where the file is absent, where its blob is missing or
 /// isn't UTF-8, or for a file whose texts the history doesn't read.
 #[derive(Debug, Clone)]
 pub(crate) struct Change {
@@ -40,6 +41,23 @@ pub(crate) struct Change {
     pub(crate) before: Option<String>,
     /// The text after the change.
     pub(crate) after: Option<String>,
+    /// The merge, for a change of a merge commit.
+    pub(crate) merge: Option<Merge>,
+}
+
+/// A `Merge` is what the history needs to read the merged branch of a merge
+/// commit: the merge, its first parent, its other parents, and the path of
+/// the file in the merge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Merge {
+    /// The merge commit.
+    commit: String,
+    /// The first parent.
+    first: String,
+    /// The other parents.
+    others: Vec<String>,
+    /// The path of the file in the merge.
+    path: RepoPath,
 }
 
 /// A `Failed` says that a `git` that the history needed failed, so that
@@ -139,14 +157,14 @@ impl History {
         id: Option<&str>,
         asset: Option<&RepoPath>,
     ) -> Result<Changes, Failed> {
-        let mut entries = log(&self.git, path)?;
+        let mut entries = log(&self.git, &["HEAD"], path)?;
         let mut from = None;
         // A file that `HEAD` deleted at the path is another file, whose
         // history isn't the document's.
         if entries.first().is_none_or(|e| e.after.is_none()) {
             from = self.moved_from(path, id)?;
             entries = match &from {
-                Some(from) => log(&self.git, from)?,
+                Some(from) => log(&self.git, &["HEAD"], from)?,
                 None => Vec::new(),
             };
         }
@@ -178,17 +196,8 @@ impl History {
         path: &RepoPath,
         text: &str,
     ) -> Result<Vec<Change>, Failed> {
-        let texts = self.git.blobs(
-            entries
-                .iter()
-                .flat_map(|e| [e.before.as_deref(), e.after.as_deref()])
-                .flatten(),
-        );
-        let text_of = |oid: &Option<String>| {
-            oid.as_ref()
-                .and_then(|o| texts.get(o).cloned().flatten())
-                .map(|t| t.replace("\r\n", "\n"))
-        };
+        let texts = self.texts(entries);
+        let text_of = |oid: &Option<String>| text_of(&texts, oid.as_deref());
         // The newest entry gives the blob of `HEAD`, a rename among them.
         let head = entries.first().and_then(|e| e.after.as_ref());
         let mut changes = Vec::new();
@@ -209,6 +218,7 @@ impl History {
                 time: self.now,
                 before,
                 after: Some(text.to_string()),
+                merge: None,
             });
         }
         changes.extend(commits(entries, text_of));
@@ -222,10 +232,10 @@ impl History {
     /// commit. An asset that git never tracked has no change, because git
     /// holds no history of it.
     fn asset(&self, path: &RepoPath, before: Option<&RepoPath>) -> Result<Vec<Change>, Failed> {
-        let mut entries = log(&self.git, path)?;
+        let mut entries = log(&self.git, &["HEAD"], path)?;
         if entries.first().is_none_or(|e| e.after.is_none()) {
             entries = match before {
-                Some(before) => log(&self.git, before)?,
+                Some(before) => log(&self.git, &["HEAD"], before)?,
                 None => Vec::new(),
             };
         }
@@ -240,10 +250,91 @@ impl History {
                 time: self.now,
                 before: None,
                 after: None,
+                merge: None,
             });
         }
         changes.extend(commits(&entries, |_| None));
         Ok(changes)
+    }
+
+    /// `merged` returns the changes on the merged branch of `merge`: one
+    /// `Changes` for each parent after the first, in order. Each holds, newest
+    /// first, the changes that the commits of that parent's first-parent
+    /// history make to the document and, where `asset` is set, to the sidecar's
+    /// asset, without the commits that the first parent reaches. It returns
+    /// `Failed` where a `git` command fails. The history must be readable.
+    ///
+    /// The document lies on the branch at its path in the merge, or, where
+    /// the first parent moved it after the branch parted, at the path that
+    /// the merge moved it from. A sidecar is named after its asset, so the
+    /// asset lies at the sidecar's path without its `.md`.
+    // sokf-implements: CLI-4_AC-105
+    pub(crate) fn merged(&self, merge: &Merge, asset: bool) -> Result<Vec<Changes>, Failed> {
+        let exclude = format!("^{}", merge.first);
+        let mut branches = Vec::new();
+        for parent in &merge.others {
+            let mut changes = Changes::default();
+            let revs = [parent.as_str(), exclude.as_str()];
+            let mut path = merge.path.clone();
+            let mut entries = log(&self.git, &revs, &path)?;
+            if entries.is_empty()
+                && let Some(from) = self.renamed(parent, merge)?
+            {
+                entries = log(&self.git, &revs, &from)?;
+                path = from;
+            }
+            let texts = self.texts(&entries);
+            changes
+                .document
+                .extend(commits(&entries, |oid| text_of(&texts, oid.as_deref())));
+            if let Some(path) = asset
+                .then(|| path.as_str().strip_suffix(".md"))
+                .flatten()
+                .and_then(RepoPath::parse)
+            {
+                changes
+                    .asset
+                    .extend(commits(&log(&self.git, &revs, &path)?, |_| None));
+            }
+            branches.push(changes);
+        }
+        Ok(branches)
+    }
+
+    /// `renamed` returns the file of `parent` that `merge` moved to the
+    /// document's path in the merge, through one `git diff-tree -M`, where
+    /// the merge moved one. `-l0` lifts the limit of the files that rename
+    /// detection compares, because the diff spans every change of the first
+    /// parent since the branch parted.
+    fn renamed(&self, parent: &str, merge: &Merge) -> Result<Option<RepoPath>, Failed> {
+        let out = self
+            .git
+            .run(&[
+                "diff-tree",
+                "-r",
+                "-M",
+                "-l0",
+                "--raw",
+                "-z",
+                "--no-commit-id",
+                parent,
+                &merge.commit,
+            ])
+            .ok_or(Failed)?;
+        Ok(renames(&out)
+            .get(merge.path.relative())
+            .and_then(|from| RepoPath::parse(&format!("/{from}"))))
+    }
+
+    /// `texts` reads the text of each blob of `entries` through one `git
+    /// cat-file --batch`.
+    fn texts(&self, entries: &[Entry]) -> BTreeMap<String, Option<String>> {
+        self.git.blobs(
+            entries
+                .iter()
+                .flat_map(|e| [e.before.as_deref(), e.after.as_deref()])
+                .flatten(),
+        )
     }
 
     /// `moved_from` returns the file that the document at `path`, which
@@ -262,16 +353,7 @@ impl History {
                 "--no-color",
                 "HEAD",
             ])?;
-            Some(
-                git::raw(&out)
-                    .into_iter()
-                    .filter(|r| r.status.starts_with('R'))
-                    .filter_map(|r| match r.paths.as_slice() {
-                        [from, to] => Some((to.clone(), from.clone())),
-                        _ => None,
-                    })
-                    .collect(),
-            )
+            Some(renames(&out))
         });
         let renames = renames.as_ref().ok_or(Failed)?;
         if let Some(from) = renames.get(path.relative()) {
@@ -314,9 +396,29 @@ impl History {
     }
 }
 
+/// `renames` returns the renames of the raw output `out` of a diff, from
+/// each new path to its old one.
+fn renames(out: &[u8]) -> BTreeMap<String, String> {
+    git::raw(out)
+        .into_iter()
+        .filter(|r| r.status.starts_with('R'))
+        .filter_map(|r| match r.paths.as_slice() {
+            [from, to] => Some((to.clone(), from.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `text_of` returns the text of the blob `oid` among `texts`, with LF line
+/// endings.
+fn text_of(texts: &BTreeMap<String, Option<String>>, oid: Option<&str>) -> Option<String> {
+    oid.and_then(|o| texts.get(o).cloned().flatten())
+        .map(|t| t.replace("\r\n", "\n"))
+}
+
 /// `commits` returns the changes of the commits of `entries`, with the
 /// texts that `text_of` gives each blob. A rename whose blob stays the same
-/// changes nothing.
+/// changes nothing. A change of a merge commit names its merge.
 fn commits<'a>(
     entries: &'a [Entry],
     text_of: impl Fn(&Option<String>) -> Option<String> + 'a,
@@ -329,6 +431,17 @@ fn commits<'a>(
             time: e.time,
             before: text_of(&e.before),
             after: text_of(&e.after),
+            merge: match e.parents.split_first() {
+                Some((first, others)) if !others.is_empty() => {
+                    RepoPath::parse(&format!("/{}", e.path)).map(|path| Merge {
+                        commit: e.commit.clone(),
+                        first: first.clone(),
+                        others: others.to_vec(),
+                        path,
+                    })
+                }
+                _ => None,
+            },
         })
 }
 
@@ -377,47 +490,48 @@ fn now() -> i64 {
 }
 
 /// An `Entry` is one change of a commit to a file, as `git log --raw`
-/// gives it: the commit, its committer date, and the blobs of the file
-/// before and after, which are `None` where the file is absent.
+/// gives it: the commit, its committer date, its parents, the blobs of the
+/// file before and after, which are `None` where the file is absent, and
+/// the path of the file after, from the top of the worktree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Entry {
     commit: String,
     time: i64,
+    parents: Vec<String>,
     before: Option<String>,
     after: Option<String>,
+    path: String,
 }
 
 /// `log` returns each change to the file at `path` on the first-parent
-/// history of `HEAD`, newest first, across each rename of the file, with
-/// the committer date of its commit, or `Failed` where `git log` fails. A
-/// merge counts by its change against its first parent, which is when the
-/// change reached the branch.
+/// history of the commits of `revs`, newest first, across each rename of
+/// the file, with the committer date of its commit, or `Failed` where `git
+/// log` fails. A merge counts by its change against its first parent, which
+/// is when the change reached the branch.
 // sokf-implements: CLI-4_AC-93
 // sokf-implements: CLI-4_AC-94
-fn log(git: &Git, path: &RepoPath) -> Result<Vec<Entry>, Failed> {
-    let out = git
-        .run(&[
-            "log",
-            "-m",
-            "--first-parent",
-            "--follow",
-            "--root",
-            "--raw",
-            "--no-abbrev",
-            "--no-color",
-            "--no-show-signature",
-            "-z",
-            "--format=commit %H %ct",
-            "HEAD",
-            "--",
-            path.relative(),
-        ])
-        .ok_or(Failed)?;
+fn log(git: &Git, revs: &[&str], path: &RepoPath) -> Result<Vec<Entry>, Failed> {
+    let mut args = vec![
+        "log",
+        "-m",
+        "--first-parent",
+        "--follow",
+        "--root",
+        "--raw",
+        "--no-abbrev",
+        "--no-color",
+        "--no-show-signature",
+        "-z",
+        "--format=commit %H %ct %P",
+    ];
+    args.extend(revs);
+    args.extend(["--", path.relative()]);
+    let out = git.run(&args).ok_or(Failed)?;
     Ok(entries(&out))
 }
 
 /// `entries` returns the entries of the output of `log`, whose format gives
-/// each commit as `commit <id> <time>` before its raw entries.
+/// each commit as `commit <id> <time> <parents>` before its raw entries.
 fn entries(out: &[u8]) -> Vec<Entry> {
     git::raw(out)
         .into_iter()
@@ -429,8 +543,10 @@ fn entries(out: &[u8]) -> Vec<Entry> {
             Some(Entry {
                 commit,
                 time,
+                parents: parts.filter(|p| !p.is_empty()).map(String::from).collect(),
                 before: r.before,
                 after: r.after,
+                path: r.paths.last()?.clone(),
             })
         })
         .collect()
@@ -442,7 +558,7 @@ mod tests {
 
     #[test]
     fn the_entries_of_a_log_hold_each_change_with_its_commit() {
-        let out = b"commit aaa 200\0\n:100644 100644 1111 2222 M\0b/x.md\0\0commit bbb 100\0\n:100644 100644 1111 1111 R100\0a/x.md\0b/x.md\0\0commit ccc 50\0\n:000000 100644 0000 1111 A\0a/x.md\0";
+        let out = b"commit aaa 200 bbb ddd\0\n:100644 100644 1111 2222 M\0b/x.md\0\0commit bbb 100 ccc\0\n:100644 100644 1111 1111 R100\0a/x.md\0b/x.md\0\0commit ccc 50 \0\n:000000 100644 0000 1111 A\0a/x.md\0";
         let found = entries(out);
         assert_eq!(
             found,
@@ -450,21 +566,40 @@ mod tests {
                 Entry {
                     commit: "aaa".into(),
                     time: 200,
+                    parents: vec!["bbb".into(), "ddd".into()],
                     before: Some("1111".into()),
                     after: Some("2222".into()),
+                    path: "b/x.md".into(),
                 },
                 Entry {
                     commit: "bbb".into(),
                     time: 100,
+                    parents: vec!["ccc".into()],
                     before: Some("1111".into()),
                     after: Some("1111".into()),
+                    path: "b/x.md".into(),
                 },
                 Entry {
                     commit: "ccc".into(),
                     time: 50,
+                    parents: Vec::new(),
                     before: None,
                     after: Some("1111".into()),
+                    path: "a/x.md".into(),
                 },
+            ]
+        );
+        let merges: Vec<Option<Merge>> = commits(&found, |_| None).map(|c| c.merge).collect();
+        assert_eq!(
+            merges,
+            [
+                Some(Merge {
+                    commit: "aaa".into(),
+                    first: "bbb".into(),
+                    others: vec!["ddd".into()],
+                    path: RepoPath::parse("/b/x.md").unwrap(),
+                }),
+                None,
             ]
         );
     }

@@ -111,7 +111,7 @@ sections:
     level: 2
     blocks:
       - kind: prose
-        max: 2
+        max: { soft: 2, when-at-limit: "Put the history of the choice in a document of its own." }
         example: Two binaries doubled the release surface and users installed the wrong one.
 ````
 `````
@@ -152,7 +152,7 @@ state: open
 kind: bug
 ---
 
-<!-- sokf:guidance The writer replaces each of the following examples with their own text. The issue describes one bug or one feature, and what closed it. -->
+<!-- sokf:guidance The issue describes one bug or one feature, and what closed it. -->
 
 # Retry logic
 
@@ -247,6 +247,7 @@ document.
 links:
   - rel: part-of
     to-type: Architecture
+    max: { hard: 1, when-at-limit: "Link each further architecture with `relates-to`." }
   - rel: implements
     to-type: [Contract, Plan]
     guidance: The contract or plan this subsystem exists to deliver.
@@ -255,14 +256,19 @@ links:
 ```
 
 An entry requires at least `min` edges (one when it declares no `min`) and
-allows at most `max`. `min: 0` allows an edge without requiring one. A link
-whose `rel` matches no entry is an error, unless the schema declares
-`links-open: true`. An edge counts only if it resolves, and, where the entry
-names a `to-type`, only if it resolves to a document of that type. A tool
-that creates a document writes one edge for each entry into the scaffold,
-including those with `min: 0`, so that the author sees every edge they can add. The target of each edge is a
-placeholder id, which the validator reports until the author replaces it
-with the id of a real document.
+allows at most the count of a hard `max`. `min: 0` allows an edge without
+requiring one. An entry's `max` is a limit with its `when-at-limit` text, as
+the `max` of a block is: a `soft` limit only states the usual count to the
+writer, and a finding on more edges than a `hard` limit quotes the text. An entry's `only` is a
+condition, as a section's is: a map of dimensions to states, or a list of such maps,
+which admits a document that any one of them admits. A link whose `rel`
+matches no entry is an error, unless the schema declares `links-open: true`.
+An edge counts only if it resolves, and, where the entry names a `to-type`,
+only if it resolves to a document of that type. A tool that creates a
+document writes one edge for each entry into the scaffold, including those
+with `min: 0` but not those that a hard `max` of 0 bans, so that the author
+sees every edge they can add. The target of each edge is a placeholder id, which the validator reports until the
+author replaces it with the id of a real document.
 
 A unit rule can declare `to-type`, with the same values, for the links in
 the body. Each `sokf:` link in a paragraph, an item, or a row that the
@@ -296,10 +302,10 @@ cited-by:
 ```
 
 An entry with `keys` requires at least one document of a type in `from-type`
-to cite every key that the named rule captures. The citation uses the slug
-of the key or, for the key of a heading, the slug of the heading. `keys` is
-the name of a rule of this schema that captures a key, as `for-each-key-of`
-does. An entry without `keys` requires a citation of the document itself,
+to cite every key in the set that `keys` names. The citation uses the slug
+of the key or, for the key of a heading, the slug of the heading. `keys`
+names a set of keys of this schema, as `for-each-key-of` does: the `rule-id`
+of a section or a block, or a `key-of`. An entry without `keys` requires a citation of the document itself,
 with any fragment or none, because citing a part cites the whole. `only`
 limits the check to cited documents in the given states.
 
@@ -405,10 +411,10 @@ frontmatter:
     example: /knowledge/media/flowers.png
 asset-files: ["/knowledge/media/**/*.png", "/knowledge/media/**/*.jpg"]
 preamble:
-  guidance: The sidecar has one line of caption for the picture.
+  guidance: The sidecar has a caption for the picture.
   blocks:
     - kind: prose
-      max: 1
+      max: { soft: 1, when-at-limit: "Put more about the picture in a document that links it." }
       example: Wild flowers on the ridge, June.
 ````
 

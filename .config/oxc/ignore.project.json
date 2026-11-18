@@ -12,8 +12,6 @@
   "AGENTS.md",
   "/archive/",
   "/crates/",
-  "/packs/",
   "/sokf-spec/",
-  "/harness/",
-  "/knowledge/contracts/contract-schema-extension.md"
+  "/harness/"
 ]

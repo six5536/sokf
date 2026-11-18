@@ -164,7 +164,8 @@ pub(crate) fn walk_outside(
     let roots = &config.roots;
     // sokf-implements: CONF-3_AC-1
     // sokf-implements: CONF-3_AC-2
-    let exclude = exclude_set(&config.exclude)?;
+    // sokf-implements: CONF-3_AC-9
+    let exclude = exclude_set(config.excludes())?;
     let root_fs = root.as_path().to_path_buf();
     let pruned: Vec<std::path::PathBuf> = roots.iter().map(|r| r.to_fs(root)).collect();
     let mut builder = WalkBuilder::new(&root_fs);
@@ -326,7 +327,7 @@ pub(crate) fn repo_glob(g: &str) -> std::result::Result<Glob, globset::Error> {
 }
 
 /// `exclude_set` builds the walk's excludes into one matcher.
-fn exclude_set(globs: &[String]) -> Result<GlobSet> {
+fn exclude_set<'a>(globs: impl IntoIterator<Item = &'a str>) -> Result<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for g in globs {
         let glob = repo_glob(g).map_err(|e| Error::Internal(format!("exclude glob `{g}`: {e}")))?;
@@ -520,10 +521,7 @@ mod tests {
             ..Config::default()
         };
         assert!(matches!(collect(&root, &config), Err(Error::Io { .. })));
-        assert!(matches!(
-            exclude_set(&["/[".into()]),
-            Err(Error::Internal(_))
-        ));
+        assert!(matches!(exclude_set(["/["]), Err(Error::Internal(_))));
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -69,6 +69,7 @@ fn tree(doc: &str) -> TempTree {
     TempTree::clean_with(&[
         ("knowledge/schemas/api.md", API_SCHEMA),
         ("knowledge/links.md", doc),
+        (".sokf/formats.yaml", crate::common::requirement_formats()),
     ])
 }
 
@@ -171,6 +172,7 @@ fn an_example_that_does_not_start_with_the_code_is_reported() {
         .replace("'LINK-1_AC-1:", "'ABC-1_AC-1:")
         .replace("'LINK_P-1:", "'ABC_P-1:");
     let t = TempTree::clean_with(&[
+        (".sokf/formats.yaml", crate::common::requirement_formats()),
         ("knowledge/schemas/api.md", &schema),
         ("knowledge/links.md", GOOD),
     ]);
@@ -223,6 +225,7 @@ fn bug_tree(doc: &str) -> TempTree {
     TempTree::clean_with(&[
         ("knowledge/schemas/bugset.md", BUG_SCHEMA),
         ("knowledge/cache-bugs.md", doc),
+        (".sokf/formats.yaml", crate::common::requirement_formats()),
     ])
 }
 
@@ -315,6 +318,7 @@ sections:
 fn a_key_that_two_prefixes_start_derives_from_the_longer() {
     let doc = "---\ntype: Codeset\nid: codes\ntitle: Codes\n---\n\n# Codes\n\n- Code CE\n- Code CE-BUG\n\n## Parts\n\n- CE-BUG-1 First part\n- CE-2 Second part\n";
     let t = TempTree::clean_with(&[
+        (".sokf/formats.yaml", crate::common::requirement_formats()),
         ("knowledge/schemas/codeset.md", PREFIX_SCHEMA),
         ("knowledge/codes.md", doc),
     ]);

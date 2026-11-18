@@ -1,8 +1,8 @@
 //! The command-line interface, declared with clap's derive macros.
 //!
 //! This module declares the commands and options that contract-cli
-//! (`knowledge/contracts/contract-cli.md`) specifies in CLI-1 to CLI-8, and two
-//! more commands: `completions` and the hidden `man`.
+//! (`knowledge/contracts/contract-cli.md`) specifies in CLI-1 to CLI-8 and
+//! CLI-17, and two more commands: `completions` and the hidden `man`.
 
 use std::path::PathBuf;
 
@@ -74,6 +74,8 @@ pub enum Command {
     Graph(GraphArgs),
     /// Print the path of the document that each id identifies.
     Locate(LocateArgs),
+    /// Print the guidance that each document's schema gives for its parts, at the document's lifecycle states.
+    Guide(GuideArgs),
     /// Print a shell completion script to stdout.
     Completions(CompletionsArgs),
     /// Print a roff man page to stdout. The command is hidden because the
@@ -99,6 +101,7 @@ impl Command {
             Command::New(a) => a.json_schema.then_some(Output::New),
             Command::Graph(a) => a.json_schema.then_some(Output::Graph),
             Command::Locate(a) => a.json_schema.then_some(Output::Locate),
+            Command::Guide(a) => a.json_schema.then_some(Output::Guide),
             Command::Info(a) => match &a.what {
                 InfoCommand::Formats(a) => a.json_schema.then_some(Output::InfoFormats),
                 InfoCommand::Grammar => None,
@@ -412,6 +415,38 @@ pub struct LocateArgs {
 }
 // sokf:end locate
 
+// `--query` requires `--json`: clap refuses `--query` alone, and the tool exits
+// with code 2.
+// sokf-implements: CLI-17_AC-19
+// sokf:begin guide
+/// `GuideArgs` holds the arguments of `guide` (CLI-17).
+#[derive(Debug, Args)]
+pub struct GuideArgs {
+    /// Documents, as ids in any form that a reference takes (`glossary`,
+    /// `sokf-spec:glossary`, `#key`), or as filesystem paths or paths from
+    /// the repository root.
+    #[arg(value_name = "ID|PATH", required = true)]
+    pub documents: Vec<String>,
+
+    /// Set a lifecycle key to a state, as KEY=STATE. Default: the document's own state of each lifecycle key.
+    #[arg(long, value_name = "KEY=STATE", action = ArgAction::Append, value_parser = parse_state)]
+    pub state: Vec<(String, String)>,
+
+    /// Print one JSON object to stdout instead of text. `--json-schema`
+    /// prints its schema.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Print the JSON Schema of the `--json` output, and exit.
+    #[arg(long, exclusive = true)]
+    pub json_schema: bool,
+
+    /// Apply a JMESPath expression to the JSON object. Requires --json.
+    #[arg(long, value_name = "EXPR", requires = "json")]
+    pub query: Option<String>,
+}
+// sokf:end guide
+
 // `--layer` conflicts with `--schema`: clap refuses the two together, and the
 // tool exits with code 2. `--query` requires `--json`, so clap refuses
 // `--query` alone too.
@@ -470,8 +505,8 @@ pub struct InfoFormatsArgs {
 /// CLI-5_AC-5, CLI-5_AC-7, CLI-5_AC-42).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Layer {
-    /// Only the formats built into the tool. sokf builds this layer from the
-    /// tool alone, without reading the repository.
+    /// Only the types built into the tool, which embeds no format. sokf
+    /// builds this layer from the tool alone, without reading the repository.
     Embedded,
     /// Only the formats in `/.sokf/formats.yaml`.
     Repo,

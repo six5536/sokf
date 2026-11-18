@@ -31,6 +31,17 @@ pub fn message(f: &Finding) -> String {
     format!("{} ({})", f.message, f.criterion)
 }
 
+/// `and_list` joins `items` as a list in English, for the message of a
+/// finding: "a", "a and b", or "a, b, and c".
+pub(crate) fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [a, b] => format!("{a} and {b}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
+}
+
 /// `text` renders the text report: the fixes, then the findings, then the counts line.
 // sokf-implements: CLI-4_AC-25
 // sokf-implements: CLI-4_AC-26
@@ -94,4 +105,19 @@ pub fn text(report: &Report, warnings: bool) -> String {
         tramlines_core::text::count(report.errors.len(), "error", "errors")
     );
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn and_list_joins_each_length_of_list() {
+        let names =
+            |list: &[&str]| -> Vec<String> { list.iter().map(ToString::to_string).collect() };
+        assert_eq!(and_list(&[]), "");
+        assert_eq!(and_list(&names(&["a"])), "a");
+        assert_eq!(and_list(&names(&["a", "b"])), "a and b");
+        assert_eq!(and_list(&names(&["a", "b", "c"])), "a, b, and c");
+    }
 }

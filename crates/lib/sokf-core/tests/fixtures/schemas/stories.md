@@ -46,7 +46,7 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Put the detail of a need in its story." }
         guidance: >
           The opening says which user goal the stories serve and what users with that goal
           want to do. It also says that each story links the contracts that deliver it.
@@ -96,7 +96,7 @@ sections:
         Contracts: [PLUMB][sokf:contract-plumbing].
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Write a second need as a story of its own." }
         guidance: >
           The story states what the user wants and why, in the user's terms. The contracts
           say how the system meets the need. The name of the kind of user links to its entry
@@ -105,7 +105,7 @@ sections:
           format: user-story
       - kind: prose
         optional: true
-        max: 1
+        max: { hard: 1, when-at-limit: "Put the detail in the issue that it links." }
         guidance: >
           A `Planned:` paragraph marks a story that isn't built yet. It links the open issue
           that owns the change, and the story keeps the paragraph until the issue closes.
@@ -114,13 +114,13 @@ sections:
           example: 'Planned: When a click matches no rule set, the user sees which pattern failed, as [the issue on failed patterns][sokf:issue-001-feature-report-failed-pattern] describes.'
       - kind: blockquote
         optional: true
-        max: 1
+        max: { hard: 1, when-at-limit: "Put more of the cause in the issue that the story serves." }
         guidance: >
           The blockquote states, in one line, the fact that causes the need. The clause after
           `SO THAT` states the benefit.
         example: A compiler error names the file and the line, and typing them into the editor again is slow and leads to mistakes.
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Link each further contract in the same line." }
         guidance: >
           The last paragraph lists the contracts that deliver the story, and the text of each
           link is the contract's code. The story cites each contract by link alone, because
@@ -133,7 +133,7 @@ sections:
           example: 'Contracts: [PLUMB][sokf:contract-plumbing].'
       - kind: prose
         optional: true
-        max: 1
+        max: { hard: 1, when-at-limit: "Link each further flow in the same line." }
         guidance: >
           The paragraph links each flow of the architecture that realises the story, by the
           flow's key. Every flow needs a story that cites it.

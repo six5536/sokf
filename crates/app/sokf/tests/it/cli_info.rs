@@ -67,11 +67,11 @@ fn the_embedded_layer_reads_no_repository() {
 #[test]
 fn a_schema_view_merges_the_formats_of_the_schema_on_top() {
     let f = Fixture::new("clean");
-    // The repository layer replaces `requirement-ears`. The requirement schema derives keys from
-    // `requirement-ears`, so the replacement must capture the key, or the schema breaks the grammar.
+    // The repository layer declares `requirement-ears`, which the
+    // requirement schema declares again in its own formats.
     f.write(
         ".sokf/formats.yaml",
-        "registry:\n  requirement-ears:\n    key: id\n    template: '${id:criterion-id} ${}'\n    example: CLI-1_AC-1 x\n",
+        "types:\n  criterion-id: '[A-Z]{1,10}-\\d+_AC-\\d+'\nregistry:\n  requirement-ears:\n    key: id\n    template: '${id:criterion-id} ${}'\n    example: CLI-1_AC-1 x\n",
     );
     f.write(
         "knowledge/schemas/note.md",
@@ -79,10 +79,10 @@ fn a_schema_view_merges_the_formats_of_the_schema_on_top() {
     );
     let (stdout, stderr, code) = f.run(&["info", "formats", "--schema", "schema-note"]);
     assert_eq!(code, 0, "{stderr}");
-    // The output holds one registry, which merges the embedded layer, the
+    // The output holds one registry, which merges the tool's types, the
     // repository's layer, and then the schema's layer.
     assert_eq!(stdout.matches("\nregistry:\n").count(), 1, "{stdout}");
-    assert!(stdout.contains("source: embedded"), "{stdout}");
+    assert!(stdout.contains("source: built-in"), "{stdout}");
     assert!(stdout.contains("source: repo"), "{stdout}");
     assert!(stdout.contains("source: schema-note"), "{stdout}");
     assert!(stdout.contains("\n  word:\n"), "{stdout}");
@@ -147,7 +147,8 @@ fn info_formats_prints_the_registry_of_its_yaml_as_one_json_object() {
         let json = crate::json_schemas::valid("info-formats-registry.schema.json", &out);
         for section in ["types", "registry"] {
             let names = names_and_sources(&yaml, section);
-            assert!(!names.is_empty(), "{yaml}");
+            // The embedded layer holds the tool's types and no format.
+            assert!(!names.is_empty() || section == "registry", "{yaml}");
             assert_eq!(json_names_and_sources(&json, section), names, "{args:?}");
         }
     }

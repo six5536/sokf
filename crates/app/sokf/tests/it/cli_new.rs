@@ -230,7 +230,7 @@ fn two_roots(f: &Fixture) {
     );
     f.write(
         "other/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: other\nscope: test\n",
+        "sokf: \"0.7\"\nname: other\nscope: test\n",
     );
     f.write("other/index.md", "# other\n");
     f.write("other/schemas/index.md", "# schemas\n");
@@ -614,11 +614,16 @@ fn write_and_json_write_the_document_and_print_the_object() {
     assert_eq!(f.files(), before);
 }
 
+/// `ISSUE_SCHEMA` is an Issue schema whose documents lie in the folder of
+/// their state, so that a new issue can land in a folder with no index yet.
+const ISSUE_SCHEMA: &str =
+    include_str!("../../../../lib/sokf-core/tests/fixtures/schemas/issue.md");
+
 // sokf-tests: CLI-6_AC-73
 #[test]
 fn write_leaves_no_index_stale() {
     let f = crate::common::project();
-    crate::common::take_method(&f);
+    f.write("knowledge/schemas/issue.md", ISSUE_SCHEMA);
     let (out, err, code) = f.run(&["validate", "--fix"]);
     assert_eq!(code, 0, "{out}{err}");
     // A second run fixes nothing.
@@ -633,8 +638,6 @@ fn write_leaves_no_index_stale() {
         "first",
         "--title",
         "Add the first issue",
-        "--state",
-        "kind=feature",
         "--state",
         "state=open",
         "--write",

@@ -115,11 +115,11 @@ impl Cache {
             .ok()
     }
 
-    /// `stored_keys_for` returns the keys that the store holds for the
-    /// given slugs, from the documents that cite or capture them. It leaves
-    /// out the rows of the documents that this run removed, and the rows of
-    /// the documents in `except`. This run captured the keys of those
-    /// documents.
+    /// `stored_keys_for` returns the keys that the store holds for the given
+    /// slugs, from the documents that cite or capture them, and the anchors
+    /// with those slugs that the engine keeps. It leaves out the rows of the
+    /// documents that this run removed, and the rows of the documents in
+    /// `except`, whose keys this run captured.
     pub fn stored_keys_for(
         &self,
         slugs: &BTreeSet<String>,
@@ -168,7 +168,93 @@ impl Cache {
                 });
             }
         }
+        let Ok(mut stmt) = self
+            .conn()
+            .prepare("SELECT path FROM anchors WHERE slug = ?1")
+        else {
+            return index;
+        };
+        for slug in slugs {
+            let Ok(rows) = stmt.query_map([slug.as_str()], |r| r.get::<_, String>(0)) else {
+                continue;
+            };
+            for path in rows.flatten().filter_map(|p| RepoPath::parse(&p)) {
+                if !removed.contains(&path) && !except.contains(&path) {
+                    index.add_anchor(path, slug.clone());
+                }
+            }
+        }
         index
+    }
+
+    /// `old_keys_of` returns the keys that the document at `path` declares,
+    /// as the cache recorded them, each as `(scope, slug, knowledge)`.
+    pub fn old_keys_of(&self, path: &RepoPath) -> BTreeSet<(String, String, usize)> {
+        self.conn()
+            .rows(
+                "SELECT scope, key, knowledge FROM keys WHERE path = ?1",
+                [path.as_str()],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        crate::markdown::slug(&r.get::<_, String>(1)?),
+                        r.get::<_, usize>(2)?,
+                    ))
+                },
+            )
+            .into_iter()
+            .collect()
+    }
+
+    /// `old_anchors_of` returns the slugs of the anchors that the engine
+    /// keeps in the document at `path`, as the cache recorded them.
+    pub fn old_anchors_of(&self, path: &RepoPath) -> BTreeSet<String> {
+        self.conn()
+            .rows(
+                "SELECT slug FROM anchors WHERE path = ?1",
+                [path.as_str()],
+                |r| r.get::<_, String>(0),
+            )
+            .into_iter()
+            .collect()
+    }
+
+    /// `commit_keys` writes the keys and the kept anchors of each checked
+    /// document, in place of the document's stored ones.
+    pub(super) fn commit_keys(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
+        let mut del_keys = conn.prepare("DELETE FROM keys WHERE path = ?1")?;
+        let mut put_key = conn.prepare(
+            "INSERT INTO keys (path, key, slug, line, heading_slug, scope, knowledge, rule_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        )?;
+        for (path, entries) in &state.keys_of {
+            del_keys.execute([path.as_str()])?;
+            for e in entries {
+                let scope = match &e.scope {
+                    crate::grammar::KeyScope::Document => "document".to_string(),
+                    crate::grammar::KeyScope::Host(h) => h.clone(),
+                };
+                put_key.execute(params![
+                    path.as_str(),
+                    e.key,
+                    crate::markdown::slug(&e.key),
+                    e.line,
+                    e.heading_slug,
+                    scope,
+                    e.knowledge,
+                    e.rule_id
+                ])?;
+            }
+        }
+        let mut del_anchors = conn.prepare("DELETE FROM anchors WHERE path = ?1")?;
+        let mut put_anchor = conn.prepare("INSERT INTO anchors (path, slug) VALUES (?1, ?2)")?;
+        for (path, slugs) in &state.anchors_of {
+            del_anchors.execute([path.as_str()])?;
+            for slug in slugs {
+                put_anchor.execute(params![path.as_str(), slug])?;
+            }
+        }
+        Ok(())
     }
 
     /// `commit_rows` writes the rows and ids of the run inside the commit's

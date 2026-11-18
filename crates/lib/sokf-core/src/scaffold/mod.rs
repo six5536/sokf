@@ -13,19 +13,20 @@ mod place;
 mod seed;
 mod seq;
 mod store;
-
+mod words;
 mod write;
 
 pub use config::{ConfigChange, register};
 pub use fill::{Identity, bind, fill, identity, title};
-pub use front::SokfScaffold;
+pub use front::{SokfScaffold, link_text};
 pub use gate::gate;
 pub use place::{Site, asset, place, slugify};
-pub use seed::{seed, states};
+pub use seed::{given_states, seed, states};
 pub use seq::{Where, given_seq, next_seq, render_id, schema_for};
 pub use store::{StoreFiles, store};
 pub use tramlines_md::{
     derive::{Refusal, derived_title, no_template},
     grammar::IdTemplate,
 };
+pub use words::{Words, language, with_description};
 pub use write::{create_new, write};

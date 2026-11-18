@@ -78,7 +78,7 @@ mod tests {
         fs::create_dir_all(dir.join("knowledge/none")).unwrap();
         fs::write(
             dir.join("knowledge/manifest.sokf.yaml"),
-            "sokf: \"0.6\"\nname: k\nscope: test\n",
+            "sokf: \"0.7\"\nname: k\nscope: test\n",
         )
         .unwrap();
         fs::write(

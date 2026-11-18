@@ -2,7 +2,7 @@
 //! repository's other worktrees and its local and remote-tracking branches
 //! gave a type's documents, by adding or changing a file, since they parted
 //! from the commit that the run's tree checks out (the decision "The
-//! numbers of the other branches" of design-operations). Only such a
+//! numbers of the other branches" of design-scaffold). Only such a
 //! document can clash when its branch merges: every other document of a
 //! branch is also in the run's tree, or the run's tree deleted it, and a
 //! merge doesn't bring it back.

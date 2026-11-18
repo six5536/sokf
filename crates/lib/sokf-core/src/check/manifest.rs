@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use tramlines_core::text::is_language_tag;
+
 use crate::{
     Finding, Knowledge, Model,
     markdown::is_slug,
@@ -46,7 +48,7 @@ pub fn check(knowledge: &Knowledge) -> Vec<Finding> {
             path.clone(),
             manifest.line_of.get("sokf").copied(),
             "SOKF_VALIDATION_3",
-            format!("the manifest declares sokf `{v}`. This tool implements `{SOKF_VERSION}`"),
+            version_message(v),
         )),
         Some(_) => {}
     }
@@ -95,6 +97,22 @@ pub fn check(knowledge: &Knowledge) -> Vec<Finding> {
             format!("the manifest's `unique` is `{v}`, but the one value that caps the keys of the store is `knowledge`"),
         ));
     }
+    // sokf-implements: SOKF_FORMAT_251
+    if let Some(v) = manifest
+        .primary_language
+        .as_deref()
+        .filter(|v| !is_language_tag(v))
+    {
+        findings.push(Finding::error(
+            path.clone(),
+            manifest.line_of.get("primary-language").copied(),
+            "SOKF_FORMAT_251",
+            match v {
+                "" => "the manifest's `primary-language` is no single value; give it as one language tag in the syntax of BCP 47, such as `en` or `de-CH`".to_string(),
+                v => format!("the manifest's `primary-language` is `{v}`, which is no language tag in the syntax of BCP 47, such as `en` or `de-CH`"),
+            },
+        ));
+    }
     for (key, line) in &manifest.stamped_present {
         findings.push(Finding::error(
             path.clone(),
@@ -104,6 +122,38 @@ pub fn check(knowledge: &Knowledge) -> Vec<Finding> {
         ));
     }
     findings
+}
+
+/// `version_message` is the error on a manifest that declares the version `v`,
+/// which this tool doesn't implement. For a version earlier than the tool's,
+/// it adds what the store's schemas need and where the changelog lists every
+/// change, because the store still holds the schemas of that version. Its
+/// words name the changes of 0.7, so the next version rewrites them.
+// sokf-implements: CLI-10_AC-6
+fn version_message(v: &str) -> String {
+    let message =
+        format!("the manifest declares sokf `{v}`. This tool implements `{SOKF_VERSION}`");
+    let older = matches!((minor_version(v), minor_version(SOKF_VERSION)), (Some(old), Some(new)) if old < new);
+    if !older {
+        return message;
+    }
+    let anchor = SOKF_VERSION.replace('.', "");
+    format!(
+        "{message}. Version {SOKF_VERSION} changes the schemas: each `max` is a map with its `when-at-limit`, and sokf supplies no line format. Fix the findings on the store's schemas, and then declare `sokf: \"{SOKF_VERSION}\"`. The changelog lists every change: https://github.com/six5536/sokf/blob/main/sokf-spec/changelog.md#{anchor}"
+    )
+}
+
+/// `minor_version` reads a version of the form `MAJOR.MINOR`, or gives
+/// nothing where `v` has another form.
+fn minor_version(v: &str) -> Option<(u64, u64)> {
+    let (major, minor) = v.split_once('.')?;
+    let number = |s: &str| {
+        if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        s.parse().ok()
+    };
+    Some((number(major)?, number(minor)?))
 }
 
 /// `check_identities` reports each identity, current or former, that two or

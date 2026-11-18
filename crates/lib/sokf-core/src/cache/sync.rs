@@ -124,6 +124,9 @@ pub(super) struct SyncState {
     pub(super) rows: BTreeMap<RepoPath, DocRow>,
     /// The keys of each document that the run checked.
     pub(super) keys_of: BTreeMap<RepoPath, Vec<crate::model::KeyEntry>>,
+    /// The anchors that the engine keeps in each document that the run
+    /// checked, for the units that break their rules, by slug.
+    pub(super) anchors_of: BTreeMap<RepoPath, BTreeSet<String>>,
     /// The paths that each checked document plans, which the commit writes
     /// in place of the document's rows in `plans`.
     pub(super) plans_of: BTreeMap<RepoPath, BTreeSet<crate::model::Planned>>,

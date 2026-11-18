@@ -3,7 +3,7 @@ type: SokfFormatSpecification
 id: sokf-format-spec
 title: "SOKF: Format specification"
 description: The format of a knowledge store, with its manifest, its documents and their frontmatter, its sidecars, its links, and the generated blocks of its files.
-version: "0.6"
+version: "0.7"
 status: draft
 ---
 
@@ -70,6 +70,7 @@ Each normative rule of this specification is a criterion in the EARS (Easy Appro
 - <a id="agent"></a>`agent` - A writer driven by a language model.
 - <a id="human"></a>`human` - A person who writes or reviews the knowledge.
 - <a id="writer"></a>`writer` - An agent or a human that writes documents.
+- <a id="attribution-label"></a>`attribution label` - The label `[human]` or `[agent]` that a unit of a document's body carries, which says whether a human or an agent said the unit (§3.2).
 - <a id="process"></a>`process` - A deterministic program that writes to the knowledge, such as a link checker.
 - <a id="consumer"></a>`consumer` - A program that reads a knowledge store to display, search, or export it, or to pass it to an agent.
 
@@ -113,19 +114,21 @@ Every other `.md` file in a knowledge store is a document. A file that is not a 
 The manifest describes the knowledge store:
 
 ```yaml
-sokf: "0.6"
+sokf: "0.7"
 name: example-knowledge
 scope: example-org
 description: Knowledge for the example project.
+primary-language: en
 renamed-from: [example-org/old-knowledge, other-org/example-knowledge]
 unique: knowledge
-extends: example-org/method
+extends: example-org/schemas
 ```
 
 - `sokf` - The version of this specification that the knowledge store targets.
 - `name` - The name of the store among the stores of its owner.
 - `scope` - The owner of the store, such as an npm scope, a Maven group, or a GitHub owner.
 - `description` - A summary of the store.
+- `primary-language` - The language of the store's text, a BCP 47 tag such as `en` or `de`. A store without the key is in English, `en`. A schema's `language` overrides it for the documents of its type ([schema specification][sokf:sokf-schema-spec] §5).
 - `renamed-from` - The former identities of the store.
 - `unique` - The widest scope of the keys of the store. `knowledge` holds each key of the store unique only within the store, whatever its schema declares (§8.5).
 - `extends` - The identity of the store whose schemas the store inherits ([schema specification][sokf:sokf-schema-spec] §4).
@@ -145,6 +148,7 @@ The store identity is `<scope>/<name>`, and documents in other stores use it to 
 - <a id="sokf_format_205"></a>SOKF_FORMAT_205 [ubiquitous]: the manifest SHALL give `unique`, when present, as `knowledge`.
 - <a id="sokf_format_206"></a>SOKF_FORMAT_206 [ubiquitous]: the manifest SHALL give `extends`, when present, as the current or a former identity `<scope>/<name>` of another knowledge store in the repository.
 - <a id="sokf_format_207"></a>SOKF_FORMAT_207 [ubiquitous]: the manifest SHALL name in `extends` no store whose own `extends`, followed from store to store, leads back to the store.
+- <a id="sokf_format_251"></a>SOKF_FORMAT_251 [ubiquitous]: the manifest SHALL give `primary-language`, when present, as a language tag in the syntax of BCP 47.
 
 ## 3. Documents
 
@@ -155,7 +159,7 @@ The frontmatter of a document can hold these core fields:
 - `type` - The kind of document.
 - `id` - The identity of the document (§5).
 - `title` - The name to display. When it is absent, a consumer can display the filename.
-- `description` - A one-line summary, for indexes and previews.
+- `description` - The text that the index shows beside the title, for a reader deciding whether to open the document. It tells that reader what they need beyond the title, in terms they already know, usually in one sentence.
 - `tags` - Short labels that group documents across directories.
 - `resource` - The `/` path or URL of what the document describes, or a list of them. An abstract document, which describes no file and no URL, omits it.
 - `status` - `draft`, `stable`, or `deprecated`. When it is absent, the status is `stable`. The status serves readers and the filters of `sokf graph`, such as `-l "status=='draft'"`. `draft` and `stable` change no check. `deprecated` adds a warning at each citation of the document ([validation specification][sokf:sokf-validation-spec] SOKF_VALIDATION_57 to SOKF_VALIDATION_59) and changes no error.
@@ -171,7 +175,7 @@ Each core field has a write class (§4). The following document has most of the 
 type: Subsystem
 id: subsystem-logging
 title: Logging Subsystem
-description: Requirements for the logging sub-system.
+description: How each crate writes its log, and which configuration settings it reads.
 resource: /crates/lib/example-core/src/logging.rs
 tags: [core, logging]
 sources:
@@ -210,6 +214,23 @@ set of logs.[^log4rs]
 - <a id="sokf_format_29"></a>SOKF_FORMAT_29 [ubiquitous]: the frontmatter SHALL give `resource`, when present, as a URL, a `/` path, or a non-empty list of these.
 - <a id="sokf_format_30"></a>SOKF_FORMAT_30 [ubiquitous]: the frontmatter SHALL make each `/` path in `resource` resolve to a file or directory in the repository.
 - <a id="sokf_format_31"></a>SOKF_FORMAT_31 [ubiquitous]: the sidecar SHALL give `resource` as a single string: the `/` path of its asset.
+
+### 3.1 Descriptions
+
+The index of a directory lists each document by its title and its description (SOKF_FORMAT_103), so a reader meets the description beside the title, before they open the document. That reader scans the index for something, such as the rule that settles a question or the work that is still open, and decides from the two whether to open the document. The description tells them what the title does not, in the terms of the project, which they already know.
+
+What that reader needs differs from one type to another, and from one document to another. In the index of the schemas, the description of the issue schema names the kinds of an issue and its parts, because a reader who scans that index learns there what an issue holds. The description of a glossary says only whose terms it holds, because every reader knows what a glossary contains. A pattern such as a list of the document's parts fits the first and not the second, so the writer of each description judges who scans its index and what they look for.
+
+The rule for writing a description is SOKF's own, and it holds for every type, because the index shows each description beside its title, whatever the type of its document. A schema gives `guidance` for `description` only where its type needs something that the rule does not say.
+
+### 3.2 Attribution
+
+A schema can declare the attribution labels `human` and `agent`, and say which parts of a document carry one ([schema specification][sokf:sokf-schema-spec] §5). An attribution label says which kind of writer said a unit: `[human]` marks a unit that a human said, or confirmed in so many words, and `[agent]` marks a unit that an agent proposed. The [tramlines-md specification](https://github.com/six5536/tramlines/blob/main/knowledge/spec/tramlines-md-spec.md) states where a label stands in a unit and how the validator checks it (TLMD_239 to TLMD_257).
+
+One label covers the whole unit, such as a paragraph, an item, or a row of a table, so a unit is `[human]` only where a human said or confirmed all of it. Where a unit holds both what a human said and what an agent added, and both matter, the writer splits it into two units. A label names no person and no agent, only the kind of writer. A document whose schema is in another language writes each label in the words of that language, where the validator has them (schema specification §5).
+
+- <a id="sokf_format_252"></a>SOKF_FORMAT_252 [ubiquitous]: the writer SHALL label a unit `[human]` only where a human said all of the unit or confirmed all of it in so many words.
+- <a id="sokf_format_253"></a>SOKF_FORMAT_253 [ubiquitous]: the writer SHALL label `[agent]` each other unit that carries an attribution label.
 
 ## 4. Write classes
 
@@ -402,7 +423,7 @@ An image reference is a body link. A typed edge to an asset is a `has-part` link
 
 ### 8.5 Citing part of a document
 
-A body link can point to part of a document with a fragment: `sokf:<id>#<fragment>`. The fragment is the id of an anchor in the document. The id of a heading is its slug. A key that the schema of the target captures ([schema specification][sokf:sokf-schema-spec]) has the slug of the key as its id, and the generated anchor of the key carries that id (§9).
+A body link can point to part of a document with a fragment: `sokf:<id>#<fragment>`. The fragment is the id of an anchor in the document. The id of a heading is its slug. A key that the schema of the target captures ([schema specification][sokf:sokf-schema-spec]) has the slug of the key as its id, and the generated anchor of the key carries that id (§9). A unit whose text breaks its rule captures no key, but the anchor that the unit holds is still an anchor of the document, a kept anchor (TLMD_139 of the tramlines-md specification). A fragment can name that kept anchor, so a fault in the text of a unit breaks no link to its anchor.
 
 A slug follows the rule that repository hosts apply to the text of a heading: lowercase the text, remove every character other than a letter, a digit, a space, a hyphen, or an underscore, and turn each space into a hyphen. For example, the key `CLI-1_AC-2` has the slug `cli-1_ac-2`, and a document cites it as `[CLI-1_AC-2][sokf:req-cli#cli-1_ac-2]`.
 
@@ -422,11 +443,11 @@ This specification gives no meaning to a fragment on a path link to a repository
 - <a id="sokf_format_69"></a>SOKF_FORMAT_69 [ubiquitous]: the key SHALL have a slug that no other key has within the uniqueness scope of its schema, the knowledge store or the repository, narrowed to the knowledge store where the manifest of its store declares `unique: knowledge`.
 - <a id="sokf_format_208"></a>SOKF_FORMAT_208 [optional]: WHERE the manifest of a store declares `unique: knowledge`, the validator SHALL hold each key of the store unique only within the store, whatever scope its schema declares.
 - <a id="sokf_format_70"></a>SOKF_FORMAT_70 [ubiquitous]: the body link SHALL use a bare fragment only for a key that its schema declares unique beyond its document.
-- <a id="sokf_format_71"></a>SOKF_FORMAT_71 [ubiquitous]: the body link SHALL have a fragment that identifies one key or one heading of its target.
-- <a id="sokf_format_72"></a>SOKF_FORMAT_72 [ubiquitous]: the body link SHALL use the slug of the key or heading as each fragment.
+- <a id="sokf_format_71"></a>SOKF_FORMAT_71 [ubiquitous]: the body link SHALL have a fragment that identifies one key, one heading, or one kept anchor of its target.
+- <a id="sokf_format_72"></a>SOKF_FORMAT_72 [ubiquitous]: the body link SHALL use the slug of the key or heading, or the id of the kept anchor, as each fragment.
 - <a id="sokf_format_155"></a>SOKF_FORMAT_155 [ubiquitous]: the consumer SHALL give each heading of a document, in document order, its slug, or, when an earlier heading holds that slug, the slug followed by `-` and the lowest count from 1 that gives a slug no earlier heading holds.
 - <a id="sokf_format_134"></a>SOKF_FORMAT_134 [ubiquitous]: the consumer SHALL resolve each bare fragment `sokf:<store>:#<slug>` of a key unique in the repository to the document that captures that key.
-- <a id="sokf_format_73"></a>SOKF_FORMAT_73 [ubiquitous]: the body SHALL use, as the fragment of each link whose destination is only a fragment, the slug of one key or one heading in the same document.
+- <a id="sokf_format_73"></a>SOKF_FORMAT_73 [ubiquitous]: the body SHALL use, as the fragment of each link whose destination is only a fragment, the slug of one key or one heading, or the id of one kept anchor, in the same document.
 - <a id="sokf_format_74"></a>SOKF_FORMAT_74 [ubiquitous]: the body SHALL contain a reference definition for every reference-style link whose label is not a `sokf:` label.
 
 ### 8.6 Frontmatter links in the body
@@ -626,7 +647,7 @@ One reference follows the tag, and after the reference come only whitespace and 
 The reference takes any form that a label takes after `sokf:` (§8), or the form of a bare key:
 
 - `<id>` - A document, or the asset of a sidecar.
-- `<id>#<fragment>` - A key or a heading of a document.
+- `<id>#<fragment>` - A key, a heading, or a kept anchor of a document.
 - `#<key>` - A key that its schema declares unique beyond its document.
 - `<store>:` - Before any of the preceding forms, the store of the target (§8.2).
 - `<key>` - A key that its schema declares unique in the repository, written as its text, such as `CLI-1_AC-2`.
@@ -640,7 +661,7 @@ A line inside a fenced code block of a Markdown file, a file whose name ends in 
 - <a id="sokf_format_142"></a>SOKF_FORMAT_142 [ubiquitous]: the marker SHALL begin its line with the tag `sokf-<rel>:` and whitespace, after only whitespace and ASCII punctuation.
 - <a id="sokf_format_143"></a>SOKF_FORMAT_143 [ubiquitous]: the consumer SHALL read the tag of a marker in any case as the tag in lowercase, and refuse a relationship that isn't in the kebab-case form of a `rel` in §8.
 - <a id="sokf_format_144"></a>SOKF_FORMAT_144 [ubiquitous]: the marker SHALL hold exactly one reference after its tag, bare or between backticks, followed by only whitespace and characters that are neither letters nor digits.
-- <a id="sokf_format_145"></a>SOKF_FORMAT_145 [ubiquitous]: the marker SHALL hold a reference that resolves to one document, or to one key or one heading of a document.
+- <a id="sokf_format_145"></a>SOKF_FORMAT_145 [ubiquitous]: the marker SHALL hold a reference that resolves to one document, or to one key, one heading, or one kept anchor of a document.
 - <a id="sokf_format_146"></a>SOKF_FORMAT_146 [ubiquitous]: the consumer SHALL read a bare word of a marker in lowercase kebab-case as an id, and any other bare word as a key.
 - <a id="sokf_format_147"></a>SOKF_FORMAT_147 [ubiquitous]: the consumer SHALL resolve a bare key of a marker only to a key that its schema declares unique in the repository.
 - <a id="sokf_format_148"></a>SOKF_FORMAT_148 [ubiquitous]: the consumer SHALL resolve a reference of a marker without a store in every knowledge store of the repository.

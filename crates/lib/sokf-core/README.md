@@ -60,6 +60,9 @@ starting a process. The crate exposes these entry points:
   specification defines.
 - `locate` finds the filesystem path of a document by its id, and, when
   asked, the path of the asset that a sidecar describes.
+- `guide` returns the guidance that a document's schema gives for each part
+  of the document at its lifecycle states, in the words that `new` writes
+  into its scaffold.
 - `markdown`, `grammar`, `include`, `check`, `fix`, `graph`, and `Expr` are
   the layers behind these entry points, exposed for tests and tooling.
 - `Error` and `Result` are the crate's one error type and its result type.

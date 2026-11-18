@@ -38,7 +38,7 @@ sections:
     blocks:
       - kind: bullet-list
         each:
-          rule-id: books
+          key-of: books
           pattern: '^book (?P<k>[a-z]+)$'
           key: k
           example: book odes
@@ -231,7 +231,7 @@ sections:
               key: k
               example: '  one["One"]'
             - select-pattern: '-'
-              rule-id: edges
+              key-of: edges
               min: 1
               pattern: '^(?P<k>[a-z]+-[a-z]+)$'
               key: k
@@ -340,12 +340,6 @@ fn a_pairing_rule_captures_a_key_of_a_rule_that_exists() {
         ),
         (
             list(
-                "          pattern: '^(?P<k>[a-z]+)$'\n          key: k\n          example: odes\n          rule-id: books\n",
-            ),
-            "`rule-id` `books` is declared twice",
-        ),
-        (
-            list(
                 "          pattern: '^(?P<k>[a-z]+)$'\n          key: k\n          example: odes\n          rule-id: Not Slug\n",
             ),
             "`rule-id` must be a slug",
@@ -355,6 +349,12 @@ fn a_pairing_rule_captures_a_key_of_a_rule_that_exists() {
         let got = schema_errors(&schema);
         assert!(got.iter().any(|e| e.contains(want)), "{want}: {got:?}");
     }
+    // A unit rule's `rule-id` only names the rule, so it can share the id
+    // of a block.
+    let got = schema_errors(&list(
+        "          pattern: '^(?P<k>[a-z]+)$'\n          key: k\n          example: poems\n          rule-id: books\n",
+    ));
+    assert!(got.is_empty(), "{got:?}");
 }
 
 #[test]
@@ -452,7 +452,7 @@ fn nested_schema(n: &Nested) -> String {
         "---\ntype: Schema\nid: schema-shelf\ndescription: Shelves, and a subsection inside each.\n---\n\n````yaml\nline-limit: 0\nlifecycle:\n  - { key: state, states: [draft, done] }\nfrontmatter:\n  type:\n    const: Shelf\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks:\n      - kind: bullet-list\n        rule-id: shelves\n        each:\n          pattern: '^(?P<k>[A-Z][a-z]+)$'\n          key: k\n          example: Poetry\n  - heading: { pattern: '^\\d+ Shelf: (?P<k>[A-Z][a-z]+)$', key: k, example: '1 Shelf: Poetry' }\n    level: 2\n    repeat: true\n    for-each-key-of: shelves\n    rule-id: shelf\n",
     );
     s.push_str(&gate(n.shelf_gate));
-    s.push_str("    blocks:\n      - kind: bullet-list\n        each:\n          rule-id: books\n          pattern: '^book (?P<k>[a-z]+)$'\n          key: k\n          example: book odes\n");
+    s.push_str("    blocks:\n      - kind: bullet-list\n        each:\n          key-of: books\n          pattern: '^book (?P<k>[a-z]+)$'\n          key: k\n          example: book odes\n");
     s.push_str("  - heading: { pattern: '^\\d+\\.\\d+ Index$', example: '1.1 Index' }\n    level: 3\n    parent: shelf\n");
     s.push_str(&gate(n.index_gate));
     if n.numbered {

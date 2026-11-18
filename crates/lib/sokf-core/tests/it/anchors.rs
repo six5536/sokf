@@ -2,7 +2,13 @@
 //! write it, validation checks that it is placed where its key is, no rule
 //! reads it, and every fragment refers to it by its slug.
 
-use common::{TempTree, json, lined, new_options};
+use std::collections::BTreeSet;
+
+use common::{
+    TempTree, age,
+    incremental::{cold, edit, run, set},
+    json, lined, lines, new_options,
+};
 use proptest::prelude::*;
 use sokf_core::{CacheMode, NewOptions, new};
 
@@ -274,6 +280,120 @@ fn an_include_leaves_the_anchors_out() {
     assert!(!interior.contains("<a id="), "{overview}");
     let report = t.validate_all(false, CacheMode::Off);
     assert!(report.errors.is_empty(), "{}", json(&report));
+}
+
+/// `kept_links` returns the documents that a warm run checked and its
+/// findings, after it checks that a cold run gives the same findings, and
+/// the findings among them on a reference to `cli-1_ac-2`.
+fn kept_links(tree: &TempTree) -> (BTreeSet<String>, Vec<String>, Vec<String>) {
+    let (dirty, _, warm, _) = run(tree);
+    assert_eq!(warm, cold(tree));
+    let links = on_kept(&warm);
+    (dirty, warm, links)
+}
+
+/// `on_kept` returns the findings on a link or a marker that names
+/// `cli-1_ac-2`, and leaves out those on the anchor itself.
+fn on_kept(findings: &[String]) -> Vec<String> {
+    findings
+        .iter()
+        .filter(|f| f.contains("cli-1_ac-2") && !f.contains("the anchor `#cli-1_ac-2`"))
+        .cloned()
+        .collect()
+}
+
+// While an item breaks its rule, the engine keeps its anchor, so a link to
+// the anchor from another document or from its own, and a marker that names
+// it, resolve, whether the run reads the cache or not. A bare fragment names
+// a key, so it doesn't resolve. A change that leaves the anchors as they are,
+// but takes the anchor from the item, reaches the cache too.
+// sokf-tests: SOKF_FORMAT_71
+// sokf-tests: SOKF_FORMAT_73
+// sokf-tests: SOKF_FORMAT_145
+// sokf-tests: CACHE-1_AC-4
+// sokf-tests: CACHE-1_AC-14
+#[test]
+fn a_link_to_the_anchor_of_a_broken_item_resolves_on_a_cold_and_a_warm_cache() {
+    let tree = TempTree::fixture("clean");
+    let decision = "knowledge/decisions/decision-single-binary.md";
+    tree.write(
+        decision,
+        &tree.read(decision).replace(
+            "the daemon is a subcommand.",
+            "the daemon is a subcommand, as [the parse criterion][sokf:req-cli#cli-1_ac-2] needs and [its key][sokf:#cli-1_ac-2] names.",
+        ),
+    );
+    let req = "knowledge/req-cli.md";
+    tree.write(
+        req,
+        &tree.read(req).replace(
+            "repetitive CLI arguments.",
+            "repetitive CLI arguments, as [the parse criterion](#cli-1_ac-2) shows.",
+        ),
+    );
+    let main = "src/main.rs";
+    tree.write(
+        main,
+        &tree.read(main).replace(
+            "fn main() {",
+            // sokf:ignore-next-line
+            "// sokf-implements: req-cli#cli-1_ac-2\nfn main() {",
+        ),
+    );
+    let fixed = tree.validate_all(true, CacheMode::Off).errors;
+    assert!(fixed.is_empty(), "{fixed:?}");
+    age(tree.dir(), 10);
+    let (_, warm, _) = kept_links(&tree);
+    assert!(warm.is_empty(), "{warm:?}");
+    let good = tree.read(req);
+    let broken =
+        |text: &str| text.replace("parse, THEN the system SHALL", "parse, the system will");
+    edit(&tree, req, &broken(&good));
+    let (_, warm, links) = kept_links(&tree);
+    assert!(
+        warm.iter()
+            .any(|f| f.contains("does not match the `unwanted` form")),
+        "{warm:?}"
+    );
+    let bare = |links: &[String]| {
+        links.len() == 1 && links[0].contains("`[sokf:#cli-1_ac-2]` refers to a key")
+    };
+    assert!(bare(&links), "{links:?}");
+    // The run checks the decision again and not the requirement, so the
+    // link resolves against the kept anchor in the store.
+    let text = tree.read(decision);
+    edit(
+        &tree,
+        decision,
+        &text.replace("the wrong one.", "the wrong one again."),
+    );
+    let (dirty, _, links) = kept_links(&tree);
+    assert_eq!(dirty, set(&[&format!("/{decision}")]));
+    assert!(bare(&links), "{links:?}");
+    // A fix of the decision keeps the definition of the link.
+    let text = tree.read(decision);
+    edit(
+        &tree,
+        decision,
+        &text.replace("one again.", "one once more."),
+    );
+    let fixed = lines(&tree.validate_all(true, CacheMode::On));
+    assert!(bare(&on_kept(&fixed)), "{fixed:?}");
+    assert!(
+        tree.read(decision)
+            .contains("[sokf:req-cli#cli-1_ac-2]: /knowledge/req-cli.md#cli-1_ac-2\n"),
+        "{}",
+        tree.read(decision)
+    );
+    // The item passes again with another key, and the anchor names no key.
+    let renamed = good.replace("</a>CLI-1_AC-2 [unwanted]", "</a>CLI-1_AC-3 [unwanted]");
+    edit(&tree, req, &renamed);
+    let (_, _, links) = kept_links(&tree);
+    assert_eq!(links.len(), 4, "{links:?}");
+    // The item breaks its rule again, and it holds the anchor once more.
+    edit(&tree, req, &broken(&renamed));
+    let (_, _, links) = kept_links(&tree);
+    assert!(bare(&links), "{links:?}");
 }
 
 // sokf-tests: SOKF_FORMAT_84

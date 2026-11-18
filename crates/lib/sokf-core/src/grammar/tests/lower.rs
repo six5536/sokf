@@ -6,7 +6,7 @@ use crate::{
     RepoPath,
     grammar::{
         CitedFrom, Dispatch, FmFormat, FormatSource, KeyScope as Scope, Lang, RegexCache, Shape,
-        SokfSchema, States, Text, compile, embedded_formats, glob_inside, load_grammar,
+        SokfSchema, States, Text, compile, glob_inside, load_grammar,
     },
     markdown::BlockKind,
     yaml,
@@ -15,7 +15,7 @@ use crate::{
 fn compile_text(text: &str) -> std::result::Result<SokfSchema, Vec<String>> {
     let grammar = load_grammar().unwrap();
     let regexes = RegexCache::new();
-    let registry = embedded_formats(&grammar, &regexes).unwrap();
+    let registry = super::requirements();
     let yaml = yaml::parse(text, 1).unwrap();
     compile(
         &yaml,
@@ -60,6 +60,32 @@ fn lowers_cited_by() {
     assert_eq!(second.common.severity, crate::Severity::Error);
 }
 
+/// The `only` of a `links`, a `plans-paths`, and a `cited-by` entry is a
+/// condition, as a section's is: a list of maps admits the states that any
+/// one of its maps admits.
+#[test]
+fn an_entry_takes_a_condition_of_several_maps() {
+    let c = compile_text(
+        "line-limit: 0\nlifecycle:\n  - { key: scope, states: [public, internal] }\n  - { key: kind, states: [api, tool] }\nfrontmatter:\n  type: {const: Contract}\nlinks:\n  - rel: relates-to\n    min: 0\n    only: [{ scope: public }, { kind: tool }]\n    guidance: d\nplans-paths:\n  - section: files\n    only: [{ scope: public }, { kind: tool }]\ncited-by:\n  - from-type: Stories\n    only: [{ scope: public }, { kind: tool }]\nsections:\n  - heading: Files\n    level: 1\n    rule-id: files\n    guidance: d\n    blocks:\n      - kind: bullet-list\n        example: '[the file](/src/main.rs)'\n",
+    )
+    .unwrap();
+    let states = |scope: &str, kind: &str| {
+        States(BTreeMap::from([
+            ("scope".to_string(), vec![scope.to_string()]),
+            ("kind".to_string(), vec![kind.to_string()]),
+        ]))
+    };
+    for only in [
+        &c.links[0].common.only,
+        &c.plans_paths[0].common.only,
+        &c.cited_by[0].common.only,
+    ] {
+        assert!(only.admits(&states("public", "api")));
+        assert!(only.admits(&states("internal", "tool")));
+        assert!(!only.admits(&states("internal", "api")));
+    }
+}
+
 /// `cited-by` lowers an entry that counts `implements` markers. `markers`
 /// lowers to the list of markers that can cite the type.
 // sokf-tests: EXT-9_AC-6
@@ -69,7 +95,7 @@ fn lowers_cited_by() {
 fn lowers_from_marker_and_markers() {
     let schema = |cited: &str, markers: &str| {
         format!(
-            "line-limit: 0\nfrontmatter:\n  type: {{const: Contract}}\n{markers}cited-by:\n{cited}sections:\n  - heading: Criteria\n    level: 1\n    guidance: d\n    blocks:\n      - kind: bullet-list\n        each: {{pattern: '^(?P<id>C-\\d+): .+$', key: id, rule-id: criteria, example: 'C-1: it works'}}\n"
+            "line-limit: 0\nfrontmatter:\n  type: {{const: Contract}}\n{markers}cited-by:\n{cited}sections:\n  - heading: Criteria\n    level: 1\n    guidance: d\n    blocks:\n      - kind: bullet-list\n        each: {{pattern: '^(?P<id>C-\\d+): .+$', key: id, key-of: criteria, example: 'C-1: it works'}}\n"
         )
     };
     let c = compile_text(&schema(
@@ -124,7 +150,7 @@ fn lowers_from_marker_and_markers() {
 #[test]
 fn lowers_the_grammar_guide_schema() {
     let c = compile_text(
-        "line-limit: 120\nguidance: One bug or one feature, and what closed it.\nroot: /knowledge/issues\nlifecycle:\n  - { key: state, states: [open, closed], path: true }\n  - { key: kind, states: [bug, feature] }\nfrontmatter:\n  type:\n    const: Issue\n  id:\n    template: 'issue-${:seq}-${:slug}'\n  reviewers:\n    list: true\n    format: document-id\n    min: 1\n    optional: true\nlinks:\n  - rel: implements\n    to-type: [Feature]\n    guidance: d\n  - rel: relates-to\n    min: 0\n    guidance: d\nsections:\n  - heading: { from: title }\n    level: 1\n    guidance: The title.\n  - heading: Reproduction\n    level: 2\n    only: { kind: bug }\n    guidance: d\n    blocks:\n      - kind: code\n        lang: [rust, any]\n      - kind: table\n        columns: [Name, Type]\n        each: { pattern: '^`(?P<name>[a-z-]+)`', key: name, unique: repository, example: '`name` | string' }\n      - kind: group\n        repeat: true\n        blocks:\n          - { kind: prose, max: 1, each: { format: user-story } }\n  - heading: { template: '${name:word} flow', key: name, example: main flow }\n    repeat: true\n    level: 2\n    rule-id: flows\n    guidance: d\n  - heading: Conclusion\n    level: 2\n    only: { state: closed }\n    renamed-from: [Result]\n    guidance: d\n    blocks: []\nprohibited-patterns:\n  - pattern: '\\bTODO\\b'\n    message: A finished document contains no TODO.\nformats:\n  requirement-ears:\n    pattern: '.*'\n    example: x\nexamples:\n  - document: |\n      ---\n      type: Issue\n      ---\n",
+        "line-limit: 120\nguidance: One bug or one feature, and what closed it.\nroot: /knowledge/issues\nlifecycle:\n  - { key: state, states: [open, closed], path: true }\n  - { key: kind, states: [bug, feature] }\nfrontmatter:\n  type:\n    const: Issue\n  id:\n    template: 'issue-${:seq}-${:slug}'\n  reviewers:\n    list: true\n    format: document-id\n    min: 1\n    optional: true\nlinks:\n  - rel: implements\n    to-type: [Feature]\n    guidance: d\n  - rel: relates-to\n    min: 0\n    guidance: d\nsections:\n  - heading: { from: title }\n    level: 1\n    guidance: The title.\n  - heading: Reproduction\n    level: 2\n    only: { kind: bug }\n    guidance: d\n    blocks:\n      - kind: code\n        lang: [rust, any]\n      - kind: table\n        columns: [Name, Type]\n        each: { pattern: '^`(?P<name>[a-z-]+)`', key: name, unique: repository, example: '`name` | string' }\n      - kind: group\n        repeat: true\n        blocks:\n          - { kind: prose, max: { hard: 1, when-at-limit: 'Write a second need as a group of its own.' }, each: { format: user-story } }\n  - heading: { template: '${name:word} flow', key: name, example: main flow }\n    repeat: true\n    level: 2\n    rule-id: flows\n    guidance: d\n  - heading: Conclusion\n    level: 2\n    only: { state: closed }\n    renamed-from: [Result]\n    guidance: d\n    blocks: []\nprohibited-patterns:\n  - pattern: '\\bTODO\\b'\n    message: A finished document contains no TODO.\nformats:\n  requirement-ears:\n    pattern: '.*'\n    example: x\nexamples:\n  - document: |\n      ---\n      type: Issue\n      ---\n",
     )
     .unwrap();
     assert_eq!(c.dispatch, Dispatch::Type("Issue".into()));

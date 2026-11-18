@@ -5,7 +5,7 @@
 //! by. The fence of a schema is the schema itself, so every line of a schema
 //! counts.
 
-use std::ops::RangeInclusive;
+use std::ops::Range;
 
 use crate::{Finding, markdown, model::Document};
 
@@ -13,14 +13,18 @@ use crate::{Finding, markdown, model::Document};
 pub const MARKER: &str = "<<<<<<< ";
 
 /// `marker_lines` returns the number of each line of `text` that begins
-/// with `MARKER`, from 1, apart from the lines that `skip` holds.
-fn marker_lines(text: &str, skip: &[RangeInclusive<usize>]) -> Vec<usize> {
-    text.lines()
-        .enumerate()
-        .map(|(i, l)| (i + 1, l))
-        .filter(|(n, l)| l.starts_with(MARKER) && !skip.iter().any(|r| r.contains(n)))
-        .map(|(n, _)| n)
-        .collect()
+/// with `MARKER`, from 1, apart from the lines whose start lies in a range
+/// of bytes that `skip` holds.
+fn marker_lines(text: &str, skip: &[Range<usize>]) -> Vec<usize> {
+    let mut start = 0;
+    let mut out = Vec::new();
+    for (i, line) in text.split_inclusive('\n').enumerate() {
+        if line.starts_with(MARKER) && !skip.iter().any(|r| r.contains(&start)) {
+            out.push(i + 1);
+        }
+        start += line.len();
+    }
+    out
 }
 
 /// `document_conflicts` returns the number of each line of the document
@@ -31,7 +35,7 @@ pub fn document_conflicts(doc: &Document) -> Vec<usize> {
     let skip = if doc.type_name() == Some("Schema") {
         Vec::new()
     } else {
-        markdown::fenced_lines(&doc.body, &doc.source.text)
+        markdown::fenced_bytes(&doc.body, &doc.source.text)
     };
     marker_lines(&doc.source.text, &skip)
 }
@@ -84,6 +88,11 @@ mod tests {
         // A fence in a list item is a fence too.
         let nested = format!("# A\n\n- An item.\n\n  ```text\n  x\n  ```\n\n{example}");
         assert_eq!(lines("/knowledge/a.md", &nested), [] as [usize; 0]);
+        // A fence after carriage returns alone, which end a line for the
+        // parser but not for the check, is a fence too.
+        let crs = "\r".repeat(10);
+        let cr = format!("---\ntype: Note\nid: a\n---\n# A{crs}\n{example}\n<<<<<<< ours\n");
+        assert_eq!(lines("/knowledge/a.md", &cr), vec![14]);
         // The fence of a schema is the schema, so its markers count.
         let schema = "---\ntype: Schema\nid: schema-a\n---\n\n````yaml\n<<<<<<< x\n````\n";
         assert_eq!(lines("/knowledge/schemas/a.md", schema), vec![7]);

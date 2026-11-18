@@ -1,15 +1,6 @@
 # The tasks that only sokf has. The packs supply everything else, in
 # .config/mise/conf.d/.
 
-[tasks."version:set:sokf"]
-hide = true
-usage = 'arg "<version>"'
-run = 'node scripts/pack-version.mts set "${usage_version?}"'
-
-[tasks."version:list:sokf"]
-hide = true
-run = "node scripts/pack-version.mts list"
-
 # After the launcher's smoke test, which builds the host's binary when no
 # release build has staged one.
 [tasks."test:smoke:sokf"]
@@ -27,14 +18,4 @@ mkdir -p dist/share
 for shell in bash zsh fish powershell elvish; do
   ./target/release/sokf completions "$shell" > "dist/share/sokf.$shell"
 done
-"""
-
-# Each side of the workspace has to reach the minimum by itself.
-[tasks."coverage:check:rust"]
-hide = true
-run = """
-cargo +$RUST_NIGHTLY llvm-cov clean --workspace
-cargo +$RUST_NIGHTLY llvm-cov nextest --workspace --run-ignored all --no-report
-cargo +$RUST_NIGHTLY llvm-cov report --summary-only --ignore-filename-regex 'crates/app' --fail-under-lines ${COVERAGE_MIN_LINES:-90}
-cargo +$RUST_NIGHTLY llvm-cov report --summary-only --ignore-filename-regex 'crates/lib' --fail-under-lines ${COVERAGE_MIN_LINES:-90}
 """

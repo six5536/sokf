@@ -1,7 +1,8 @@
 //! This module lists the files of a drop-in folder of `/.sokf/`, such as
-//! `/.sokf/roots.d/` and `/.sokf/formats.d/`, at any depth, so that each
-//! tool that ships files for sokf keeps them in a folder of its own, such as
-//! `/.sokf/formats.d/pakf/@sokf/sokf/formats.yaml` (CONF-2, CONF-11).
+//! `/.sokf/roots.d/`, `/.sokf/excludes.d/`, and `/.sokf/formats.d/`, at any
+//! depth, so that each tool that ships files for sokf keeps them in a folder
+//! of its own, such as `/.sokf/formats.d/pakf/@acme/tool/formats.yaml`
+//! (CONF-2, CONF-3, CONF-11).
 
 use std::{fs, io::ErrorKind, path::Path};
 
@@ -16,6 +17,7 @@ use crate::{Error, RepoPath, RepoRoot, Result};
 /// directory that can't be read is an error, or, when `lenient` is set,
 /// holds no file, so that the files of every other directory still count.
 // sokf-implements: CONF-2_AC-53
+// sokf-implements: CONF-3_AC-13
 // sokf-implements: CONF-11_AC-7
 pub(crate) fn d_files(
     root: &RepoRoot,
@@ -129,6 +131,7 @@ mod tests {
     }
 
     // sokf-tests: CONF-2_AC-53
+    // sokf-tests: CONF-3_AC-13
     // sokf-tests: CONF-11_AC-7
     #[cfg(unix)]
     #[test]

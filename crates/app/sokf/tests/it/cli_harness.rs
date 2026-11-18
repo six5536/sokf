@@ -491,6 +491,7 @@ fn installed_block(args: &[&str], file: &str, config: Option<&str>) -> String {
 
 // sokf-tests: CLI-3_AC-35
 // sokf-tests: CLI-3_AC-70
+// sokf-tests: CLI-3_AC-112
 #[test]
 fn every_harness_writes_the_same_block_with_or_without_the_hook() {
     let claude = installed_block(&["claude"], "CLAUDE.md", Some(&with_hooks(&["claude"])));
@@ -507,9 +508,21 @@ fn every_harness_writes_the_same_block_with_or_without_the_hook() {
         "read the `sokf` skill",
         "Before you end a turn, run `sokf validate --fix` and fix every error it reports.",
         "A hook may tell you that errors remain; fix them before you finish the work.",
+        "Before modifying a knowledge store document, use `sokf guide <PATH>` to read the update guidance to follow when writing.",
+        "Add `--state <KEY>=<STATE>` when changing document state.",
     ] {
         assert!(claude.contains(words), "{words}: {claude}");
     }
+    // The line about the guidance follows the line about the skill, and
+    // comes before the line about `sokf validate --fix`.
+    assert!(
+        claude.contains("read the `sokf` skill.\nBefore modifying a knowledge store document,"),
+        "{claude}"
+    );
+    assert!(
+        claude.contains("when changing document state.\nBefore you end a turn,"),
+        "{claude}"
+    );
     assert!(!claude.contains("a hook runs `sokf"), "{claude}");
 }
 

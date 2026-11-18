@@ -27,6 +27,21 @@ pub(crate) fn write(dir: &Path, rel: &str, text: &str) {
     fs::write(path, text).unwrap();
 }
 
+/// `requirement_formats` returns the registry of the fixture's formats of
+/// the lines of requirements documents, as an embedded layer, because the
+/// tool embeds no format of its own.
+pub(crate) fn requirement_formats(
+    grammar: &crate::grammar::Grammar,
+) -> crate::grammar::FormatRegistry {
+    crate::grammar::FormatRegistry::from_text(
+        include_str!("../tests/fixtures/formats/requirements.formats.yaml"),
+        &crate::grammar::SOKF_TYPES,
+        grammar,
+        &crate::grammar::RegexCache::new(),
+    )
+    .unwrap()
+}
+
 /// `model_at` builds the model of the repository at `dir`, with `roots` as
 /// its knowledge roots.
 pub(crate) fn model_at(dir: &Path, roots: &[&str]) -> Model {

@@ -1,0 +1,72 @@
+---
+source: crates/lib/sokf-core/tests/it/fix.rs
+expression: json(&fixed)
+---
+{
+  "errors": [
+    {
+      "path": "/README.md",
+      "message": "the definition block is missing; run `sokf validate --fix` (SOKF_FORMAT_78)"
+    },
+    {
+      "path": "/README.md",
+      "message": "the schema /knowledge/schemas/readme.md breaks the grammar, so sokf doesn't check the file (SOKF_VALIDATION_41)"
+    },
+    {
+      "path": "/README.md",
+      "line": 3,
+      "message": "the link refers to the document `/knowledge/a.md` by path. Refer to it by id as `[text][sokf:a]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+    },
+    {
+      "path": "/knowledge/a.md",
+      "message": "the definition block is missing; run `sokf validate --fix` (SOKF_FORMAT_77)"
+    },
+    {
+      "path": "/knowledge/a.md",
+      "line": 2,
+      "message": "the schema of `Note` (/knowledge/schemas/note.md) breaks the grammar, so sokf doesn't check the document (SOKF_VALIDATION_41)"
+    },
+    {
+      "path": "/knowledge/a.md",
+      "line": 10,
+      "message": "`#D-1` matches no heading or key in this document (SOKF_FORMAT_73)"
+    },
+    {
+      "path": "/knowledge/a.md",
+      "line": 10,
+      "message": "the link refers to the document `/knowledge/b.md` by path. Refer to it by id as `[text][sokf:b]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+    },
+    {
+      "path": "/knowledge/b.md",
+      "line": 2,
+      "message": "type `Thing` has no schema (SOKF_SCHEMA_13)"
+    },
+    {
+      "path": "/knowledge/b.md",
+      "line": 12,
+      "message": "the anchor `#t-1-an-anchor-longer-than-the-code-after-it` names no key: no schema governs the document, so it has none (SOKF_FORMAT_83)"
+    },
+    {
+      "path": "/knowledge/schemas/note.md",
+      "line": 10,
+      "message": "unknown key `bogus` in `schema` (TL_12)"
+    },
+    {
+      "path": "/knowledge/schemas/readme.md",
+      "line": 10,
+      "message": "unknown key `bogus` in `schema` (TL_12)"
+    }
+  ],
+  "warnings": [],
+  "fixes": [
+    {
+      "op": "rewrote",
+      "path": "/knowledge/b.md"
+    }
+  ],
+  "summary": {
+    "errors": 11,
+    "warnings": 0,
+    "fixes": 1
+  }
+}

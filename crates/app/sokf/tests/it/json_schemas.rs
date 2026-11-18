@@ -62,6 +62,10 @@ fn the_schemas_refuse_a_wrong_shape() {
             r#"{"decision":"allow","reason":"x"}"#,
         ),
         ("locate-report.schema.json", r#"[{"id":"a"}]"#),
+        (
+            "guide-report.schema.json",
+            r#"{"documents":[{"path":"/a.md","type":"T","states":{},"bans":[],"frontmatter":[],"links":[],"sections":[{"heading":"H","level":2,"optional":false,"repeat":false,"blocks":[],"line":1}]}]}"#,
+        ),
     ] {
         let value: Value = serde_json::from_str(wrong).unwrap();
         assert!(check(name, &value).is_err(), "{name} accepts {wrong}");
@@ -210,7 +214,7 @@ fn harness_reports_and_hook_answers_match_their_schemas() {
 }
 
 /// Each command that takes `--json`, with the output whose schema `--json-schema` prints.
-const SCHEMA_COMMANDS: [(&[&str], sokf_core::Output); 8] = [
+const SCHEMA_COMMANDS: [(&[&str], sokf_core::Output); 9] = [
     (&["init"], sokf_core::Output::Init),
     (&["harness", "install"], sokf_core::Output::Harness),
     (&["harness", "status"], sokf_core::Output::Harness),
@@ -219,6 +223,7 @@ const SCHEMA_COMMANDS: [(&[&str], sokf_core::Output); 8] = [
     (&["locate"], sokf_core::Output::Locate),
     (&["new"], sokf_core::Output::New),
     (&["info", "formats"], sokf_core::Output::InfoFormats),
+    (&["guide"], sokf_core::Output::Guide),
 ];
 
 // Each command prints the schema of its `--json` output and nothing else, outside any
@@ -253,6 +258,7 @@ fn json_schema_refuses_every_other_argument() {
         &["--no-cache", "graph", "--json-schema"],
         &["--repo-root", "/nowhere", "new", "--json-schema"],
         &["info", "formats", "--layer", "embedded", "--json-schema"],
+        &["guide", "--json-schema", "glossary"],
     ] {
         let (stdout, stderr, code) = run(args);
         assert_eq!((stdout.as_str(), code), ("", 2), "{args:?}: {stderr}");

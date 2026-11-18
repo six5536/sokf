@@ -1,12 +1,13 @@
-//! This module reads the words that a user gives the graph commands:
-//! `resolve_start` reads the `START` of a graph command (CLI-7), and
-//! `resolve_id` reads the id that `locate` takes (CLI-8).
+//! This module reads the arguments that a user gives the graph commands,
+//! `guide`, and `locate`: `resolve_start` reads the `START` of a graph command
+//! (CLI-7), `resolve_document` reads the document that `guide` takes (CLI-17)
+//! in the same way, and `resolve_id` reads the id that `locate` takes (CLI-8).
 
 use std::path::Path;
 
 use super::{Graph, NodeKey, NodeKind};
 use crate::{
-    Error, Model, PathArg, RepoPath, Result,
+    Error, FileKind, Model, PathArg, RepoPath, Result,
     model::{KeyEntry, KeyIndex, split_store},
 };
 
@@ -272,10 +273,19 @@ pub fn resolve_id(model: &Model, keys: Option<&KeyIndex>, id: &str) -> Result<Re
     }
 }
 
-/// `resolve_start` reads `arg` both as an `id` and as a path, and refuses it
-/// unless exactly one reading resolves (CLI-7_AC-19, CLI-7_AC-20). When the
-/// start is a directory or a repository file, the function adds it to the
-/// graph as a node.
+/// `Reading` is what an argument names when the tool reads it both as an id
+/// and as a path, and exactly one reading resolves.
+enum Reading {
+    /// The document or schema that the argument identifies as an id, or as a
+    /// reference to a key that the document captures.
+    Id(RepoPath),
+    /// The file or directory that the argument names as a path.
+    Path(RepoPath),
+}
+
+/// `read` reads `arg` both as an `id` and as a path, and refuses it unless
+/// exactly one reading resolves (CLI-7_AC-19, CLI-7_AC-20). The message of
+/// a refusal says why, for the command to name.
 // sokf-implements: CLI-7_AC-29
 // sokf-implements: CLI-7_AC-30
 // sokf-implements: CLI-7_AC-31
@@ -290,13 +300,12 @@ pub fn resolve_id(model: &Model, keys: Option<&KeyIndex>, id: &str) -> Result<Re
     clippy::case_sensitive_file_extension_comparisons,
     reason = "a START that ends in a lowercase `.md` is path-shaped, as CLI-7_AC-28 says, so the comparison is case-sensitive on purpose"
 )]
-pub fn resolve_start(
-    graph: &mut Graph,
+fn read(
     model: &Model,
     keys: Option<&KeyIndex>,
     cwd: &Path,
     arg: &str,
-) -> Result<Start> {
+) -> std::result::Result<Reading, String> {
     // The function reads a word shaped as a path only as a path, even when
     // a document has that word as its id.
     // sokf-implements: CLI-7_AC-28
@@ -308,33 +317,28 @@ pub fn resolve_start(
     };
     let path = PathArg(arg).resolve(&model.tree.root, cwd);
     match (ids.as_slice(), path) {
-        ([_, ..], Some(p)) => Err(Error::Start(format!(
+        ([_, ..], Some(p)) => Err(format!(
             "`{arg}` is both an id ({}) and a path ({p})",
             join(&ids)
-        ))),
-        ([_, _, ..], None) => Err(Error::Start(format!(
+        )),
+        ([_, _, ..], None) => Err(format!(
             "`{arg}` identifies more than one document: {}{}",
             join(&ids),
             qualified(model, arg, &ids)
-        ))),
-        // For a reference to a key alone, and for `<id>#<key>` when the
-        // document captures the key, the start is the key's node when the
-        // graph has one.
-        // sokf-implements: CLI-7_AC-32
-        // sokf-implements: CLI-7_AC-97
-        ([one], None) => Ok(key_start(graph, model, keys, arg, one)),
-        ([], Some(p)) => Ok(path_start(graph, model, p)),
+        )),
+        ([one], None) => Ok(Reading::Id(one.clone())),
+        ([], Some(p)) => Ok(Reading::Path(p)),
         ([], None) => {
             // A key that no document captures at repository or knowledge
             // scope can still be a key of document scope.
             let scoped = keys.map_or_else(Vec::new, |k| document_scoped(model, k, arg));
             match scoped.as_slice() {
                 // sokf-implements: CLI-7_AC-98
-                [(one, _)] => Ok(key_start(graph, model, keys, arg, one)),
+                [(one, _)] => Ok(Reading::Id(one.clone())),
                 // sokf-implements: CLI-7_AC-100
-                [] => Err(Error::Start(format!(
+                [] => Err(format!(
                     "`{arg}` is neither an id nor a path in the repository"
-                ))),
+                )),
                 // sokf-implements: CLI-7_AC-99
                 many => {
                     let forms: Vec<String> = many
@@ -344,13 +348,57 @@ pub fn resolve_start(
                             None => p.to_string(),
                         })
                         .collect();
-                    Err(Error::Start(format!(
+                    Err(format!(
                         "`{arg}` is a key of document scope that more than one document captures. Write {}",
                         capped(&forms)
-                    )))
+                    ))
                 }
             }
         }
+    }
+}
+
+/// `resolve_start` reads `arg` as `read` does. When the start is a directory
+/// or a repository file, the function adds it to the graph as a node.
+pub fn resolve_start(
+    graph: &mut Graph,
+    model: &Model,
+    keys: Option<&KeyIndex>,
+    cwd: &Path,
+    arg: &str,
+) -> Result<Start> {
+    match read(model, keys, cwd, arg).map_err(Error::Start)? {
+        // For a reference to a key alone, and for `<id>#<key>` when the
+        // document captures the key, the start is the key's node when the
+        // graph has one.
+        // sokf-implements: CLI-7_AC-32
+        // sokf-implements: CLI-7_AC-97
+        Reading::Id(one) => Ok(key_start(graph, model, keys, arg, &one)),
+        Reading::Path(p) => Ok(path_start(graph, model, p)),
+    }
+}
+
+/// `resolve_document` reads `arg` as `resolve_start` reads a `START`, and
+/// returns the document or schema that it names. It refuses an argument
+/// that names no document of a knowledge store, such as a directory, an
+/// asset, or an additional file.
+// sokf-implements: CLI-17_AC-1
+// sokf-implements: CLI-17_AC-2
+// sokf-implements: CLI-17_AC-3
+pub fn resolve_document(
+    model: &Model,
+    keys: Option<&KeyIndex>,
+    cwd: &Path,
+    arg: &str,
+) -> Result<RepoPath> {
+    match read(model, keys, cwd, arg).map_err(Error::Guide)? {
+        Reading::Id(path) => Ok(path),
+        Reading::Path(path) => match model.tree.file(&path).map(|f| f.kind) {
+            Some(FileKind::Document | FileKind::Schema) => Ok(path),
+            _ => Err(Error::Guide(format!(
+                "`{arg}` names {path}, which is no document of a knowledge store"
+            ))),
+        },
     }
 }
 
@@ -424,7 +472,7 @@ mod tests {
         for (rel, text) in [
             (
                 "knowledge/manifest.sokf.yaml",
-                "sokf: \"0.6\"\nname: k\nscope: test\n",
+                "sokf: \"0.7\"\nname: k\nscope: test\n",
             ),
             (
                 "knowledge/core/a.md",
@@ -441,7 +489,7 @@ mod tests {
             ),
             (
                 "other/manifest.sokf.yaml",
-                "sokf: \"0.6\"\nname: o\nscope: test\n",
+                "sokf: \"0.7\"\nname: o\nscope: test\n",
             ),
             ("other/n.md", "---\ntype: Note\nid: a\n---\n\n# N\n"),
             ("src/a.rs", ""),

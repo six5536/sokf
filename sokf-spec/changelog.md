@@ -13,6 +13,7 @@ links:
 This changelog records the changes to the [format specification][sokf:sokf-format-spec] and to the schema and validation specifications. Version 0.6 split the Superdev Open Knowledge Format (SOKF) specification into the format, schema, and validation specifications. Each § in an entry before 0.6 refers to a section of the retired SOKF specification, `sokf-spec/sokf-spec.md`, which the history of sokf's development holds.
 
 - [Notes](#notes)
+- [0.7](#07)
 - [0.6](#06)
 - [0.5](#05)
 - [0.4](#04)
@@ -30,14 +31,35 @@ with the manifest's `sokf` key (§2).
 The grammar and the shared formats carry versions of their own. Both
 versions are earlier than 1.0. Nothing reads either number, so a change
 to either one bumps its minor version whether it breaks a schema or not,
-and the git history records what changed. The grammar is at 0.7. It rose
-from 0.6, the grammar of sokf 0.1.3, when it gained a `cited-by` entry's
-`message` and a unit rule's `to-type`.
+and the git history records what changed. The grammar is at 0.8. It rose
+from 0.7, the grammar of sokf 0.6.0, when a `links` entry's `max` became a
+limit with its `when-at-limit`, an `only` became a condition, and a
+`cited-by` entry's `keys` could name a `key-of`.
+
+## 0.7
+
+This version changes the schema language, and each item below says what it breaks in a 0.6 schema. A 0.6 document conforms unchanged while its schema declares none of the new keys, such as `labels`.
+
+- Version (§2, validation specification §2): a store that targets this version declares `sokf: "0.7"` in its manifest (SOKF_FORMAT_9). A validator of 0.7 reports a manifest that declares `0.6` (SOKF_VALIDATION_3), so every store raises the version in its manifest.
+- Limits (tramlines specifications): every `max` of a schema is a map of a `hard` or a `soft` count and its `when-at-limit`, which tells the writer where the content goes that does not fit (TL_137, TL_138). A soft limit states the usual count and bounds nothing (TL_139). A finding on a count above a hard limit ends with `When at the limit:` and the limit's `when-at-limit` (TL_77). A bare number in a `max` breaks the grammar. To keep the check, write `max: { hard: N, when-at-limit: "…" }`.
+- Link limits (schema specification §4, schema extension): the `max` of a `links` entry is a limit with its `when-at-limit` text, as the `max` of a block is. Only a hard limit bounds the links, and its finding quotes the text (SOKF_SCHEMA_33, SOKF_SCHEMA_103). A bare number in the `max` of an entry breaks the grammar. To keep the check, write `max: { hard: N, when-at-limit: "…" }`. A scaffold writes no link of an entry that a hard `max` of 0 bans (schema specification §5).
+- Limit names (tramlines-md specification): a rule under `rules` or `lines` that declares a `max` binds a format or declares a `rule-id`, so that the words of its limit name what it counts (TLMD_235). A 0.6 rule with a `max` and neither key breaks. To keep the limit, give the rule a `rule-id`.
+- Key sets (schema specification §4, schema extension): the `rule-id` of a unit rule or a line rule only names the rule, and files no key (TLMD_236). Such a rule files its keys under the name in its `key-of` (TLMD_89). The `keys` of a `cited-by` entry names the `rule-id` of a section or a block, or a `key-of` (SOKF_SCHEMA_35). A 0.6 entry whose `keys` names the `rule-id` of a unit rule breaks. To keep it, give the rule a `key-of` of the same name.
+- Runs by shape (tramlines-md specification): the validator divides a run of blocks of one kind between the positions of a schema by the text of their units, and never by a `min` or a `max` (TLMD_49, TLMD_74). A 0.6 schema that only a count could divide breaks (TLMD_149).
+- Conditions (schema specification §5, schema extension): an `only` is a condition, either a map of dimensions to states or a list of such maps, and a list admits a document that any one of its maps admits (TL_19, TL_135). The `optional` of a section or a block can be a condition, and the part is then optional only in the states that the condition admits (TLMD_229). A `sokf:only` marker joins the maps of a list with ` | `. A 0.6 `only` is one map, and it means what it meant.
+- Scaffold opening (tramlines-md specification): a scaffold opens its body with the schema's `guidance` and the messages of its bans, and with no sentence of the engine's own (TLMD_118). A scaffold of a schema without either has no opening line. The change breaks nothing.
+- Store language (§2, schema specification §5): a manifest can declare `primary-language`, a BCP 47 tag, and a schema's `language` overrides it (SOKF_FORMAT_251, SOKF_SCHEMA_101). A store without the key is in English, `en`. A validator writes its own texts, such as the rule for a description and the words for a limit, into a scaffold only in the language of the schema (SOKF_SCHEMA_102). A store conforms unchanged.
+- Descriptions (§3): `description` is no longer a one-line summary. It is the text that the index shows beside the title, for a reader deciding whether to open the document. §3.1 states the rule for writing a description, which is SOKF's own and holds for every type. A schema gives `guidance` for `description` only where its type needs something that the rule does not say. A store conforms unchanged.
+- Attribution (§3.2, schema specification §5): a schema can declare the attribution labels `human` and `agent`, and a unit then carries `[human]` where a human said or confirmed all of it, and `[agent]` otherwise (SOKF_FORMAT_252, SOKF_FORMAT_253). A schema that declares labels declares both and no other (SOKF_SCHEMA_104). The validator words each label in the language of the schema, else as its key, and labels each unit of a scaffold `[agent]` (SOKF_SCHEMA_105 to SOKF_SCHEMA_108). A store whose schemas declare no labels conforms unchanged.
+- Kept anchors (§8.5, §9.5): while the text of a unit breaks its rule, the anchor that the unit holds is still an anchor of the document, a kept anchor, and a fragment of a link or a marker that names that anchor resolves (SOKF_FORMAT_71 to SOKF_FORMAT_73, SOKF_FORMAT_145). A store conforms unchanged.
+- Replacements (§3, validation specification §2): the warning at a citation of a deprecated document also names each document that a `superseded-by` link of the deprecated document names (SOKF_VALIDATION_65). A citation from such a document gets no warning (SOKF_VALIDATION_66). A `supersedes` link and a `superseded-by` link in the other direction record one replacement, and a warning names it once. The warning changes no error, so a store that cites a deprecated document still conforms.
+- Line formats (sokf): sokf supplies no line format of its own, so the layer of formats that the tool embeds is empty. A schema takes each format that it names from its own `formats`, from `/.sokf/formats.yaml`, or from a file of `/.sokf/formats.d/`, such as one that a pack ships. A 0.6 schema that names a format that sokf 0.6 embedded, such as `requirement-ears`, breaks until the store supplies the format.
+- No built-in pack (sokf): sokf no longer publishes the pack `@sokf/sokf`, whose schemas, line formats, and standards earlier releases shipped. A store that synced the pack keeps its copies of the files.
+- Guide (sokf): `sokf guide` prints the guidance that a document's schema gives for its parts at the document's states, with the words that a scaffold holds for each limit and each label. The change breaks nothing.
 
 ## 0.6
 
-Amendments on 18 to 23 September, 27 September, 1 to 4 October, and 5, 6, 13, 14, and 15 November 2026 changed this version. A 0.5
-document conforms unchanged unless a `/`-rooted body link in it ends
+A 0.5 document conforms unchanged unless a `/`-rooted body link in it ends
 with `/` and names a file (SOKF_FORMAT_158), or has an empty, `.`, or
 `..` segment (SOKF_FORMAT_159). Schema authors must rewrite their
 schemas for the new grammar.
@@ -119,9 +141,6 @@ schemas for the new grammar.
   warning.
 - Fix (§11): `--fix` rewrites renamed headings, headings bound to
   frontmatter, and setext headings.
-
-Amended 19 September 2026, before any validator implemented 0.6:
-
 - Formats (§10): a contract's `formats` resolves through three layers:
   the contract, then `/.sokf/formats.yaml`, then the tool's embedded
   registry. A nearer entry replaces a farther entry entirely. The
@@ -141,9 +160,6 @@ Amended 19 September 2026, before any validator implemented 0.6:
   `sokf:generated-by`, which it never defined.
 - Fix (§11): when `--fix` refuses a move because the target exists, the
   refusal is a finding, and the check still runs.
-
-Amended 20 September 2026:
-
 - Indexes (§1, §2, §9, §10, §11, §12): every directory of a knowledge contains an `index.md`, and the validator generates every index. An index
   consists of a heading, one entry for each document and for each
   subdirectory, each addressed by id, and a definition block. The
@@ -152,7 +168,6 @@ Amended 20 September 2026:
   `additional-files` glob cannot match an index inside a knowledge. An
   authored index is stale until `--fix` runs. Consumers tolerate a missing
   index.
-
 - Assets (§1, §2, §4, §7, §8, §9, §10, §11, §12): an asset is a
   non-`.md` file that a schema's `asset-files` glob matches. Its
   sidecar is the document beside it whose name is the asset's filename
@@ -167,9 +182,6 @@ Amended 20 September 2026:
   frontmatter edit it makes. It never creates a sidecar. Every `.md`
   under a root stays a document. The change is additive: a knowledge
   with no `asset-files` schema conforms unchanged.
-
-Amended 21 September 2026:
-
 - Templates (§10): the grammar renames a contract's required `examples`
   to `templates`. The validator checks each template against its own
   schema, so a template tests the schema. `sokf new` copies a template
@@ -179,9 +191,6 @@ Amended 21 September 2026:
   sequence number of an id template, and the tool specification removes
   `sokf next-id`. Documents conform unchanged. Schema authors rewrite
   their schemas for the new grammar.
-
-Amended 22 September 2026:
-
 - Templates (§10): a contract no longer has to declare `templates`. When
   a contract declares none, the validator derives one for each
   combination of lifecycle states from the contract's own rules, marks
@@ -201,9 +210,6 @@ Amended 22 September 2026:
   and otherwise by its section and block position, its frontmatter key,
   or its `rel`. A reader who follows the finding to the
   schema then finds the rule.
-
-Amended 23 September 2026:
-
 - Templates (§10): a contract declares no `templates`. The validator
   derives every template, and the template's text is the contract's own:
   the text that a rule prescribes and the `example` that each rule has. A
@@ -215,9 +221,6 @@ Amended 23 September 2026:
 - Schemas (§10): a contract declares no `counter-examples`. The
   contract's `guidance` says what a writer must not do where no rule
   forbids it.
-
-Amended 27 September 2026:
-
 - Cited by (§10, §11): a schema can declare `cited-by`, the inverse of
   `links`. Each entry demands a body link to every key that a named rule
   captures, or to every document of the type. At least one document of a
@@ -227,9 +230,6 @@ Amended 27 September 2026:
   an uncited key at its line and an uncited document with no line. The
   change is additive: a schema that declares no `cited-by` conforms
   unchanged.
-
-Amended 1 October 2026:
-
 - Markers (format §9.5, validation §2): a repository file outside every
   knowledge store can cite a key or a document with a marker. A marker is a comment
   line whose first word is `sokf-<rel>:` followed by one reference, for
@@ -248,9 +248,6 @@ Amended 1 October 2026:
   core relationship.
 - Keys: the keys of the criteria of the three specifications are unique
   in the repository, so that a marker can cite them bare.
-
-Amended 2 October 2026:
-
 - Markers as citations (schema §4, SOKF_SCHEMA_48, SOKF_SCHEMA_49): a
   `cited-by` entry declares exactly one of `from-type` and `from-marker`.
   `from-marker` names a relationship, and only a marker of that
@@ -267,8 +264,8 @@ Amended 2 October 2026:
 
 ## 0.5
 
-An amendment on 18 September 2026 changed this version. It is a full rewrite,
-which adds `sokf validate` and schemas.
+- Rewrite: the specification is rewritten in full, and adds `sokf validate`
+  and schemas.
 
 ## 0.4
 
@@ -278,9 +275,9 @@ block at its foot (§9). A 0.3 knowledge whose body links point to paths
 conforms to 0.3 and not to 0.4. `superdev validate --fix` converts such a
 knowledge to 0.4.
 
-Amended 30 August 2026: the gloss of `implements` in §8 reads "a plan or
-issue implementing a feature request or contract". Conformance does not
-change: the vocabulary and the inverses stay the same.
+- The gloss of `implements` in §8 reads "a plan or issue implementing a
+  feature request or contract". Conformance does not change: the
+  vocabulary and the inverses stay the same.
 
 ## 0.3
 

@@ -148,10 +148,10 @@ fn apply(tree: &TempTree, step: &Step) {
         }
         Step::SchemaRule => {
             let t = tree.read("knowledge/schemas/decision.md");
-            let edited = if t.contains("max: 8") {
-                t.replacen("max: 8", "max: 1", 1)
+            let edited = if t.contains("hard: 8") {
+                t.replacen("hard: 8", "hard: 1", 1)
             } else {
-                t.replacen("max: 1", "max: 8", 1)
+                t.replacen("hard: 1", "hard: 8", 1)
             };
             edit(tree, "knowledge/schemas/decision.md", &edited);
         }

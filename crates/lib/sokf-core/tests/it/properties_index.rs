@@ -51,7 +51,7 @@ fn write_tree(docs: &[Doc]) -> TempTree {
     let tree = TempTree::empty("index-prop");
     tree.write(
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: Store\nscope: test\n",
+        "sokf: \"0.7\"\nname: Store\nscope: test\n",
     );
     tree.write(
         "knowledge/schemas/note.md",

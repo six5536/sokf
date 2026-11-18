@@ -17,7 +17,7 @@ and locates a document by id.
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Agent harness](#agent-harness)
-- [The sokf pack](#the-sokf-pack)
+- [Packs](#packs)
 - [Output and exit codes](#output-and-exit-codes)
 - [Specifications](#specifications)
 - [Project layout](#project-layout)
@@ -68,6 +68,8 @@ sokf graph --json --query "nodes[?kind=='document'].id"           # the JSON for
 sokf graph planner --mermaid        # a Mermaid flowchart
 sokf locate planner                 # the absolute path of a document: cat "$(sokf locate planner)"
 sokf locate --asset flowers         # the file a sidecar describes; --json gives both paths
+sokf guide planner                  # the schema's guidance for each part of the document, at the document's states
+sokf guide issue-042-retry --state state=closed   # the guidance at the state that a document moves to
 
 sokf info grammar                   # the schema language, verbatim: the tramlines core grammar, the tramlines-md grammar, then SOKF's schema extension
 sokf info formats --schema readme   # the line formats a schema sees
@@ -95,19 +97,26 @@ unchanged. Both `--repo-root` and `--no-cache` are global options.
 
 ## Configuration
 
-Three files and two folders under `/.sokf/` configure the tool:
+These files and folders under `/.sokf/` configure the tool:
 
 - `/.sokf/config.toml` lists the knowledge roots (default `/knowledge`), the
   paths that sokf skips in its walk of the repository, and the declined
   harness parts. sokf skips a path only outside the knowledge roots, so
-  `sokf validate` warns at each glob of `repository.exclude` that lies under a
-  root.
+  `sokf validate` warns at each glob of `repository.exclude` or of
+  `excludes.d` that lies under a root.
 - `/.sokf/formats.yaml` adds line formats for the whole repository.
-- `/.sokf/roots.d/` and `/.sokf/formats.d/` hold the files that another tool,
-  such as pakf, ships for sokf, at any depth: each file `*.toml` of
-  `roots.d` lists further knowledge roots, and each file `*.yaml` of
-  `formats.d` adds line formats, where `/.sokf/formats.yaml` decides a format
-  or a type that two of them declare differently.
+- `/.sokf/roots.d/`, `/.sokf/excludes.d/`, and `/.sokf/formats.d/` hold, at
+  any depth, the files that another tool, such as pakf, ships for sokf. Each
+  file `*.toml` of `roots.d` lists further knowledge roots, each file `*.toml`
+  of `excludes.d` lists further globs of the paths that sokf skips, and each
+  file `*.yaml` of `formats.d` adds line formats. A format or a type that two
+  files of `formats.d` declare differently is an error until
+  `/.sokf/formats.yaml` declares it in full.
+- `/.sokf/texts.yaml` and each file `*.yaml` at any depth below
+  `/.sokf/texts.d/` hold sokf's own texts in another language, or in place of
+  its English, such as the rule for writing a description, which `sokf new`
+  writes into a scaffold. The manifest's `primary-language` names the language of a store,
+  and a schema's `language` overrides it.
 - `/.sokf/harness.toml` records the harness parts that the tool wrote.
 
 Every path that the tool prints is relative to the repository root and starts
@@ -152,21 +161,14 @@ your home directory, for every repository, and `--scope local` into the
 repository's files that stay out of git (Claude Code and GitHub Copilot). Keep
 `/.sokf/harness.local.toml` and `/.sokf/config.local.toml` out of git too.
 
-## The sokf pack
+## Packs
 
-The sokf pack, in [`packs/sokf/`](packs/sokf/), is a method for a project's
-knowledge: the schemas of an architecture, stories, contracts, designs,
-issues, and other documents, the line formats that they share, documentation
-standards, recipes, and instructions for the agent. It is a pack of
-[pakf](https://github.com/six5536/pakf), the tool that shares project files
-through packs, and each release of sokf tags it. Its
-[README](packs/sokf/README.md) says how to take it.
-
-sokf itself has no packs. It refuses a `[[pack]]` entry in
+sokf has no packs. It refuses a `[[pack]]` entry in
 `/.sokf/config.toml` with exit code 2, and `sokf validate` warns at a
 `/.sokf/packs.lock` or a `/.sokf/packs/` that an older sokf wrote, until you
-delete them. sokf reads the files that a pack ships for it as it reads any
-other file, such as a file of formats in `/.sokf/formats.d/`.
+delete them. sokf reads the files that a pack of
+[pakf](https://github.com/six5536/pakf) ships for it as it reads any other
+file, such as a file of formats in `/.sokf/formats.d/`.
 
 ## Output and exit codes
 
@@ -243,9 +245,7 @@ Three core specifications define the format:
 [`sokf-spec/sokf-format-spec.md`](sokf-spec/sokf-format-spec.md),
 [`sokf-spec/sokf-schema-spec.md`](sokf-spec/sokf-schema-spec.md), and
 [`sokf-spec/sokf-validation-spec.md`](sokf-spec/sokf-validation-spec.md).
-They are documents of `sokf-spec`, the knowledge store of SOKF itself. The
-[sokf pack](#the-sokf-pack) shows SOKF in use, and sokf's own development
-records its knowledge with it.
+They are documents of `sokf-spec`, the knowledge store of SOKF itself.
 
 The schema language comes from [tramlines](https://github.com/six5536/tramlines),
 a Markdown schema engine with its own
@@ -265,12 +265,11 @@ writes the skill into a repository.
 ```
 sokf-spec/               the knowledge store of SOKF itself: its specifications, its grammar, and its formats, which sokf validates
 harness/                 the embedded harness integration: the sokf skill and the instructions block
-packs/sokf/              the sokf pack, the method of a project's knowledge, which a project takes with pakf
 crates/lib/sokf-core     the library: it walks the repository, builds the model, hosts SOKF's schema extension in the tramlines engine, checks and fixes the knowledge, reports the findings, builds the graph, runs queries, and installs the harness
 crates/app/sokf          the binary: it parses the command line, calls the library, and renders the results as text, JSON, or Mermaid
 packages/cli             the npm launcher (a JS shim that spawns the binary)
 packages/sokf-OS-CPU     the five prebuilt-binary packages it selects from
-scripts/                 the version and smoke-test scripts that the release runs
+scripts/                 the smoke-test script that the release runs
 .config/mise/            the tasks and scripts that build, test, version, and publish the project
 .github/workflows/       publish.yml and build.yml, which build and publish each release
 ```

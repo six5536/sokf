@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use proptest::prelude::*;
 use regex::Regex;
 
+use super::requirements;
 use crate::{
     Finding, RepoPath,
     grammar::{
@@ -14,10 +15,6 @@ use crate::{
     yaml,
 };
 
-fn embedded() -> FormatRegistry {
-    embedded_formats(&load_grammar().unwrap(), &RegexCache::new()).unwrap()
-}
-
 fn key(k: &str, start: usize) -> FormatMatch {
     FormatMatch::Ok(Some(Captured {
         key: k.into(),
@@ -26,8 +23,8 @@ fn key(k: &str, start: usize) -> FormatMatch {
 }
 
 #[test]
-fn the_embedded_registry_checks_stories_and_ears() {
-    let r = embedded();
+fn the_requirement_formats_check_stories_and_ears() {
+    let r = requirements();
     let story = r.get("user-story").unwrap();
     assert_eq!(
         story.check("CLI-1: AS A developer, I WANT a thing, SO THAT I win."),
@@ -63,26 +60,19 @@ fn the_embedded_registry_checks_stories_and_ears() {
     assert_eq!(r.entries["requirement-ears"].1, FormatSource::Embedded);
 }
 
-/// The shared formats hold one EARS format, so that a writer meets one form
-/// of a criterion.
-// sokf-tests: EXT-11_AC-1
+/// The tool embeds no format, so a project takes its formats from its
+/// schemas and from the layers of its repository.
 #[test]
-fn the_shared_formats_hold_one_ears_format() {
-    let r = embedded();
-    let ears: Vec<&str> = r
-        .entries
-        .keys()
-        .map(String::as_str)
-        .filter(|name| name.contains("ears"))
-        .collect();
-    assert_eq!(ears, ["requirement-ears"]);
+fn the_embedded_formats_hold_no_format() {
+    let r = embedded_formats(&load_grammar().unwrap(), &RegexCache::new()).unwrap();
+    assert!(r.entries.is_empty());
 }
 
 /// The requirement formats refuse the weak, vague, passive, and compound
 /// sentences they exist to keep out, and a form that does not match its tag.
 #[test]
 fn the_requirement_formats_refuse_what_they_ban() {
-    let r = embedded();
+    let r = requirements();
     // A line fails when it misses its shape (`Fail`) or matches a ban
     // (`Refused`).
     let fails = |name: &str, line: &str| {
@@ -149,8 +139,9 @@ fn the_requirement_formats_refuse_what_they_ban() {
         "`GET /{code}` sends a visitor to the address in `/v1.2`."
     ));
     assert!(ok(sum, "The settings screen lets an owner change a link."));
-    assert!(fails(sum, "Sends a visitor to the address."));
-    assert!(fails(sum, "This part sends a visitor to the address."));
+    assert!(ok(sum, "A visit to `GET /{code}` sends the visitor on."));
+    assert!(fails(sum, "- sends a visitor to the address."));
+    assert!(fails(sum, "`GET /{code}` sends a visitor"));
     assert!(fails(
         sum,
         "`GET /{code}` sends a visitor. It logs the visit."
@@ -173,12 +164,12 @@ fn the_requirement_formats_refuse_what_they_ban() {
     assert!(fails(chan, "None"));
 }
 
-/// Every example in the embedded registry conforms to the entry that
+/// Every example in the requirement formats conforms to the entry that
 /// carries it. The reason is that sokf shows the example to the author of a
 /// failing line, and a scaffold writes it into a new document.
 #[test]
-fn every_embedded_example_conforms_to_its_own_entry() {
-    let r = embedded();
+fn every_example_of_the_requirement_formats_conforms_to_its_own_entry() {
+    let r = requirements();
     for (name, (format, _)) in &r.entries {
         for line in format.examples() {
             assert!(
@@ -192,7 +183,7 @@ fn every_embedded_example_conforms_to_its_own_entry() {
 
 #[test]
 fn to_yaml_prints_sources_and_round_trips() {
-    let r = embedded();
+    let r = requirements();
     let text = r.to_yaml(true);
     assert!(text.starts_with("types:\n"), "{text}");
     assert!(text.contains("source: built-in"), "{text}");
@@ -339,7 +330,8 @@ fn a_type_means_one_thing_to_every_format() {
         Some(&base),
     )
     .unwrap();
-    let seen = base.layered(&repo);
+    let (seen, broken) = base.layered(&repo);
+    assert!(broken.is_empty(), "{broken:?}");
     assert_eq!(seen.get("f").unwrap().check("AB9: x"), key("AB9", 0));
     assert_eq!(seen.types_seen().entries["code"].1, FormatSource::Repo);
     let reserved = yaml::parse("types:\n  slug: x\n", 1).unwrap();
@@ -390,7 +382,7 @@ proptest! {
         repo in arb_registry(FormatSource::Repo),
         schema in arb_registry(FormatSource::Schema("s".into())),
     ) {
-        let effective = embedded.layered(&repo).layered(&schema);
+        let effective = embedded.layered(&repo).0.layered(&schema).0;
         for name in ["a", "b", "c", "d"] {
             let expected = if schema.get(name).is_some() {
                 Some(FormatSource::Schema("s".into()))

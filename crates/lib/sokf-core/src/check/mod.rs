@@ -24,7 +24,7 @@ mod unit_types;
 mod verified;
 mod warnings;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 pub use config::{check_config, leftover_packs};
 pub use coverage::{Citation, Citations};
@@ -34,12 +34,13 @@ pub use index::check_indexes;
 pub use lifecycle::{derived_dir, placed};
 pub use plans::{capture_plans_of, planned_by};
 pub use tramlines_md::check::{
-    Capture, CheckOutput, Gate, Placement, Repair, Spot, heading_col, placements,
+    Capture, CheckOutput, Gate, LabelRepair, Placement, Repair, Spot, heading_col, placements,
 };
 
 use crate::{
     Body, Compiled, Expected, Finding, Indexes, Locator, Model, RepoPath, Segments, Spanned,
     grammar::{KeyScope, SokfSchema, States},
+    markdown,
     model::{CoreFields, KeyEntry, KeyIndex, Query},
 };
 
@@ -128,8 +129,10 @@ pub fn states_of(frontmatter: Option<&Spanned>, schema: &SokfSchema) -> States {
 }
 
 /// `capture_keys_of` captures the keys of the loaded documents in `only`,
-/// or the keys of every loaded document when `only` is `None`. The key
-/// index needs this pre-pass before any fragment can resolve.
+/// or the keys of every loaded document when `only` is `None`, and the
+/// anchors that the engine keeps in them for the units that break their
+/// rules. The key index needs this pre-pass before any fragment can
+/// resolve.
 pub fn capture_keys_of(
     model: &Model,
     compiled: &Compiled,
@@ -155,6 +158,18 @@ pub fn capture_keys_of(
             Locator::schema(""),
         );
         model.unwatch();
+        // The engine lists the anchor of each key, then each anchor that a
+        // unit which breaks its rule holds, which names no key.
+        let captured: HashSet<String> = out
+            .captures
+            .iter()
+            .map(|c| markdown::slug(&c.key))
+            .collect();
+        for anchor in out.anchors {
+            if !captured.contains(&anchor.id) {
+                keys.add_anchor(doc.path.clone(), anchor.id);
+            }
+        }
         let capped = model.knowledges[k].capped();
         for c in out.captures {
             keys.add(KeyEntry {
@@ -394,7 +409,7 @@ pub fn run_units(
         findings.extend(coverage::check_document(
             model, compiled, keys, &citations, k, doc,
         ));
-        findings.extend(deprecated::check_document(model, &citations, doc));
+        findings.extend(deprecated::check_document(model, &citations, k, doc));
         model.unwatch();
         out.documents
             .entry(doc.path.clone())
@@ -536,7 +551,7 @@ fn uniqueness_of(model: &Model, keys: &KeyIndex, doc: &crate::Document) -> Vec<F
     let mut findings = Vec::new();
     let mut clashes: BTreeMap<(RepoPath, usize, String), Vec<RepoPath>> = BTreeMap::new();
     for e in keys.of_document(&doc.path) {
-        let s = crate::markdown::slug(&e.key);
+        let s = markdown::slug(&e.key);
         // Two captures in one document belong to the document's own check
         // (grammar `unique`, document scope). That check can tell a pairing
         // that `for-each-key-of` demands from a clash. A report here would list

@@ -7,7 +7,7 @@ use sokf_core::CacheMode;
 
 use crate::common;
 
-const MEMO_SCHEMA: &str = "---\ntype: Schema\nid: schema-memo\ndescription: A memo.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Memo\n  description:\n    optional: true\n    example: The move rewrites both indexes.\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks:\n      - kind: prose\n        max: 1\n        each: { text: { from: description } }\n      - kind: blockquote\n        max: 1\n        each: { text: { from: title } }\n      - kind: bullet-list\n        sequence:\n          - text: DONE\n          - text: { from: title }\n      - kind: numbered-list\n        each: { text: STEP }\n````\n";
+const MEMO_SCHEMA: &str = "---\ntype: Schema\nid: schema-memo\ndescription: A memo.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Memo\n  description:\n    optional: true\n    example: The move rewrites both indexes.\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks:\n      - kind: prose\n        max: { hard: 1, when-at-limit: 'Write only the description.' }\n        each: { text: { from: description } }\n      - kind: blockquote\n        max: { hard: 1, when-at-limit: 'Write only the title.' }\n        each: { text: { from: title } }\n      - kind: bullet-list\n        sequence:\n          - text: DONE\n          - text: { from: title }\n      - kind: numbered-list\n        each: { text: STEP }\n````\n";
 
 // sokf-tests: CLI-4_AC-4
 #[test]
@@ -112,8 +112,9 @@ sections:
           lines:
             - text: flowchart LR
             - select-pattern: '^[a-z][a-z0-9]*\['
+              rule-id: node
               min: 2
-              max: 3
+              max: { hard: 3, when-at-limit: 'Split the diagram in two.' }
               pattern: '^(?P<k>[a-z][a-z0-9]*)\['
               key: k
               example: '  one["One"]'
@@ -152,7 +153,7 @@ fn guarded_rules_govern_lines_and_units() {
         messages,
         vec![
             "14: no `/^Node: (?P<k>[a-z][a-z0-9]*)$/` section for key `four`",
-            "14: the lines matching `^[a-z][a-z0-9]*\\[`: at most 3 are allowed; there are 4",
+            "14: the lines matching `^[a-z][a-z0-9]*\\[`: at most 3 are allowed; there are 4. When at the limit: Split the diagram in two.",
             "15: `one --> two` does not match `\\-\\->\\|\"`; a line of this kind reads   one -->|\"calls\"| two",
             "18: `NOTE: no period` does not match `\\.$`; an item of this kind reads NOTE: One.",
             "19: `plain` matches no rule of the block; declare it or set `units-open`",

@@ -37,6 +37,36 @@ fn manifest_problems_are_reported() {
     insta::assert_snapshot!(json(&report));
 }
 
+// sokf-tests: CLI-10_AC-2
+// sokf-tests: CLI-10_AC-6
+#[test]
+fn an_earlier_version_says_what_changed() {
+    let tree = TempTree::fixture("clean");
+    let manifest = tree.read("knowledge/manifest.sokf.yaml");
+    let declare = |version: &str| {
+        tree.write(
+            "knowledge/manifest.sokf.yaml",
+            &manifest.replace("sokf: \"0.7\"", &format!("sokf: \"{version}\"")),
+        );
+        error_lines(&tree.validate(false, CacheMode::Off))
+    };
+    assert_eq!(
+        declare("0.6"),
+        [
+            "/knowledge/manifest.sokf.yaml:Some(1): the manifest declares sokf `0.6`. This tool implements `0.7`. Version 0.7 changes the schemas: each `max` is a map with its `when-at-limit`, and sokf supplies no line format. Fix the findings on the store's schemas, and then declare `sokf: \"0.7\"`. The changelog lists every change: https://github.com/six5536/sokf/blob/main/sokf-spec/changelog.md#07"
+        ]
+    );
+    for other in ["0.8", "1.0", "0.7.1", "seven"] {
+        assert_eq!(
+            declare(other),
+            [format!(
+                "/knowledge/manifest.sokf.yaml:Some(1): the manifest declares sokf `{other}`. This tool implements `0.7`"
+            )],
+            "{other}"
+        );
+    }
+}
+
 // sokf-tests: SOKF_FORMAT_96
 // sokf-tests: SOKF_FORMAT_103
 // sokf-tests: SOKF_SCHEMA_5
@@ -323,8 +353,8 @@ fn info_formats_per_layer_and_per_schema() {
     )
     .unwrap();
     assert_eq!(effective, embedded);
-    // The loose `requirement-ears` still captures the key that the criteria derive
-    // from their story, so `schema-requirement` still passes (TL_96).
+    // The repository declares a loose `requirement-ears`, which
+    // `schema-requirement` declares again in its own formats.
     tree.write(
         ".sokf/formats.yaml",
         "registry:\n  requirement-ears:\n    key: id\n    pattern: '^(?P<id>\\S+).*$'\n    example: loose\n  extra:\n    pattern: '^e$'\n    example: e\n",
@@ -339,10 +369,12 @@ fn info_formats_per_layer_and_per_schema() {
     )
     .unwrap();
     assert!(
-        effective.contains("user-story")
+        !effective.contains("user-story")
             && effective.contains("extra")
             && effective.contains("example: loose")
     );
+    // The view of the schema lays the schema's own formats on the
+    // repository's.
     let schema = info_formats(
         Some(&tree.root()),
         InfoLayer::Effective,
@@ -350,7 +382,13 @@ fn info_formats_per_layer_and_per_schema() {
         CacheMode::Off,
     )
     .unwrap();
-    assert_eq!(schema, effective);
+    assert!(
+        schema.contains("user-story")
+            && schema.contains("source: schema-requirement")
+            && schema.contains("extra")
+            && !schema.contains("example: loose"),
+        "{schema}"
+    );
     assert!(
         info_formats(
             Some(&tree.root()),
@@ -388,7 +426,7 @@ fn a_schema_is_an_include_source() {
     );
 }
 
-const SPEC_SCHEMA: &str = "---\ntype: Schema\nid: schema-spec\ndescription: A spec.\n---\n\n````yaml\nline-limit: 0\nlifecycle:\n  - { key: mode, states: [a, b] }\nfrontmatter:\n  type:\n    const: Spec\nsections:\n  - heading: { from: title }\n    level: 1\n    guidance: d\n    blocks: []\n  - heading: Items\n    level: 2\n    guidance: d\n    blocks:\n      - kind: group\n        repeat: true\n        rule-id: items\n        blocks:\n          - kind: prose\n            example: 'One line of prose.'\n            only: { mode: a }\n            max: 1\n          - kind: bullet-list\n            each: { pattern: '^(?P<k>[A-Z]+-[0-9]+)', key: k, example: 'X-1 one' }\n  - heading: Details\n    level: 2\n    guidance: d\n    blocks:\n      - kind: bullet-list\n        each: { pattern: '^(?P<k>[A-Z]+-[0-9]+\\.[0-9]+)', key: k, key-derives-from: { rule: items, separator: '.' }, example: 'X-1.1 detail' }\n````\n";
+const SPEC_SCHEMA: &str = "---\ntype: Schema\nid: schema-spec\ndescription: A spec.\n---\n\n````yaml\nline-limit: 0\nlifecycle:\n  - { key: mode, states: [a, b] }\nfrontmatter:\n  type:\n    const: Spec\nsections:\n  - heading: { from: title }\n    level: 1\n    guidance: d\n    blocks: []\n  - heading: Items\n    level: 2\n    guidance: d\n    blocks:\n      - kind: group\n        repeat: true\n        rule-id: items\n        blocks:\n          - kind: prose\n            example: 'One line of prose.'\n            only: { mode: a }\n            max: { hard: 1, when-at-limit: 'Put the rest in the item''s list.' }\n          - kind: bullet-list\n            each: { pattern: '^(?P<k>[A-Z]+-[0-9]+)', key: k, example: 'X-1 one' }\n  - heading: Details\n    level: 2\n    guidance: d\n    blocks:\n      - kind: bullet-list\n        each: { pattern: '^(?P<k>[A-Z]+-[0-9]+\\.[0-9]+)', key: k, key-derives-from: { rule: items, separator: '.' }, example: 'X-1.1 detail' }\n````\n";
 
 #[test]
 fn a_group_rule_id_names_its_captures_and_opens_with_its_first_admitted_block() {

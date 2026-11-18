@@ -1,9 +1,9 @@
 //! These tests check the warnings at the citations of a deprecated document
-//! (`SOKF_VALIDATION_57` to `SOKF_VALIDATION_64`): a body link, a marker, and an
+//! (`SOKF_VALIDATION_57` to `SOKF_VALIDATION_66`): a body link, a marker, and an
 //! include block each warn, and name the document that supersedes the
-//! deprecated one. A document that supersedes it, an archived document, and
-//! a deprecated document cite it without a warning, and so does a
-//! frontmatter `links` entry.
+//! deprecated one, whichever end records the link. A document that
+//! supersedes it, an archived document, and a deprecated document cite it
+//! without a warning, and so does a frontmatter `links` entry.
 
 use common::{TempTree, incremental::edit, json};
 use sokf_core::{CacheMode, Report};
@@ -24,6 +24,9 @@ frontmatter:
     const: Page
 links:
   - rel: supersedes
+    to-type: Page
+    min: 0
+  - rel: superseded-by
     to-type: Page
     min: 0
   - rel: relates-to
@@ -83,6 +86,18 @@ fn old_page() -> String {
         "page-old",
         "status: deprecated\n",
         "The old text.\n\n## Part\n\nA part of the old text.",
+    )
+}
+
+/// The deprecated page, which names `to` as its replacement with a
+/// `superseded-by` link.
+fn old_page_superseded_by(to: &str) -> String {
+    page(
+        "page-old",
+        &format!("status: deprecated\nlinks:\n  - rel: superseded-by\n    to: {to}\n"),
+        &format!(
+            "The old text, which [its replacement][sokf:{to}] replaces.\n\n## Part\n\nA part of the old text."
+        ),
     )
 }
 
@@ -327,4 +342,199 @@ fn a_replacement_that_only_a_links_entry_declares_is_named() {
         dropped.iter().all(|w| !w.contains("supersede")),
         "{dropped:?}"
     );
+}
+
+/// `fixed` fixes `tree`, and checks that a second fix changes nothing.
+fn fixed(tree: &TempTree) {
+    tree.validate(true, CacheMode::Off);
+    let again = tree.validate(true, CacheMode::Off);
+    assert!(again.fixes.is_empty(), "{}", json(&again));
+}
+
+// A deprecated page that names its replacement with `superseded-by` gets
+// the same warnings as one that its replacement names with `supersedes`, and
+// the replacement cites it without a warning.
+// sokf-tests: SOKF_VALIDATION_65
+// sokf-tests: SOKF_VALIDATION_66
+#[test]
+fn a_replacement_that_the_deprecated_document_names_is_named_and_cites_it_freely() {
+    let tree = tree();
+    tree.write(
+        "knowledge/page-new.md",
+        &page(
+            "page-new",
+            "",
+            "This page replaces [the old page][sokf:page-old].",
+        ),
+    );
+    tree.write("knowledge/page-old.md", &old_page_superseded_by("page-new"));
+    fixed(&tree);
+    for mode in [CacheMode::Off, CacheMode::On, CacheMode::On] {
+        let report = tree.validate(false, mode);
+        assert_eq!(warned(&report), WARNINGS, "{mode:?}\n{}", json(&report));
+        assert!(report.errors.is_empty(), "{mode:?}\n{}", json(&report));
+    }
+}
+
+// A replacement that both ends record is named once.
+// sokf-tests: SOKF_VALIDATION_64
+// sokf-tests: SOKF_VALIDATION_65
+#[test]
+fn a_replacement_that_both_links_record_is_named_once() {
+    let tree = tree();
+    tree.write("knowledge/page-old.md", &old_page_superseded_by("page-new"));
+    fixed(&tree);
+    for mode in [CacheMode::Off, CacheMode::On, CacheMode::On] {
+        let report = tree.validate(false, mode);
+        assert_eq!(warned(&report), WARNINGS, "{mode:?}\n{}", json(&report));
+        assert!(report.errors.is_empty(), "{mode:?}\n{}", json(&report));
+    }
+}
+
+// The name follows a `superseded-by` target that comes, goes, and changes
+// its id, with the cache as without it, and a target that is no document
+// names nothing.
+// sokf-tests: SOKF_VALIDATION_65
+#[test]
+fn the_cache_follows_a_replacement_that_the_deprecated_document_names() {
+    let tree = tree();
+    tree.write(
+        "knowledge/page-old.md",
+        &old_page_superseded_by("page-newer"),
+    );
+    fixed(&tree);
+    let absent = warned(&tree.validate(false, CacheMode::On));
+    assert_eq!(absent, WARNINGS, "{absent:?}");
+    // The target comes, and joins the name.
+    edit(
+        &tree,
+        "knowledge/page-newer.md",
+        &page("page-newer", "", "This page also replaces the old page."),
+    );
+    let named = warned(&tree.validate(false, CacheMode::On));
+    assert_eq!(named, warned(&tree.validate(false, CacheMode::Off)));
+    assert_eq!(named.len(), 4, "{named:?}");
+    assert!(
+        named
+            .iter()
+            .all(|w| w.contains(": `page-new` and `page-newer` supersede it")),
+        "{named:?}"
+    );
+    // The target goes, and leaves the name.
+    std::fs::remove_file(tree.dir().join("knowledge/page-newer.md")).unwrap();
+    let gone = warned(&tree.validate(false, CacheMode::On));
+    assert_eq!(gone, warned(&tree.validate(false, CacheMode::Off)));
+    assert_eq!(gone, WARNINGS, "{gone:?}");
+    // A target that is a file and no document names nothing.
+    edit(
+        &tree,
+        "knowledge/page-old.md",
+        &old_page_superseded_by("/src/uses.rs"),
+    );
+    let file = warned(&tree.validate(false, CacheMode::On));
+    assert_eq!(file, warned(&tree.validate(false, CacheMode::Off)));
+    assert_eq!(file, WARNINGS, "{file:?}");
+    // A target named by its path changes its id, and the name follows it.
+    edit(
+        &tree,
+        "knowledge/page-newer.md",
+        &page("page-newer", "", "This page also replaces the old page."),
+    );
+    edit(
+        &tree,
+        "knowledge/page-old.md",
+        &old_page_superseded_by("/knowledge/page-newer.md"),
+    );
+    let by_path = warned(&tree.validate(false, CacheMode::On));
+    assert_eq!(by_path, warned(&tree.validate(false, CacheMode::Off)));
+    assert_eq!(by_path.len(), 4, "{by_path:?}");
+    assert!(
+        by_path
+            .iter()
+            .all(|w| w.contains(": `page-new` and `page-newer` supersede it")),
+        "{by_path:?}"
+    );
+    edit(
+        &tree,
+        "knowledge/page-newer.md",
+        &page("page-renamed", "", "This page also replaces the old page."),
+    );
+    let renamed = warned(&tree.validate(false, CacheMode::On));
+    assert_eq!(renamed, warned(&tree.validate(false, CacheMode::Off)));
+    assert_eq!(renamed.len(), 4, "{renamed:?}");
+    assert!(
+        renamed
+            .iter()
+            .all(|w| w.contains(": `page-new` and `page-renamed` supersede it")),
+        "{renamed:?}"
+    );
+}
+
+// A deprecated page that names itself with `superseded-by` names no
+// replacement of its own, because a document can't replace itself.
+// sokf-tests: SOKF_VALIDATION_65
+#[test]
+fn a_deprecated_document_that_names_itself_is_no_replacement() {
+    let tree = tree();
+    tree.write("knowledge/page-old.md", &old_page_superseded_by("page-old"));
+    fixed(&tree);
+    for mode in [CacheMode::Off, CacheMode::On, CacheMode::On] {
+        let report = tree.validate(false, mode);
+        assert_eq!(warned(&report), WARNINGS, "{mode:?}\n{}", json(&report));
+        assert!(report.errors.is_empty(), "{mode:?}\n{}", json(&report));
+    }
+}
+
+// Each warning spells each replacement as the store of the citing file
+// spells it: a replacement in another store keeps its store prefix, so it
+// keeps its own name beside a replacement with the same id, whichever end
+// records the link.
+// sokf-tests: SOKF_VALIDATION_64
+// sokf-tests: SOKF_VALIDATION_65
+#[test]
+fn a_replacement_in_another_store_is_named_with_its_store() {
+    let tree = tree();
+    tree.add_other_store();
+    tree.write("other/schemas/page.md", PAGE_SCHEMA);
+    tree.write(
+        "other/page-new.md",
+        &page("page-new", "", "This page replaces the old page."),
+    );
+    tree.write(
+        "other/page-newest.md",
+        &page(
+            "page-newest",
+            "links:\n  - rel: supersedes\n    to: fixture:page-old\n",
+            "This page replaces [the old page][sokf:fixture:page-old].",
+        ),
+    );
+    tree.write(
+        "other/page-reader.md",
+        &page(
+            "page-reader",
+            "",
+            "Read [the old page][sokf:fixture:page-old].",
+        ),
+    );
+    tree.write(
+        "knowledge/page-old.md",
+        &old_page_superseded_by("other:page-new"),
+    );
+    fixed(&tree);
+    let here = ": `other:page-new`, `other:page-newest`, and `page-new` supersede it";
+    let there = ": `fixture:page-new`, `page-new`, and `page-newest` supersede it";
+    for mode in [CacheMode::Off, CacheMode::On, CacheMode::On] {
+        let report = tree.validate(false, mode);
+        let named = warned(&report);
+        assert_eq!(named.len(), 5, "{mode:?}\n{}", json(&report));
+        for w in &named {
+            let spelled = if w.starts_with("/other/") {
+                there
+            } else {
+                here
+            };
+            assert!(w.contains(spelled), "{mode:?}: {w}");
+        }
+        assert!(report.errors.is_empty(), "{mode:?}\n{}", json(&report));
+    }
 }

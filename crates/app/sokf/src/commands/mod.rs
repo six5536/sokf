@@ -3,6 +3,7 @@
 //! CLI-5_AC-6).
 
 mod graph;
+mod guide;
 mod harness;
 mod info;
 mod init;
@@ -11,6 +12,7 @@ mod new;
 mod validate;
 
 pub use graph::graph;
+pub use guide::guide;
 pub use harness::harness;
 pub use info::info;
 pub use init::init;

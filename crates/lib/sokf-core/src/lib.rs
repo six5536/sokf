@@ -9,7 +9,7 @@
 //! `sokf-spec/` define them. It also runs the `sokf` command that
 //! `knowledge/contracts/` specifies. Its entry points are [`init`],
 //! [`harness_install`], [`harness_status`], [`harness_diff`], [`validate`], [`info_formats`],
-//! [`info_grammar`], [`new`], [`graph`](fn@graph), and [`locate`]. The harness
+//! [`info_grammar`], [`new`], [`graph`](fn@graph), [`guide`], and [`locate`]. The harness
 //! hook is [`harness::hook`].
 //!
 //! SOKF uses the schema language of the `tramlines-md` engine. This crate
@@ -61,19 +61,21 @@ mod walk;
 
 pub use agent_harness_adapter_core::Scope as HarnessScope;
 pub use api::{
-    ALL_HARNESSES, FormatEntry, FormatType, FormatsJson, GraphOptions, HarnessDirs, HarnessOptions,
-    HarnessReport, HarnessResult, InfoLayer, InitOptions, InitResult, Loaded, NewOptions,
-    NewResult, PartResult, TypeMatch, ValidateOptions, check_repository, graph, harness_diff,
-    harness_ids, harness_install, harness_status, info_formats, info_formats_json, info_grammar,
-    init, load_for_lookup, load_keys_for, load_model, load_repository, load_with_keys,
-    load_working, locate, new, validate,
+    ALL_HARNESSES, BlockGuide, DocumentGuide, FormatEntry, FormatType, FormatsJson, GraphOptions,
+    GuideCounts, GuideLabel, GuideLimit, GuideLimitKind, GuideOptions, GuideReport, HarnessDirs,
+    HarnessOptions, HarnessReport, HarnessResult, InfoLayer, InitOptions, InitResult, KeyGuide,
+    LabelGuide, LinkGuide, Loaded, NewOptions, NewResult, PartResult, PreambleGuide, RuleLabel,
+    RuleLimit, SectionGuide, TypeMatch, ValidateOptions, check_repository, graph, guide,
+    harness_diff, harness_ids, harness_install, harness_status, info_formats, info_formats_json,
+    info_grammar, init, load_for_lookup, load_keys_for, load_model, load_repository,
+    load_with_keys, load_working, locate, new, validate,
 };
 pub use cache::{
     CACHE_DIR, Cache, CacheMode, FileState, STORE_FILE, STORE_FORMAT, StoreView, SyncStats,
 };
 pub use config::{
-    Config, ConfigText, MarkerCheck, PathArg, RepoFormats, Scope, discover_root, load_config,
-    load_repo_formats, resolve_paths,
+    AddedExclude, Config, ConfigText, MarkerCheck, PathArg, RepoFormats, Scope, Texts,
+    discover_root, load_config, load_repo_formats, load_texts, resolve_paths,
 };
 pub use error::{Error, Result};
 pub use grammar::{

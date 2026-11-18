@@ -73,7 +73,7 @@ fn an_empty_repository_gets_the_default_store_and_no_config() {
     );
     assert_eq!(
         tree.read("knowledge/manifest.sokf.yaml"),
-        "sokf: \"0.6\"\nname: knowledge\nscope: test\n"
+        "sokf: \"0.7\"\nname: knowledge\nscope: test\n"
     );
     assert_eq!(
         tree.read("knowledge/index.md"),
@@ -118,7 +118,7 @@ fn a_named_directory_with_no_config_writes_one() {
     assert_eq!(out.updated, [] as [sokf_core::RepoPath; 0]);
     assert_eq!(
         tree.read("docs/kb/manifest.sokf.yaml"),
-        "sokf: \"0.6\"\nname: project-kb\nscope: test\ndescription: Knowledge for the project.\n"
+        "sokf: \"0.7\"\nname: project-kb\nscope: test\ndescription: Knowledge for the project.\n"
     );
     // The default root does not exist, so `init` leaves it out of the config.
     assert_eq!(
@@ -230,7 +230,7 @@ fn every_refusal_writes_nothing() {
     tree.write("file.md", "");
     tree.write(
         "store/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: s\nscope: test\n",
+        "sokf: \"0.7\"\nname: s\nscope: test\n",
     );
     tree.write("empty/.keep", "");
     std::fs::remove_file(tree.dir().join("empty/.keep")).unwrap();

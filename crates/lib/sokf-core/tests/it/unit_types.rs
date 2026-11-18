@@ -84,7 +84,7 @@ fn tree(contracts: &str) -> TempTree {
     let tree = TempTree::empty("unit-types");
     tree.write(
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: unit-types\nscope: test\n",
+        "sokf: \"0.7\"\nname: unit-types\nscope: test\n",
     );
     tree.write("knowledge/schemas/contract.md", CONTRACT_SCHEMA);
     tree.write("knowledge/schemas/issue.md", ISSUE_SCHEMA);

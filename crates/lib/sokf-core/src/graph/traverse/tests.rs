@@ -11,7 +11,7 @@ fn temp(name: &str) -> PathBuf {
     for (rel, text) in [
         (
             "knowledge/manifest.sokf.yaml",
-            "sokf: \"0.6\"\nname: k\nscope: test\n",
+            "sokf: \"0.7\"\nname: k\nscope: test\n",
         ),
         (
             "knowledge/a.md",

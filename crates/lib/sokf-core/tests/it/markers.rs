@@ -429,11 +429,34 @@ fn a_fence_hides_its_lines_in_a_quote_after_a_rule_and_with_crlf() {
     assert_eq!(lines("/docs/crlf.md"), [7], "{:?}", report.errors);
 }
 
+// A fence hides its lines in a footnote's definition, in a list item of a
+// quote, in a quote of a nested list item, after a quote's mark, a space,
+// and a tab, and in a file with a carriage return alone, while a marker
+// outside the fences stays an error.
+// sokf-tests: SOKF_FORMAT_250
+#[test]
+fn a_fence_hides_its_lines_at_any_depth_and_after_a_carriage_return_alone() {
+    let deep = "# Deep\n\nA note.[^1]\n\n[^1]: The note.\n\n    ```\n    // sokf-implements: FOOT-NONE_AC-1\n    ```\n\n> - ```\n>   // sokf-implements: QLIST-NONE_AC-1\n>   ```\n\n- An item.\n  - A nested item.\n\n    > ```\n    > // sokf-implements: LISTQ-NONE_AC-1\n    > ```\n\n> \t```\n> \t// sokf-implements: TAB-NONE_AC-1\n> \t```\n\n// sokf-implements: OUTSIDE-NONE_AC-1\n";
+    let cr = "# Cr\r\r```\n// sokf-implements: CR-NONE_AC-1\n```\n\n// sokf-implements: AFTER-NONE_AC-1\n";
+    let tree = TempTree::clean_with(&[("docs/deep.md", deep), ("docs/cr.md", cr)]);
+    let report = tree.validate_all(false, CacheMode::Off);
+    let lines = |path: &str| -> Vec<usize> {
+        report
+            .errors
+            .iter()
+            .filter(|f| f.path.as_str() == path)
+            .map(|f| f.line.unwrap_or(0))
+            .collect()
+    };
+    assert_eq!(lines("/docs/deep.md"), [26], "{:?}", report.errors);
+    assert_eq!(lines("/docs/cr.md"), [5], "{:?}", report.errors);
+}
+
 // A fence whose list item takes a tab after its mark hides its lines, an
 // indented block whose first line looks like a fence hides nothing, a fence
 // inside an include block of a file outside the roots and after a
-// definition block hides its lines, and a file with carriage returns alone
-// hides no line.
+// definition block hides its lines, and so does a fence that carriage
+// returns alone end.
 // sokf-tests: SOKF_FORMAT_250
 #[test]
 fn only_a_fence_that_markdown_reads_hides_its_lines() {
@@ -461,13 +484,13 @@ fn only_a_fence_that_markdown_reads_hides_its_lines() {
     assert_eq!(lines("/docs/indented.md"), [4], "{:?}", report.errors);
     let include_lines = lines("/docs/include.md");
     assert!(include_lines.is_empty(), "{include_lines:?}");
-    // The scan reads the lines that carriage returns alone join as one,
-    // which holds a malformed tag, and hides none of them.
+    // The scan reads the lines that carriage returns alone join as one, and
+    // passes them by, because their first word lies in the fence.
     let cr_lines: Vec<usize> = report
         .errors
         .iter()
         .filter(|f| f.path.as_str() == "/docs/cr.md")
         .map(|f| f.line.unwrap_or(0))
         .collect();
-    assert_eq!(cr_lines, [3], "{:?}", report.errors);
+    assert!(cr_lines.is_empty(), "{cr_lines:?}");
 }

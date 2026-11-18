@@ -333,10 +333,12 @@ fn moved_citations(cache: &Cache, out: &check::RunOutput) -> BTreeSet<String> {
     moved
 }
 
-/// `extend_keys` adds to `loaded.keys` the keys of the documents of
-/// `round2`, which the run checks again, and then the store's keys for the
-/// slugs that a reference needs, except those of the documents of
-/// `checked`. It adds no key that `loaded.keys` already holds.
+/// `extend_keys` adds to `loaded.keys` the keys and the kept anchors of the
+/// documents of `round2`, which the run checks again, and then the store's
+/// keys and kept anchors for the slugs that a reference needs, except those
+/// of the documents of `checked`. It adds no key that `loaded.keys` already
+/// holds. The kept anchors that this run captured for a document of
+/// `round2` replace the store's.
 fn extend_keys(
     cache: &Cache,
     loaded: &mut Loaded,
@@ -362,6 +364,15 @@ fn extend_keys(
     );
     let slugs = needed_slugs(&loaded.model, &KeyIndex::default());
     let stored = cache.stored_keys_for(&slugs, checked);
+    for (path, anchors) in stored.anchors {
+        if !round2.contains(&path) {
+            loaded.keys.anchors.entry(path).or_default().extend(anchors);
+        }
+    }
+    for path in round2 {
+        loaded.keys.anchors.remove(path);
+    }
+    loaded.keys.anchors.extend(own.anchors);
     for entries in stored.document.into_values() {
         for e in entries {
             if !loaded
@@ -511,13 +522,7 @@ fn prepare_fix(
     // the keys of the rest from the store by slug.
     let mut keys = check::capture_keys_of(&loaded.model, &loaded.compiled, Some(&held));
     let slugs = needed_slugs(&loaded.model, &keys);
-    keys.extend(
-        cache
-            .stored_keys_for(&slugs, &held)
-            .document
-            .into_values()
-            .flatten(),
-    );
+    keys.merge(cache.stored_keys_for(&slugs, &held));
     // The layout of a pair depends only on its texts, so what the check
     // settled stays true of the new expected content.
     let layout = std::mem::take(&mut loaded.expected.layout);

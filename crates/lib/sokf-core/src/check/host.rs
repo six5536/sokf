@@ -3,7 +3,7 @@
 
 use tramlines_core::frontmatter::Host as FrontmatterHost;
 use tramlines_md::{
-    check::{self as engine, CheckOptions, Host, ScaffoldFront, Subject},
+    check::{self as engine, CheckOptions, Host, LabelFacts, ScaffoldFront, Subject},
     markdown::Dialect,
 };
 
@@ -19,7 +19,7 @@ use crate::{
         frontmatter::{CORE_KEYS, core_fields},
         keys::Label,
     },
-    scaffold::SokfScaffold,
+    scaffold::{self, SokfScaffold},
 };
 
 /// `SokfHost` is the host for one check of a document against `schema`.
@@ -31,13 +31,21 @@ pub struct SokfHost<'a> {
     ctx: &'a Ctx<'a>,
     schema: &'a SokfSchema,
     core: Option<&'a CoreFields>,
+    /// `language` is the language of the schema, found once, where the
+    /// engine first asks for the words of a label.
+    language: std::cell::OnceCell<String>,
 }
 
 impl<'a> SokfHost<'a> {
     /// `new` returns the host for a check of a document with the core
     /// fields `core` against `schema` in `ctx`.
     pub fn new(ctx: &'a Ctx<'a>, schema: &'a SokfSchema, core: Option<&'a CoreFields>) -> Self {
-        SokfHost { ctx, schema, core }
+        SokfHost {
+            ctx,
+            schema,
+            core,
+            language: std::cell::OnceCell::new(),
+        }
     }
 }
 
@@ -107,6 +115,32 @@ impl Host for SokfHost<'_> {
             }
             _ => Subject::Document,
         }
+    }
+
+    /// `label_words` gives the words of the label that `facts` describe from
+    /// sokf's texts in the language of the schema, as the host of a scaffold
+    /// gives them, or `None`, so that the engine takes the label's key.
+    // sokf-implements: SOKF_SCHEMA_105
+    // sokf-implements: SOKF_SCHEMA_107
+    fn label_words(&self, facts: &LabelFacts<'_>) -> Option<String> {
+        let ctx = self.ctx;
+        // A schema of additional files has no type, so its language comes
+        // from the store of the checked file.
+        let language = self.language.get_or_init(|| {
+            let (type_name, knowledge) = match &self.schema.dispatch {
+                Dispatch::Type(t) => (t.as_str(), ctx.knowledge),
+                Dispatch::Globs(_) => ("", None),
+            };
+            scaffold::language(
+                ctx.model,
+                ctx.compiled,
+                self.schema,
+                type_name,
+                knowledge,
+                ctx.knowledge,
+            )
+        });
+        ctx.compiled.texts.label(language, facts.key)
     }
 
     /// `records_accepted` asks the engine for the units that each unit rule
@@ -227,6 +261,17 @@ impl Host for SchemaHost<'_> {
 
     fn scaffold_front(&self, states: &States) -> Option<ScaffoldFront> {
         self.scaffold.scaffold_front(states)
+    }
+
+    /// `label_words` gives each label the words that a check of a document
+    /// of the schema gives it, so that the engine holds each scaffold and each
+    /// example to the words of the schema's language.
+    fn label_words(&self, facts: &LabelFacts<'_>) -> Option<String> {
+        self.check.label_words(facts)
+    }
+
+    fn scaffold_label(&self, labels: &[String]) -> Option<String> {
+        self.scaffold.scaffold_label(labels)
     }
 
     /// `check` holds a scaffold or an example to the core fields of its

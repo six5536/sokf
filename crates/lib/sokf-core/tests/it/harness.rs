@@ -103,7 +103,7 @@ fn an_empty_repository_gets_every_part_and_the_record() {
     let skill = tree.read(".claude/skills/sokf/SKILL.md");
     assert!(skill.starts_with("---\nname: sokf\n"), "{skill}");
     assert!(skill.contains("Written by sokf "), "{skill}");
-    assert!(skill.contains("# SOKF v0.6"), "{skill}");
+    assert!(skill.contains("# SOKF v0.7"), "{skill}");
     assert_eq!(
         tree.read("CLAUDE.md"),
         format!(
@@ -238,7 +238,7 @@ fn a_skill_the_tool_never_wrote_is_edited_until_forced() {
     assert_eq!(parts(&out)[1].verb(), "rewrote");
     assert!(
         tree.read(".claude/skills/sokf/SKILL.md")
-            .contains("# SOKF v0.6")
+            .contains("# SOKF v0.7")
     );
     assert!(
         tree.read(".sokf/harness.toml")
@@ -581,7 +581,7 @@ fn a_stale_part_is_rewritten_and_recorded_again() {
     assert_eq!(parts(&out)[1].verb(), "rewrote");
     assert!(
         tree.read(".claude/skills/sokf/SKILL.md")
-            .contains("# SOKF v0.6")
+            .contains("# SOKF v0.7")
     );
     assert!(!tree.read(".sokf/harness.toml").contains(&old_hash));
     let st = status(&tree).unwrap();

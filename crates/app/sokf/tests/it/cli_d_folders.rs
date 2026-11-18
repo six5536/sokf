@@ -1,9 +1,9 @@
 //! End-to-end tests of the drop-in folders of `/.sokf/`: sokf reads each
-//! file of `roots.d` and of `formats.d` at any depth, and the files of
-//! `formats.d` form one layer of formats, in which no file takes precedence
-//! over another.
+//! file of `roots.d`, of `excludes.d`, and of `formats.d` at any depth, and
+//! the files of `formats.d` form one layer of formats, in which no file takes
+//! precedence over another.
 
-use crate::common::{Fixture, project};
+use crate::common::Fixture;
 
 /// `LINE_SCHEMA` is a schema whose one paragraph has the format
 /// `shared-line`, which no layer below `formats.d` declares.
@@ -63,7 +63,7 @@ fn a_store_that_a_nested_file_of_roots_d_lists_is_checked() {
     let f = Fixture::new("clean");
     f.write(
         "vendor/kb/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: kb\nscope: vendor\n",
+        "sokf: \"0.7\"\nname: kb\nscope: vendor\n",
     );
     f.write(
         ".sokf/roots.d/pakf/@six5536/rust/roots.toml",
@@ -90,6 +90,8 @@ fn the_files_of_formats_d_form_a_layer_below_the_repository() {
     assert!(err.contains("/.sokf/formats.d/"), "{err}");
     f.write(ONE, ANY_LINE);
     validate_clean(&f);
+    // The fix takes the format from the folder and writes no file of formats.
+    assert!(!f.path(".sokf/formats.yaml").exists());
     let effective = entry(&f, &[], "shared-line");
     assert!(
         effective.contains("source: /.sokf/formats.d/pakf/@acme/one/formats.yaml"),
@@ -159,23 +161,6 @@ fn a_type_that_two_files_of_formats_d_declare_stops_the_run() {
     validate_clean(&f);
 }
 
-// sokf-tests: CONF-11_AC-4
-#[test]
-fn a_patch_of_formats_d_merges_onto_the_layers_below() {
-    let f = with_line("A line.");
-    f.write(
-        ONE,
-        &format!(
-            "{ANY_LINE}  user-story:\n    patch: true\n    example: 'ST-1: AS A writer, I WANT a patch, SO THAT the folder changes a format.'\n"
-        ),
-    );
-    validate_clean(&f);
-    let story = entry(&f, &["--layer", "formats.d"], "user-story");
-    assert!(story.contains("the folder changes a format"), "{story}");
-    // The template comes from the embedded entry that the patch merges onto.
-    assert!(story.contains("I WANT ${}"), "{story}");
-}
-
 // sokf-tests: CONF-11_AC-5
 #[test]
 fn a_type_of_one_file_of_formats_d_reaches_the_formats_of_another() {
@@ -226,39 +211,6 @@ fn a_change_of_a_file_of_formats_d_reaches_a_cached_check() {
     let (out, err, code) = f.run(&["validate"]);
     assert_eq!(code, 1, "{out}{err}");
     assert!(out.contains("/knowledge/line.md"), "{out}");
-}
-
-// sokf-tests: CONF-11_AC-1
-// sokf-tests: CONF-11_AC-4
-#[test]
-fn the_layer_formats_d_lies_above_the_embedded_formats() {
-    let f = project();
-    validate_clean(&f);
-    let line = entry(&f, &[], "requirement-evolution");
-    assert!(line.contains("source: embedded"), "{line}");
-    // A patch of the folder merges onto the embedded entry.
-    f.write(
-        ONE,
-        "registry:\n  requirement-evolution:\n    patch: true\n    example: 'Versioning: The file changes with each release.'\n",
-    );
-    validate_clean(&f);
-    let line = entry(&f, &[], "requirement-evolution");
-    assert!(line.contains("@acme/one/formats.yaml"), "{line}");
-    assert!(
-        line.contains("The file changes with each release.") && line.contains("evolution-kind"),
-        "{line}"
-    );
-    // An entry in full of the folder replaces the embedded one.
-    f.write(
-        ONE,
-        "registry:\n  requirement-evolution:\n    pattern: '.*'\n    example: A line.\n",
-    );
-    validate_clean(&f);
-    let line = entry(&f, &[], "requirement-evolution");
-    assert!(
-        line.contains("@acme/one/formats.yaml") && line.contains("pattern: \".*\""),
-        "{line}"
-    );
 }
 
 // sokf-tests: CONF-11_AC-8
@@ -325,27 +277,22 @@ fn a_clash_names_the_first_file_and_is_decided_before_any_file_compiles() {
 fn alike_declarations_of_formats_d_count_once() {
     let f = with_line("Red line.");
     // The two files differ in quoting, in the order of the keys, and in
-    // their comments, and declare the same format, type, and patch.
+    // their comments, and declare the same format and type.
     f.write(
         ONE,
-        "types:\n  colour: [A, Red]\nregistry:\n  shared-line:\n    template: '${:colour} line.'\n    example: Red line.\n  user-story:\n    patch: true\n    example: 'ST-1: AS A writer, I WANT a patch, SO THAT the folder changes a format.'\n",
+        "types:\n  colour: [A, Red]\nregistry:\n  shared-line:\n    template: '${:colour} line.'\n    example: Red line.\n",
     );
     f.write(
         TWO,
-        "# The same formats as one.\nregistry:\n  user-story: { example: \"ST-1: AS A writer, I WANT a patch, SO THAT the folder changes a format.\", patch: true }\n  shared-line:\n    example: \"Red line.\" # The line.\n    template: \"${:colour} line.\"\ntypes:\n  colour:\n    - \"A\"\n    - Red\n",
+        "# The same formats as one.\nregistry:\n  shared-line:\n    example: \"Red line.\" # The line.\n    template: \"${:colour} line.\"\ntypes:\n  colour:\n    - \"A\"\n    - Red\n",
     );
     validate_clean(&f);
     // The first file in the order of the paths stands for the name.
-    for (args, name) in [
-        (&[][..], "shared-line"),
-        (&["--layer", "formats.d"][..], "user-story"),
-    ] {
-        let line = entry(&f, args, name);
-        assert!(
-            line.contains("source: /.sokf/formats.d/pakf/@acme/one/formats.yaml"),
-            "{line}"
-        );
-    }
+    let line = entry(&f, &[], "shared-line");
+    assert!(
+        line.contains("source: /.sokf/formats.d/pakf/@acme/one/formats.yaml"),
+        "{line}"
+    );
     let (out, err, code) = f.run(&[
         "info",
         "formats",
@@ -425,20 +372,6 @@ fn each_file_that_differs_from_the_first_declaration_is_named() {
     );
 }
 
-// sokf-tests: CONF-11_AC-9
-#[test]
-fn two_patches_that_list_the_held_variants_in_another_order_are_alike() {
-    let f = with_line("A line.");
-    let ubiquitous = "      ubiquitous:\n        example: 'PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message.'\n";
-    let event = "      event:\n        example: 'PLUMB-1_AC-1 [event]: WHEN a program writes, the plumber SHALL deliver the message.'\n";
-    let patch = |first: &str, second: &str| {
-        format!("{ANY_LINE}  requirement-ears:\n    patch: true\n    variants:\n{first}{second}")
-    };
-    f.write(ONE, &patch(ubiquitous, event));
-    f.write(TWO, &patch(event, ubiquitous));
-    validate_clean(&f);
-}
-
 /// `BIG` is a type that compiles alone and in a template with one hole of
 /// it, while a template with two holes of it exceeds the size limit of a
 /// regex.
@@ -507,128 +440,115 @@ fn a_format_of_formats_d_compiles_against_the_type_that_settles_a_clash() {
     assert_eq!((code, out.trim()), (0, "null"), "{err}");
 }
 
-// sokf-tests: CONF-11_AC-5
-// sokf-tests: CONF-11_AC-11
+// sokf-tests: CONF-11_AC-12
 #[test]
-fn an_embedded_format_that_a_type_of_formats_d_breaks_stops_the_run() {
-    // `requirement-evolution` of the embedded formats uses the types
-    // `evolution-kind` and `sentence`, and two holes of `BIG` exceed the
-    // size limit of a regex.
-    let f = project();
+fn a_format_of_formats_d_that_a_type_of_formats_yaml_breaks_stops_the_run() {
+    let f = with_line("A line.");
+    f.write(
+        ONE,
+        "types:\n  colour: '[A-Z]?'\nregistry:\n  shared-line:\n    template: '${:colour}${:colour} line.'\n    example: A line.\n",
+    );
     validate_clean(&f);
-    let types = format!("types:\n  evolution-kind: {BIG}\n  sentence: {BIG}\n");
-    f.write(ONE, &format!("{types}registry: {{}}\n"));
+    // Two holes of `BIG` exceed the size limit of a regex.
+    f.write(
+        ".sokf/formats.yaml",
+        &format!("types:\n  colour: {BIG}\nregistry: {{}}\n"),
+    );
     let (out, err, code) = f.run(&["validate"]);
     assert_eq!(code, 2, "{out}{err}");
     assert!(
-        err.starts_with("error: /.sokf/formats.d/pakf/@acme/one/formats.yaml: ")
-            && err.contains("`requirement-evolution`")
-            && err.contains("the layer `embedded`")
-            && err.contains("`evolution-kind`"),
+        err.starts_with("error: /.sokf/formats.yaml: ")
+            && err.contains(
+                "format `shared-line`: the entry of the layer `/.sokf/formats.d/pakf/@acme/one/formats.yaml` no longer compiles against the type `colour` of this layer"
+            ),
         "{err}"
     );
-    // A patch of the folder that takes a type out of the format settles it
-    // too.
+    // A type against which the format compiles passes.
     f.write(
-        ONE,
-        &format!(
-            "{types}registry:\n  requirement-evolution:\n    patch: true\n    template: '${{:evolution-kind}}: A sentence.'\n    example: 'Versioning: A sentence.'\n"
-        ),
+        ".sokf/formats.yaml",
+        "types:\n  colour: '[A-Z]{0,2}'\nregistry: {}\n",
     );
     validate_clean(&f);
-    f.write(ONE, &format!("{types}registry: {{}}\n"));
     // The project settles it by declaring the format in full, which no
-    // schema then sees below the folder.
+    // schema then sees below `/.sokf/formats.yaml`.
     f.write(
         ".sokf/formats.yaml",
-        "registry:\n  requirement-evolution:\n    pattern: '.*'\n    example: 'Versioning: A sentence.'\n",
-    );
-    validate_clean(&f);
-    // Or by a patch that takes a type out of the format.
-    f.write(
-        ".sokf/formats.yaml",
-        "registry:\n  requirement-evolution:\n    patch: true\n    template: '${:evolution-kind}: A sentence.'\n    example: 'Versioning: A sentence.'\n",
-    );
-    validate_clean(&f);
-    // Or by declaring a type, so that no schema sees the folder's.
-    f.write(
-        ".sokf/formats.yaml",
-        "types:\n  sentence: '[A-Z].*\\.'\nregistry: {}\n",
-    );
-    validate_clean(&f);
-    // A type of the folder against which the format compiles passes.
-    std::fs::remove_file(f.path(".sokf/formats.yaml")).unwrap();
-    f.write(
-        ONE,
-        &format!("types:\n  evolution-kind: [Versioning, Deprecation]\n  sentence: {BIG}\nregistry: {{}}\n"),
+        &format!(
+            "types:\n  colour: {BIG}\nregistry:\n  shared-line:\n    pattern: '.*'\n    example: A line.\n"
+        ),
     );
     validate_clean(&f);
 }
 
-// sokf-tests: CONF-11_AC-11
+/// `EXCLUDES` is the file of a tool in `excludes.d`, in a folder of its own.
+const EXCLUDES: &str = ".sokf/excludes.d/pakf/@acme/tool/excludes.toml";
+
+// sokf-tests: CONF-3_AC-9
+// sokf-tests: CONF-3_AC-12
+// sokf-tests: CACHE-1_AC-98
 #[test]
-fn a_format_below_compiles_against_the_types_that_a_schema_sees() {
-    let f = project();
+fn a_glob_of_excludes_d_prunes_the_walk() {
+    let f = Fixture::new("clean");
+    // A copy that a tool keeps of another project's file holds a marker
+    // that cites nothing in this project.
+    f.write(
+        "vendor/copy/lib.rs",
+        // sokf:ignore-next-line
+        "// sokf-implements: no-such-document\nfn f() {}\n",
+    );
+    let (out, _, code) = f.run_here(&["validate"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("/vendor/copy/lib.rs:1: error:"), "{out}");
+    // A run with changed paths takes every other file from the store, so
+    // the run that names only the new file of the folder must still prune
+    // the copy.
+    f.write(EXCLUDES, "exclude = [\"/vendor/copy/**\"]\n");
+    let (out, err, code) = f.run_here(&["validate", "--changed", EXCLUDES]);
+    assert_eq!((code, out.as_str()), (0, "0 errors, 0 warnings\n"), "{err}");
     validate_clean(&f);
-    // The error names each type of the folder that the format uses.
+    // A glob under a root hides no file of the store, and `validate` warns
+    // on the file of the folder.
     f.write(
-        ONE,
-        &format!("types:\n  evolution-kind: {BIG}\nregistry: {{}}\n"),
+        EXCLUDES,
+        "exclude = [\"/vendor/copy/**\", \"/knowledge/decisions/**\"]\n",
     );
-    f.write(TWO, "types:\n  sentence: '\\w{1,199}'\nregistry: {}\n");
-    let (out, err, code) = f.run(&["validate"]);
-    assert_eq!(code, 2, "{out}{err}");
+    f.write("knowledge/decisions/bare.md", "# Bare\n");
+    let (out, _, code) = f.run(&["validate", "--warnings"]);
+    assert_eq!(code, 1, "{out}");
     assert!(
-        err.starts_with("error: /.sokf/formats.d/pakf/@acme/one/formats.yaml: ")
-            && err.contains("`requirement-evolution`")
-            && err.contains(
-                "the type `evolution-kind` of this file and the type `sentence` of `/.sokf/formats.d/pakf/@acme/two/formats.yaml`"
-            ),
-        "{err}"
+        out.contains("/knowledge/decisions/bare.md: error: the document has no frontmatter"),
+        "{out}"
     );
-    // A type of `/.sokf/formats.yaml` takes part, so the format compiles.
-    std::fs::remove_file(f.path(TWO)).unwrap();
-    f.write(
-        ".sokf/formats.yaml",
-        "types:\n  sentence: [x]\nregistry: {}\n",
-    );
-    validate_clean(&f);
-    // The variant `named` of `requirement-summary` uses the two types that
-    // the folder changes, and its variant `described` uses one, so only
-    // that format fails, and `requirement-evolution` beside it compiles.
-    std::fs::remove_file(f.path(".sokf/formats.yaml")).unwrap();
-    f.write(
-        ONE,
-        &format!("types:\n  code-name: {BIG}\n  predicate: {BIG}\nregistry: {{}}\n"),
-    );
-    let (out, err, code) = f.run(&["validate"]);
-    assert_eq!(code, 2, "{out}{err}");
     assert!(
-        err.contains("`requirement-summary`") && !err.contains("`requirement-evolution`"),
-        "{err}"
+        out.contains("/.sokf/excludes.d/pakf/@acme/tool/excludes.toml: warning: the `exclude` glob `/knowledge/decisions/**` lies under the knowledge root /knowledge, so it has no effect: sokf checks every file under a root (CONF-3_AC-12)\n"),
+        "{out}"
     );
-    // A type of `/.sokf/formats.yaml` that takes part is named too.
-    f.write(
-        ONE,
-        "types:\n  evolution-kind: '\\w{1,199}'\nregistry: {}\n",
-    );
-    f.write(
-        ".sokf/formats.yaml",
-        "types:\n  sentence: '\\w{1,201}'\nregistry: {}\n",
-    );
-    let (out, err, code) = f.run(&["validate"]);
-    assert_eq!(code, 2, "{out}{err}");
-    assert!(
-        err.contains("`requirement-evolution`")
-            && err.contains(
-                "the type `evolution-kind` of this file and the type `sentence` of `/.sokf/formats.yaml`"
-            )
-            && !err.contains("format `requirement-evolution`: "),
-        "{err}"
-    );
-    f.write(
-        ".sokf/formats.yaml",
-        "types:\n  sentence: [x]\nregistry: {}\n",
-    );
-    validate_clean(&f);
+    assert!(!out.contains("/vendor/copy/"), "{out}");
+}
+
+// sokf-tests: CONF-3_AC-10
+// sokf-tests: CONF-3_AC-11
+#[test]
+fn a_bad_file_of_excludes_d_stops_the_run() {
+    let f = Fixture::new("clean");
+    for (text, says) in [
+        ("exclude = [\n", "unclosed array"),
+        (
+            "exclude = []\nroots = [\"/vendor\"]\n",
+            "unknown field `roots`",
+        ),
+        (
+            "exclude = [\"vendor/**\"]\n",
+            "exclude glob `vendor/**` is not /-rooted",
+        ),
+        ("exclude = [\"/[\"]\n", "exclude glob `/[` does not parse"),
+    ] {
+        f.write(EXCLUDES, text);
+        let (out, err, code) = f.run(&["validate"]);
+        assert_eq!(code, 2, "{text:?}: {out}{err}");
+        assert!(
+            err.contains("/.sokf/excludes.d/pakf/@acme/tool/excludes.toml: ") && err.contains(says),
+            "{text:?}: {err}"
+        );
+    }
 }

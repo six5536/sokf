@@ -16,6 +16,7 @@ const SKILL: &str = include_str!(concat!(env!("OUT_DIR"), "/harness/skills/sokf/
 // writes the same block, whatever parts it installs.
 // sokf-implements: CLI-3_AC-35
 // sokf-implements: CLI-3_AC-70
+// sokf-implements: CLI-3_AC-112
 const INSTRUCTIONS: &str = include_str!(concat!(env!("OUT_DIR"), "/harness/instructions.md"));
 
 /// `EMBEDDED` lists every embedded file, relative to `harness/` at the
@@ -190,6 +191,23 @@ mod tests {
         assert!(!text.contains("sokf pack"), "{text}");
     }
 
+    /// `the_skills_description_is_a_plain_yaml_scalar` checks the line in the
+    /// source file, which `frontmatter` reads as written. A colon and a space,
+    /// or a space and a hash, would make the source file invalid YAML, and
+    /// quotes would reach the installed description.
+    #[test]
+    fn the_skills_description_is_a_plain_yaml_scalar() {
+        let (_, description, _) = frontmatter(SKILL);
+        assert_ne!(description, "");
+        assert!(
+            !description.starts_with(|c: char| "-?:,[]{}#&*!|>'\"%@` ".contains(c)),
+            "{description}"
+        );
+        assert!(!description.ends_with(' '), "{description}");
+        assert!(!description.contains(": "), "{description}");
+        assert!(!description.contains(" #"), "{description}");
+    }
+
     // sokf-tests: CLI-3_AC-38
     #[test]
     fn the_skill_carries_the_version_line_after_its_frontmatter() {
@@ -202,7 +220,7 @@ mod tests {
         assert!(text.contains(&expected), "{text}");
         assert!(text.contains(env!("CARGO_PKG_VERSION")));
         // The body of the skill appears once, unchanged, after the version line.
-        assert_eq!(text.matches("# SOKF v0.6").count(), 1);
+        assert_eq!(text.matches("# SOKF v0.7").count(), 1);
     }
 
     /// `every_file_under_harness_is_listed` checks that the binary embeds

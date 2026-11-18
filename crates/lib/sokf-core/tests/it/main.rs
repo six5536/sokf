@@ -28,6 +28,7 @@ mod incremental_property;
 mod init;
 mod json_schemas;
 mod layout;
+mod link_limits;
 mod marker_coverage;
 mod markers;
 mod nesting;

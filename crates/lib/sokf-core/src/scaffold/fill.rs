@@ -304,7 +304,7 @@ pub fn bind(
             crate::report::message(f)
         )));
     }
-    if out.repairs.is_empty() && !out.anchors_stale {
+    if out.repairs.is_empty() && out.label_repairs.is_empty() && !out.anchors_stale {
         return Ok(document.to_string());
     }
     // The rewrite places the anchor of each key, so that the new document
@@ -321,6 +321,7 @@ pub fn bind(
         &doc.segments,
         Vec::new(),
         &out.repairs,
+        &out.label_repairs,
         Some(&anchors),
     )
 }

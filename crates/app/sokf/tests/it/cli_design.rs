@@ -1,6 +1,6 @@
-//! These tests run the Design schema of the sokf pack through `sokf new`
-//! and `sokf validate`, on the fixture `new`, to check what the engine
-//! derives from it and how the engine reads a design.
+//! These tests run the Design schema of the fixtures through `sokf new` and
+//! `sokf validate`, on the fixture `new`, to check what the engine derives
+//! from it and how the engine reads a design.
 
 use std::fmt::Write as _;
 
@@ -8,20 +8,16 @@ use common::Fixture;
 
 use crate::common;
 
+/// `DESIGN_SCHEMA` is a Design schema with optional sections, one of which
+/// holds a worked example after a concept's prose.
+const DESIGN_SCHEMA: &str =
+    include_str!("../../../../lib/sokf-core/tests/fixtures/schemas/design.md");
+
 /// `with_design` returns the fixture `new` with the Design schema of the
-/// sokf pack, and the pack's line formats as the repository's.
+/// fixtures.
 fn with_design() -> Fixture {
     let f = Fixture::new("new");
-    let repo = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
-    let read = |p: &str| std::fs::read_to_string(format!("{repo}/{p}")).unwrap();
-    f.write(
-        "knowledge/schemas/design.md",
-        &read("packs/sokf/files/knowledge/schemas/design.md"),
-    );
-    f.write(
-        ".sokf/formats.yaml",
-        &read("packs/sokf/files/.sokf/formats.d/pakf/@sokf/sokf/formats.yaml"),
-    );
+    f.write("knowledge/schemas/design.md", DESIGN_SCHEMA);
     f
 }
 
@@ -61,9 +57,9 @@ fn a_worked_example_after_a_concept_s_prose_reads_as_an_example() {
         .filter(|l| {
             !matches!(
                 *l,
-                "A failed write leaves no message behind:"
-                    | "- A write of a malformed message fails, and the file server drops what it had collected for that message."
-                    | "- A write of a message that matches no rule set fails, and the file server queues the message on no port."
+                "A failed write leaves the old row in place:"
+                    | "- A write that the disk refuses fails, and the cache keeps the old row."
+                    | "- A write of a row that no check produced fails, and the cache stores nothing."
             )
         })
         .fold(String::new(), |mut out, l| {
@@ -76,9 +72,11 @@ fn a_worked_example_after_a_concept_s_prose_reads_as_an_example() {
     );
     f.write("knowledge/designs/design-example.md", &text);
     let (stdout, _, _) = f.run(&["validate"]);
+    // No finding names the design, so its schema loaded and the engine read
+    // the prose and the example without a TLMD_69.
     let mine: Vec<&str> = stdout
         .lines()
-        .filter(|l| l.contains("design-example.md") && l.contains("TLMD_69"))
+        .filter(|l| l.contains("design-example.md"))
         .collect();
     assert!(mine.is_empty(), "{mine:?}");
 }

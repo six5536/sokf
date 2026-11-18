@@ -2,97 +2,41 @@
 //! lines are examples: a conflict check and a scan for markers pass them
 //! by.
 
-use std::ops::RangeInclusive;
+use std::ops::Range;
 
-use super::{Block, BlockDetail, BlockKind, Body};
+use super::Body;
 
-/// `fenced_lines` returns the lines of each fenced code block of `body`,
-/// whose text is `text`, from its opening fence to its closing fence, in
-/// the order of the lines: each that the blocks of the body hold, at any
-/// depth of its lists, and each in a quote, whose code blocks the parser
-/// records only by their lines. A fence inside a footnote is missing,
-/// because the parser records no block of a footnote, and so is a fence
-/// in a quote that a list item opens or holds at a wider indent.
-pub fn fenced_lines(body: &Body, text: &str) -> Vec<RangeInclusive<usize>> {
-    fn walk(blocks: &[Block], fenced: &mut Vec<RangeInclusive<usize>>, code: &mut Vec<usize>) {
-        for b in blocks {
-            if b.kind == BlockKind::Code {
-                code.push(b.line);
-                if matches!(b.detail, BlockDetail::Code { fence, .. } if fence > 0) {
-                    fenced.push(b.line..=b.end_line);
-                }
-            }
-            for u in &b.units {
-                walk(&u.nested, fenced, code);
-            }
-        }
-    }
-    let mut out = Vec::new();
-    let mut code = Vec::new();
-    walk(&body.blocks, &mut out, &mut code);
-    code.sort_unstable();
-    // Each other code block lies in a quote: it is fenced where its first
-    // line opens a fence after the marks of the quotes.
-    let quoted: Vec<&(usize, usize)> = body
-        .fenced
+/// `fenced_bytes` returns the bytes of each fenced code block of `body`,
+/// from its opening fence to its closing fence, in the order of the text,
+/// at any depth of quotes, lists, and footnotes: each fenced block of the
+/// list of code blocks that the parser gives the body. The offsets count
+/// from the start of `text`, the text of the file, in which the body begins
+/// at line `body.first_line`, with lines counted at each line feed.
+pub fn fenced_bytes(body: &Body, text: &str) -> Vec<Range<usize>> {
+    let start: usize = text
+        .split_inclusive('\n')
+        .take(body.first_line.saturating_sub(1))
+        .map(str::len)
+        .sum();
+    body.code_blocks
         .iter()
-        .filter(|(start, _)| code.binary_search(start).is_err())
-        .collect();
-    if !quoted.is_empty() {
-        let lines: Vec<&str> = text.lines().collect();
-        out.extend(
-            quoted
-                .into_iter()
-                .filter(|&&(start, _)| {
-                    start
-                        .checked_sub(1)
-                        .and_then(|i| lines.get(i))
-                        .is_some_and(|line| opens_quoted_fence(line))
-                })
-                .map(|&(start, end)| start..=end),
-        );
-        out.sort_by_key(|r| *r.start());
-    }
-    out
-}
-
-/// `opens_quoted_fence` returns whether `line` opens a fenced code block
-/// after the marks of the quotes that hold it: each `>` follows at most
-/// three spaces, and takes one space or tab after it, and the fence,
-/// `` ``` `` or `~~~`, follows at most three spaces.
-fn opens_quoted_fence(line: &str) -> bool {
-    let mut rest = line;
-    loop {
-        let indent = rest.len() - rest.trim_start_matches(' ').len();
-        if indent > 3 {
-            return false;
-        }
-        let trimmed = &rest[indent..];
-        match trimmed.strip_prefix('>') {
-            Some(after) => rest = after.strip_prefix([' ', '\t']).unwrap_or(after),
-            None => return trimmed.starts_with("```") || trimmed.starts_with("~~~"),
-        }
-    }
+        .filter(|b| b.fenced)
+        .map(|b| b.bytes.start + start..b.bytes.end + start)
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::markdown::{Segments, parse};
 
     #[test]
-    fn a_quoted_fence_opens_after_the_marks_of_its_quotes() {
-        for line in [
-            "> ```",
-            ">```",
-            ">> ~~~rust",
-            "   > ```",
-            ">\t```",
-            "> > ```",
-        ] {
-            assert!(opens_quoted_fence(line), "{line}");
-        }
-        for line in [">     ```", "    > ```", "> text", ""] {
-            assert!(!opens_quoted_fence(line), "{line}");
-        }
+    fn a_fence_counts_its_bytes_from_the_start_of_the_file() {
+        let text = "---\nid: a\n---\n# A\r\r\n> - ```\n>   x\n>   ```\n\n    indented\n";
+        let body_text = &text["---\nid: a\n---\n".len()..];
+        let body = parse(body_text, 4, &Segments::default());
+        let fenced = fenced_bytes(&body, text);
+        let texts: Vec<&str> = fenced.iter().map(|r| &text[r.clone()]).collect();
+        assert_eq!(texts, ["> - ```\n>   x\n>   ```"]);
     }
 }

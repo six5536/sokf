@@ -62,7 +62,7 @@ fn builds_every_node_and_edge_kind_with_inverses() {
     write(
         &dir,
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: k\nscope: test\ndescription: d\n",
+        "sokf: \"0.7\"\nname: k\nscope: test\ndescription: d\n",
     );
     // The tool generates each index, so no index is a node, whether it
     // is at the root or in a subdirectory.
@@ -232,7 +232,7 @@ fn frontmatter_json_keeps_the_order_and_shapes_written() {
     write(
         &dir,
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: k\nscope: test\n",
+        "sokf: \"0.7\"\nname: k\nscope: test\n",
     );
     write(
         &dir,

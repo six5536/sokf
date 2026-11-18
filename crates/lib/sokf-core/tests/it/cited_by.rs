@@ -176,7 +176,7 @@ fn a_citation_from_another_store_counts() {
     );
     tree.write(
         "other/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: other\nscope: test\ndescription: Another store.\n",
+        "sokf: \"0.7\"\nname: other\nscope: test\ndescription: Another store.\n",
     );
     tree.write("knowledge/schemas/contract.md", CONTRACT_SCHEMA);
     tree.write("other/schemas/stories.md", STORIES_SCHEMA);

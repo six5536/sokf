@@ -31,11 +31,11 @@ sections:
   - heading: { from: title }
     level: 1
     guidance: >
-      The opening is one paragraph that names the specification whose changes the changelog
-      records, and a contents list follows it.
+      The opening names the specification whose changes the changelog records, and a
+      contents list follows it. The Notes section holds the versioning rule, and the section
+      of each version holds its changes.
     blocks:
       - kind: prose
-        max: 1
         example: 'This changelog records the versions of the Plumbing contract, which states what a program can rely on when it sends and receives messages through the plumber.'
       - kind: bullet-list
         guidance: >
@@ -63,8 +63,9 @@ sections:
       Each section describes one version, and its heading is the version number, which is
       the section's key. The section says what the version changes and what the change
       breaks. A reader then knows whether a program or a document that conforms to the
-      previous version still conforms. An amendment to a version is part of that version's
-      section, under the amendment's date.
+      previous version still conforms. Each change, and each thing that it breaks, has a
+      sentence or an item of its own. An amendment to a released version is an item of that
+      version's section that says what changed, without a date.
     examples:
       - |
         ## 0.2
@@ -85,7 +86,7 @@ sections:
       - kind: bullet-list
         optional: true
         repeat: true
-        guidance: Each item names the changed criterion or section by its key or its heading, and then says what changed.
+        guidance: Each item names the changed criterion or section by its key or its heading, and then says what changed. Each further fact about the change has a sentence of its own.
         example:
           - 'One writer (PLUMB-3): the plumber lets one program at a time open `/mnt/plumb/rules` for writing, so that two writers never mix their rules.'
           - 'Client (PLUMB-1_AC-3): a `plumb client` action holds the message until the program that it starts opens the port.'

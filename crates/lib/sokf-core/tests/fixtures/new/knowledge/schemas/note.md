@@ -18,6 +18,6 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 3
+        max: { hard: 3, when-at-limit: "Start another note for the rest." }
         example: Milk, bread, and the good coffee.
 ````

@@ -295,7 +295,7 @@ fn write_tree(docs: &[Doc]) -> TempTree {
     let tree = TempTree::empty("graph-prop");
     tree.write(
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: k\nscope: test\n",
+        "sokf: \"0.7\"\nname: k\nscope: test\n",
     );
     tree.write("src/a.rs", "fn a() {}\n");
     tree.write(

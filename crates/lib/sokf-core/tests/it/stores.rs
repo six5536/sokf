@@ -99,7 +99,7 @@ fn a_former_identity_resolves_and_is_respelled() {
     );
     tree.write(
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: fixture\nscope: test\nrenamed-from: [test/legacy]\ndescription: A clean fixture store.\n",
+        "sokf: \"0.7\"\nname: fixture\nscope: test\nrenamed-from: [test/legacy]\ndescription: A clean fixture store.\n",
     );
     assert!(
         errors_on(&tree, false, "/other/note.md").contains(
@@ -140,7 +140,7 @@ fn an_identity_two_roots_hold_is_a_finding_on_each() {
     let tree = two_stores("", "Milk.");
     tree.write(
         "other/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: other\nscope: test\nrenamed-from: [test/fixture]\n",
+        "sokf: \"0.7\"\nname: other\nscope: test\nrenamed-from: [test/fixture]\n",
     );
     assert_eq!(
         errors_on(&tree, false, "/other/manifest.sokf.yaml"),
@@ -156,7 +156,7 @@ fn an_identity_two_roots_hold_is_a_finding_on_each() {
     );
     tree.write(
         "other/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: Other\nrenamed-from: [other]\n",
+        "sokf: \"0.7\"\nname: Other\nrenamed-from: [other]\n",
     );
     assert_eq!(
         errors_on(&tree, false, "/other/manifest.sokf.yaml"),

@@ -129,7 +129,7 @@ mod tests {
             vec![
                 (
                     "/docs/kb/manifest.sokf.yaml",
-                    "sokf: \"0.6\"\nname: project-kb\nscope: test\ndescription: Knowledge for the project.\n"
+                    "sokf: \"0.7\"\nname: project-kb\nscope: test\ndescription: Knowledge for the project.\n"
                 ),
                 (
                     "/docs/kb/index.md",
@@ -141,7 +141,7 @@ mod tests {
         let files = store(&p("/knowledge"), "knowledge", "test", None);
         assert_eq!(
             files.files[0].1,
-            "sokf: \"0.6\"\nname: knowledge\nscope: test\n"
+            "sokf: \"0.7\"\nname: knowledge\nscope: test\n"
         );
         assert_eq!(files.files[1].0, p("/knowledge/index.md"));
     }

@@ -3,12 +3,15 @@
 //! asset of a sidecar, is later than the entry's `at` (§7 of the format
 //! specification, and the concern "Lapsed entries" of design-operations).
 
-use std::collections::BTreeSet;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
+};
 
 use super::Ctx;
 use crate::{
     Document, Finding, RepoPath, Source,
-    history::{Change, When},
+    history::{Change, Failed, Merge, When},
     model::{Query, core_fields, frontmatter::VerifiedEntry},
     source, yaml,
 };
@@ -60,20 +63,52 @@ pub fn check(doc: &Document, ctx: &Ctx<'_>) -> Vec<Finding> {
         .into_iter()
         .map(|c| Read::of(&doc.path, c, derived))
         .collect();
+    let mut branches = Branches::default();
     let mut findings = Vec::new();
     for (entry, deadline) in entries {
-        let added = reads.iter().find(|c| c.adds(entry)).map(|c| &c.change.when);
-        // The check counts no change of the commit that added the entry,
-        // or of the working tree where the working tree added it, as
-        // later than the entry.
+        let followed = branches.follow(&reads, entry, |merge| {
+            Ok(history
+                .merged(merge, asset.is_some())?
+                .into_iter()
+                .map(|changes| Branch {
+                    reads: changes
+                        .document
+                        .into_iter()
+                        .map(|c| Read::of(&doc.path, c, derived))
+                        .collect(),
+                    asset: changes.asset,
+                })
+                .collect())
+        });
+        let (added, merged) = followed.unwrap_or_else(|Failed| {
+            // A `git` that failed leaves the merged branch unknown, so the
+            // check reads the history of `HEAD` alone, and the next run
+            // checks the document again.
+            ctx.model.note(Query::Run);
+            let added = reads.iter().find(|r| r.adds(entry));
+            (
+                added.map(|r| r.change.when.clone()).into_iter().collect(),
+                Vec::new(),
+            )
+        });
+        // The check counts no change of a commit that added the entry, or
+        // of the working tree where the working tree added it, as later
+        // than the entry.
         // sokf-implements: CLI-4_AC-97
         // sokf-implements: CLI-4_AC-98
         let candidates: Vec<(&Change, Option<&RepoPath>)> = reads
             .iter()
+            .chain(merged.iter().flat_map(|b| &b.reads))
             .filter(|c| c.content)
             .map(|c| (&c.change, None))
-            .chain(changes.asset.iter().map(|c| (c, asset.as_ref())))
-            .filter(|(c, _)| added != Some(&c.when))
+            .chain(
+                changes
+                    .asset
+                    .iter()
+                    .chain(merged.iter().flat_map(|b| &b.asset))
+                    .map(|c| (c, asset.as_ref())),
+            )
+            .filter(|(c, _)| !added.contains(&c.when))
             .collect();
         let lapse = candidates
             .iter()
@@ -118,6 +153,68 @@ fn warning(
     )
 }
 
+/// A `Branch` is what the check reads from the merged branch of a merge
+/// commit: the changes to the document and to the asset.
+struct Branch {
+    reads: Vec<Read>,
+    asset: Vec<Change>,
+}
+
+/// `Branches` holds the merged branch of each merge commit that the check
+/// of a document has read, by the merge commit, one `Branch` for each
+/// parent after the first, so that the check reads each one once.
+#[derive(Default)]
+struct Branches(BTreeMap<String, Vec<Rc<Branch>>>);
+
+impl Branches {
+    /// `follow` returns the commits that added `entry`, and the merged
+    /// branch of each merge among them whose branch adds the entry too.
+    /// The first commit is the one of `reads` that added the entry. Where a
+    /// commit is a merge, and the merged branch of one of its parents,
+    /// which `read` reads, adds the entry and keeps it to the parent, the
+    /// check follows the merge to the commit of that branch that added it,
+    /// and so on. A merge whose merged branches don't hold the entry added
+    /// the entry itself, so its branches are left out. It returns `Failed`
+    /// where `read` fails.
+    // sokf-implements: CLI-4_AC-105
+    fn follow(
+        &mut self,
+        reads: &[Read],
+        entry: &VerifiedEntry,
+        read: impl Fn(&Merge) -> Result<Vec<Branch>, Failed>,
+    ) -> Result<(Vec<When>, Vec<Rc<Branch>>), Failed> {
+        let adder = |r: &Read| (r.change.when.clone(), r.change.merge.clone());
+        let mut next = reads.iter().find(|r| r.adds(entry)).map(adder);
+        let mut added = Vec::new();
+        let mut merged = Vec::new();
+        while let Some((when, merge)) = next.take() {
+            let (When::Commit(commit), Some(merge)) = (&when, merge) else {
+                added.push(when);
+                break;
+            };
+            if !self.0.contains_key(commit) {
+                let branches = read(&merge)?.into_iter().map(Rc::new).collect();
+                self.0.insert(commit.clone(), branches);
+            }
+            added.push(when.clone());
+            // The newest change of a branch that adds or drops the entry
+            // tells whether the branch holds it.
+            for branch in &self.0[commit] {
+                let last = branch
+                    .reads
+                    .iter()
+                    .find(|r| r.adds(entry) || r.drops(entry));
+                if let Some(r) = last.filter(|r| r.adds(entry)) {
+                    next = Some(adder(r));
+                    merged.push(Rc::clone(branch));
+                    break;
+                }
+            }
+        }
+        Ok((added, merged))
+    }
+}
+
 /// A `Read` is a change to the document, with what the check reads from
 /// its texts: whether it changes the content, and the entries before and
 /// after it.
@@ -153,6 +250,14 @@ impl Read {
     fn adds(&self, entry: &VerifiedEntry) -> bool {
         let key = (entry.by.clone(), entry.at.clone());
         self.after.contains(&key) && !self.before.contains(&key)
+    }
+
+    /// `drops` returns whether the change drops `entry`: the text before it
+    /// holds the entry, by its `by` and its `at`, and the text after it
+    /// doesn't.
+    fn drops(&self, entry: &VerifiedEntry) -> bool {
+        let key = (entry.by.clone(), entry.at.clone());
+        self.before.contains(&key) && !self.after.contains(&key)
     }
 }
 

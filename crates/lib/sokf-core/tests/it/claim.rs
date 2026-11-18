@@ -72,14 +72,14 @@ sections:
         repeat: true
         blocks:
           - kind: prose
-            max: 1
+            max: { hard: 1, when-at-limit: 'Open another group for the next claim.' }
             each:
               pattern: '^CLAIM '
               example: 'CLAIM one'
           - kind: blockquote
             example: 'One quoted line.'
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: 'Put the rest in the preceding claims.' }
         each:
           pattern: '^CLOSE '
           example: 'CLOSE one'
@@ -102,12 +102,12 @@ sections:
     blocks:
       - kind: prose
         optional: true
-        max: 2
+        max: { hard: 2, when-at-limit: 'Fold the rest into the claim.' }
         each:
           pattern: '^ASIDE '
           example: 'ASIDE one'
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: 'Write another claim in a document of its own.' }
         each:
           pattern: '^CLAIM '
           example: 'CLAIM one'
@@ -389,6 +389,7 @@ sections:
 #[test]
 fn a_refusal_leaves_no_capture_and_no_repair() {
     let tree = TempTree::fixture("clean");
+    tree.take_requirement_formats();
     tree.write("knowledge/schemas/leak.md", LEAK_SCHEMA);
     // The item satisfies the second position and not the first, so the
     // first position refuses it. Its `text` would produce a repair, and the
@@ -425,12 +426,12 @@ sections:
     blocks:
       - kind: prose
         optional: true
-        max: 4
+        max: { hard: 4, when-at-limit: 'Fold the rest into the claim.' }
         each:
           pattern: '^ASIDE '
           example: 'ASIDE one'
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: 'Write another claim in a document of its own.' }
         each:
           pattern: '^CLAIM '
           example: 'CLAIM one'
@@ -474,11 +475,11 @@ fn a_lead_takes_the_paragraphs_it_accepts_and_no_more() {
 }
 
 #[test]
-fn a_position_that_must_claim_takes_the_most_its_bounds_admit() {
+fn a_position_that_must_claim_takes_the_rest_of_the_run() {
     let tree = TempTree::fixture("clean");
     // No paragraph after the lead is a claim, so the required position
-    // takes the one paragraph that its `max` admits and reports it. The
-    // paragraph after that one is one too many.
+    // takes the rest of the run and reports each paragraph, and its `max`,
+    // which decides no extent, reports the count.
     bounded(
         &tree,
         "no-claim",
@@ -489,7 +490,8 @@ fn a_position_that_must_claim_takes_the_most_its_bounds_admit() {
         messages(&report, "no-claim"),
         vec![
             "11: `NEITHER two.` does not match `^CLAIM `; a paragraph of this kind reads CLAIM one (schema schema-bounded, section \"<title>\" block 2)".to_string(),
-            "13: `NEITHER three.` remains after the last prose position that takes the run (schema schema-bounded, section \"<title>\")".to_string(),
+            "11: the prose block allows at most 1 paragraph; it has 2. When at the limit: Write another claim in a document of its own. (schema schema-bounded, section \"<title>\" block 2)".to_string(),
+            "13: `NEITHER three.` does not match `^CLAIM `; a paragraph of this kind reads CLAIM one (schema schema-bounded, section \"<title>\" block 2)".to_string(),
         ],
         "{}",
         json(&report)
@@ -519,12 +521,12 @@ sections:
         repeat: true
         blocks:
           - kind: prose
-            max: 1
+            max: { hard: 1, when-at-limit: 'Open another group for the next A line.' }
             each:
               pattern: '^A '
               example: 'A one'
           - kind: prose
-            max: 1
+            max: { hard: 1, when-at-limit: 'Open another group for the next B line.' }
             each:
               pattern: '^B '
               example: 'B one'
@@ -568,6 +570,7 @@ const STORIES_SCHEMA: &str = include_str!("../fixtures/schemas/stories.md");
 #[test]
 fn an_optional_block_before_an_earlier_one_is_reported_out_of_place() {
     let tree = TempTree::fixture("clean");
+    tree.take_requirement_formats();
     tree.write("knowledge/schemas/stories.md", STORIES_SCHEMA);
     let made = new(
         &tree.root(),

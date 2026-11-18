@@ -113,6 +113,14 @@ impl TempTree {
         fs::write(path, text).unwrap();
     }
 
+    /// `take_requirement_formats` writes the formats of the lines of
+    /// requirements documents, such as `user-story` and `requirement-ears`,
+    /// as `/.sokf/formats.yaml`, because the tool embeds no format of its
+    /// own.
+    pub fn take_requirement_formats(&self) {
+        self.write(".sokf/formats.yaml", requirement_formats());
+    }
+
     /// `add_other_store` makes `/other` a second knowledge root, with a
     /// manifest that names the store `test/other`.
     pub fn add_other_store(&self) {
@@ -122,7 +130,7 @@ impl TempTree {
         );
         self.write(
             "other/manifest.sokf.yaml",
-            "sokf: \"0.6\"\nname: other\nscope: test\n",
+            "sokf: \"0.7\"\nname: other\nscope: test\n",
         );
     }
 
@@ -294,6 +302,14 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, String)>) {
             out.push((rel, fs::read_to_string(&path).unwrap_or_default()));
         }
     }
+}
+
+/// `requirement_formats` returns the types and the registry of the
+/// fixture's formats of the lines of requirements documents, in the shape of
+/// `/.sokf/formats.yaml`.
+pub fn requirement_formats() -> &'static str {
+    let text = include_str!("../../fixtures/formats/requirements.formats.yaml");
+    &text[text.find("\ntypes:\n").expect("the fixture holds types") + 1..]
 }
 
 /// `on` returns the findings among `findings` on a file named `file_name`.

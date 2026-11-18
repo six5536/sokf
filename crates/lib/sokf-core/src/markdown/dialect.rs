@@ -1,9 +1,10 @@
 //! This module holds SOKF's dialect of Markdown, and runs the parser and
 //! the marker checks of the Markdown engine with it.
 
-use std::collections::BTreeMap;
-
-use tramlines_md::markdown::{Body, Dialect, Segments};
+use tramlines_md::{
+    grammar::Condition,
+    markdown::{Body, Dialect, Segments},
+};
 
 /// `SOKF` is the dialect of SOKF's markers: `sokf:only`, `sokf:guidance`, and
 /// `sokf:optional`, the include block, the definition block `sokf:links`, and
@@ -45,9 +46,10 @@ pub fn is_optional_mark(line: &str) -> bool {
     SOKF.is_optional_mark(line)
 }
 
-/// `only_marker` returns the marker's map from each dimension to its states
-/// when `line` is a `sokf:only` marker.
-pub fn only_marker(line: &str) -> Option<BTreeMap<String, Vec<String>>> {
+/// `only_marker` returns the marker's condition when `line` is a `sokf:only`
+/// marker: each map from a dimension to its states, with the maps joined by
+/// ` | `.
+pub fn only_marker(line: &str) -> Option<Condition> {
     SOKF.only_marker(line)
 }
 

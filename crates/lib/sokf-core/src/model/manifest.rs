@@ -12,7 +12,7 @@ pub const STAMPED_MANIFEST_KEYS: &[&str] = &["producer", "generated", "counts"];
 
 /// The version of the format specification that this tool implements.
 // sokf-implements: CLI-10_AC-1
-pub const SOKF_VERSION: &str = "0.6";
+pub const SOKF_VERSION: &str = "0.7";
 
 /// The manifest, as parsed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -27,6 +27,10 @@ pub struct Manifest {
     pub renamed_from: Vec<(String, usize)>,
     /// `description`.
     pub description: Option<String>,
+    /// `primary-language` is the language of the store's text, as the value's
+    /// scalar text, or empty where the value isn't a scalar
+    /// (`SOKF_FORMAT_251`).
+    pub primary_language: Option<String>,
     /// `unique`, the cap on the scope of the store's keys, as its scalar
     /// text, or empty for a value that isn't a scalar (`SOKF_FORMAT_205`).
     pub unique: Option<String>,
@@ -105,6 +109,9 @@ pub fn manifest(yaml: Result<Spanned, YamlError>, path: &RepoPath) -> Manifest {
                 }
             }
             "description" => m.description = value.as_str().map(str::to_string),
+            "primary-language" => {
+                m.primary_language = Some(value.scalar_text().unwrap_or_default());
+            }
             "unique" => m.unique = Some(value.scalar_text().unwrap_or_default()),
             "extends" => m.extends = Some(value.scalar_text().unwrap_or_default()),
             k if STAMPED_MANIFEST_KEYS.contains(&k) => {

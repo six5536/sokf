@@ -28,10 +28,10 @@ sections:
     blocks:
       - kind: group
         min: 1
-        max: MAX
+        max: { hard: MAX, when-at-limit: 'Each figure past the limit goes in a document of its own.' }
         blocks:
           - kind: prose
-            max: 1
+            max: { hard: 1, when-at-limit: 'Merge the captions of the diagram.' }
             each:
               pattern: '^Figure: '
               example: 'Figure: the parts.'
@@ -108,6 +108,8 @@ fn a_block_a_later_position_takes_stays_there() {
 fn a_refused_group_sets_aside_every_block_it_spanned() {
     assert_eq!(
         errors("1", &format!("{GOOD}\n{GOOD}")),
-        vec!["the group block allows at most 1 unit; it has 2"]
+        vec![
+            "the group block allows at most 1 unit; it has 2. When at the limit: Each figure past the limit goes in a document of its own."
+        ]
     );
 }

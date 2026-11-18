@@ -1,4 +1,4 @@
-sokf: "0.6"
+sokf: "0.7"
 name: indexed
 scope: test
 description: A store whose indexes are the case.

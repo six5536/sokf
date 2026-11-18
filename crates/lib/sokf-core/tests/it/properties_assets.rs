@@ -77,11 +77,11 @@ fn write_tree(files: &[File]) -> TempTree {
     let tree = TempTree::empty("assets-props");
     tree.write(
         "knowledge/manifest.sokf.yaml",
-        "sokf: \"0.6\"\nname: k\nscope: test\n",
+        "sokf: \"0.7\"\nname: k\nscope: test\n",
     );
     tree.write(
         "knowledge/schemas/image.md",
-        "---\ntype: Schema\nid: schema-image\n---\n\n````yaml\nline-limit: 0\nroot: /knowledge/media\nlifecycle:\n  - { key: state, states: [draft, published], path: true }\nfrontmatter:\n  type:\n    const: Image\n  resource: {}\nasset-files: ['/knowledge/media/**/*.png']\npreamble:\n  guidance: d\n  blocks:\n    - kind: prose\n      example: 'One line of prose.'\n      max: 1\n````\n",
+        "---\ntype: Schema\nid: schema-image\n---\n\n````yaml\nline-limit: 0\nroot: /knowledge/media\nlifecycle:\n  - { key: state, states: [draft, published], path: true }\nfrontmatter:\n  type:\n    const: Image\n  resource: {}\nasset-files: ['/knowledge/media/**/*.png']\npreamble:\n  guidance: d\n  blocks:\n    - kind: prose\n      example: 'One line of prose.'\n      max: { hard: 1, when-at-limit: 'Put more about the picture in a document that links it.' }\n````\n",
     );
     tree.write(
         "knowledge/schemas/note.md",

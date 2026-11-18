@@ -14,11 +14,11 @@ use crate::common::{git, output, sokf};
 const NOTE: &str = "---\ntype: Schema\nid: schema-note\ntitle: Note Schema\ndescription: A note.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Note\nsections:\n  - heading: { from: title }\n    level: 1\n    guidance: The title.\n    blocks:\n      - kind: prose\n        repeat: true\n        example: The kitchen, the week the flowers came.\n````\n";
 
 /// `DATASET` is the schema of a CSV file and its sidecar.
-const DATASET: &str = "---\ntype: Schema\nid: schema-dataset\ntitle: Dataset Schema\ndescription: A CSV file and its description.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Dataset\n  resource:\n    example: /knowledge/rates.csv\nasset-files: [\"/knowledge/**/*.csv\"]\npreamble:\n  guidance: What the data is.\n  blocks:\n    - kind: prose\n      max: 1\n      example: Exchange rates by day.\n````\n";
+const DATASET: &str = "---\ntype: Schema\nid: schema-dataset\ntitle: Dataset Schema\ndescription: A CSV file and its description.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Dataset\n  resource:\n    example: /knowledge/rates.csv\nasset-files: [\"/knowledge/**/*.csv\"]\npreamble:\n  guidance: What the data is.\n  blocks:\n    - kind: prose\n      max: { hard: 1, when-at-limit: 'Put the meaning of each column in the data itself.' }\n      example: Exchange rates by day.\n````\n";
 
 /// A `Repo` is a repository in a temporary directory, which the test
 /// commits to. Dropping it removes the directory.
-struct Repo(PathBuf);
+pub(super) struct Repo(pub(super) PathBuf);
 
 impl Drop for Repo {
     fn drop(&mut self) {
@@ -30,7 +30,7 @@ impl Repo {
     /// `new` returns a store with the note and dataset schemas, and a git
     /// repository whose first commit, on 2020-01-01, holds them, when `git`
     /// is set.
-    fn new(name: &str, with_git: bool) -> Repo {
+    pub(super) fn new(name: &str, with_git: bool) -> Repo {
         let dir = std::env::temp_dir().join(format!(
             "sokf-verified-{name}-{}-{}",
             std::process::id(),
@@ -44,7 +44,7 @@ impl Repo {
         let repo = Repo(dunce::canonicalize(&dir).unwrap());
         repo.write(
             "knowledge/manifest.sokf.yaml",
-            "sokf: \"0.6\"\nname: notes\nscope: test\n",
+            "sokf: \"0.7\"\nname: notes\nscope: test\n",
         );
         repo.write("knowledge/schemas/note.md", NOTE);
         repo.write("knowledge/schemas/dataset.md", DATASET);
@@ -59,7 +59,7 @@ impl Repo {
     }
 
     /// `write` writes `text` to `rel`, a path from the repository root.
-    fn write(&self, rel: &str, text: &str) {
+    pub(super) fn write(&self, rel: &str, text: &str) {
         let path = self.0.join(rel);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
@@ -67,7 +67,7 @@ impl Repo {
 
     /// `fix` runs `sokf validate --fix`, which writes the indexes, and then
     /// runs it a second time, which fixes nothing.
-    fn fix(&self) {
+    pub(super) fn fix(&self) {
         for run in 0..2 {
             let (stdout, stderr, code) = output(sokf().arg("--repo-root").arg(&self.0).args([
                 "--no-cache",
@@ -85,7 +85,7 @@ impl Repo {
 
     /// `commit` writes the indexes, commits every change, with `date` as the
     /// author and the committer date, and returns the commit.
-    fn commit(&self, date: &str, message: &str) -> String {
+    pub(super) fn commit(&self, date: &str, message: &str) -> String {
         self.fix();
         git(&self.0, &["add", "-A"]);
         dated(
@@ -98,7 +98,7 @@ impl Repo {
 
     /// `warnings` runs `sokf validate --warnings` and returns its stdout,
     /// with the cache off unless `cache` is set.
-    fn warnings(&self, cache: bool) -> String {
+    pub(super) fn warnings(&self, cache: bool) -> String {
         let mut cmd = sokf();
         cmd.arg("--repo-root").arg(&self.0);
         if !cache {
@@ -112,7 +112,7 @@ impl Repo {
 
 /// `dated` runs git in `dir`, as `git` does, with `date` as the author and
 /// the committer date.
-fn dated(dir: &Path, date: &str, args: &[&str]) {
+pub(super) fn dated(dir: &Path, date: &str, args: &[&str]) {
     let mut cmd = std::process::Command::new("git");
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("GIT_") {
@@ -146,7 +146,7 @@ fn dated(dir: &Path, date: &str, args: &[&str]) {
 
 /// `note` returns a note with `body` and the `verified` entries `entries`,
 /// each a `(by, at)` pair, one to a line.
-fn note(body: &str, entries: &[(&str, &str)]) -> String {
+pub(super) fn note(body: &str, entries: &[(&str, &str)]) -> String {
     let mut text = "---\ntype: Note\nid: note-a\ntitle: A note\ndescription: A note.\n".to_string();
     if !entries.is_empty() {
         text.push_str("verified:\n");
@@ -159,16 +159,16 @@ fn note(body: &str, entries: &[(&str, &str)]) -> String {
 }
 
 /// `NOTE_PATH` is where the tests write the note.
-const NOTE_PATH: &str = "knowledge/note-a.md";
+pub(super) const NOTE_PATH: &str = "knowledge/note-a.md";
 
 /// `none` asserts that no warning of `out` says that an entry lapsed.
-fn none(out: &str) {
+pub(super) fn none(out: &str) {
     let found = lapsed(out);
     assert!(found.is_empty(), "{found:?}");
 }
 
 /// `lapsed` returns the warnings of `out` that say an entry lapsed.
-fn lapsed(out: &str) -> Vec<&str> {
+pub(super) fn lapsed(out: &str) -> Vec<&str> {
     out.lines()
         .filter(|l| l.contains("(CLI-4_AC-92)"))
         .collect()

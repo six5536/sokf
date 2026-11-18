@@ -221,7 +221,9 @@ pub fn load_with_keys(
 ) -> Result<(Model, KeyIndex)> {
     let (grammar, repo_formats) = load_formats(root)?;
     let model = load_model(root, config, cache)?;
-    let compiled = grammar::compile_all(&model, grammar, &repo_formats);
+    // sokf-implements: CONF-12_AC-7
+    let texts = config::load_texts(root)?;
+    let compiled = grammar::compile_all(&model, grammar, &repo_formats, texts);
     let keys = check::capture_keys_of(&model, &compiled, None);
     Ok((model, keys))
 }
@@ -337,7 +339,9 @@ pub(super) fn load_for_check(
     let full = want_full || cache.is_fresh();
     model.marker_check = config.markers;
     let scanned = scan_outside(&mut model, cache, root, full);
-    let mut compiled = grammar::compile_all(&model, grammar.clone(), repo_formats);
+    // sokf-implements: CONF-12_AC-7
+    let texts = config::load_texts(root)?;
+    let mut compiled = grammar::compile_all(&model, grammar.clone(), repo_formats, texts);
     let changes = Changes {
         identities: identities_changed,
         scanned,
@@ -370,8 +374,7 @@ pub(super) fn load_for_check(
         }
         model.plans = planned;
         let slugs = needed_slugs(&model, &captured);
-        let stored = cache.stored_keys_for(&slugs, &dirty);
-        captured.extend(stored.document.into_values().flatten());
+        captured.merge(cache.stored_keys_for(&slugs, &dirty));
         (dirty, captured)
     };
     let expected = if full {
@@ -523,9 +526,12 @@ fn first_dirty(
 }
 
 /// `spread_dirty` loads the documents in `dirty` for their check, captures
-/// their keys and their plans, and adds to `dirty` the readers of each key
-/// and each planned path that differs from the store's, in waves, until a
-/// wave adds no new document. It returns the captured keys and plans.
+/// their keys, their kept anchors, and their plans, and adds to `dirty` the
+/// readers of each key and each planned path that differs from the store's,
+/// in waves, until a wave adds no new document. A document whose keys or
+/// kept anchors differ from the store's also adds the readers of its id,
+/// because the resolution of a fragment of the document reads only its id.
+/// It returns the captured keys and plans.
 // sokf-implements: CACHE-1_AC-5
 fn spread_dirty(
     model: &mut Model,
@@ -557,8 +563,28 @@ fn spread_dirty(
             for (scope, slug, k) in old.symmetric_difference(&new) {
                 moved.insert(key_query(scope, slug, *k));
             }
+            // The resolution of a fragment of the document reads only its
+            // id. A fragment resolves to a key and to a kept anchor alike, so
+            // the two count as one set of slugs: a key whose unit breaks its
+            // rule and keeps its anchor changes no answer.
+            let mut was = cache.old_anchors_of(path);
+            was.extend(old.iter().map(|(_, slug, _)| slug.clone()));
+            let mut is: BTreeSet<String> = fresh.anchors_of(path).map(str::to_string).collect();
+            is.extend(new.iter().map(|(_, slug, _)| slug.clone()));
+            if was != is
+                && let Some(crate::Located::Document(k, doc)) = model.by_path(path)
+                && let Some(id) = doc.id()
+            {
+                moved.insert(
+                    Query::Doc {
+                        knowledge: k,
+                        id: id.to_string(),
+                    }
+                    .key(),
+                );
+            }
         }
-        captured.extend(fresh.document.into_values().flatten());
+        captured.merge(fresh);
         // A path that a document starts or stops planning makes the
         // readers of that path dirty (SOKF_SCHEMA_53).
         let plans = check::capture_plans_of(model, compiled, Some(&wave));

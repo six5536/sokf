@@ -30,7 +30,7 @@ pub const STORE_FILE: &str = "sokf.sqlite";
 /// table changes. A change to what a check finds needs no raise, because the
 /// fingerprint of the build in the version changes with the code
 /// (CACHE-1_AC-7).
-pub const STORE_FORMAT: u32 = 22;
+pub const STORE_FORMAT: u32 = 23;
 
 // sokf:begin cache
 /// `CacheMode` sets whether a run reads and writes the cache.
@@ -181,8 +181,14 @@ impl std::fmt::Debug for Cache {
 /// among them, so a build that checks differently never reads the results of
 /// another. The configuration is part of the version because it determines
 /// the order in which sokf finds the stores when it walks the repository.
-/// That order sets the number each store gets. The formatter that the
-/// repository reveals is part of it because the formatter decides which
+/// That order sets the number each store gets. The files of
+/// `/.sokf/excludes.d/` are part of it, as `repository.exclude` is, because
+/// a run with changed paths takes every other file from the store, so a file
+/// that a new glob prunes would otherwise stay in the run. The files of texts
+/// and the `primary-language` of each manifest are part of it, because the
+/// words of a label in the language of a schema decide the findings of a
+/// document that carries the label. The formatter that
+/// the repository reveals is part of it because the formatter decides which
 /// generated blocks are current. When any of them differs, the run rebuilds
 /// the store (CACHE-1_AC-7).
 // sokf-implements: CACHE-1_AC-6
@@ -192,12 +198,78 @@ fn version(root: &RepoRoot) -> String {
     // The detected formatter decides which blocks are current, so a new
     // formatter, or new plugins of dprint, rebuild the store.
     let formatter = crate::formatter::fingerprint(root);
-    let stores = stores_fingerprint(root);
+    let manifests = manifests(root);
+    let stores = stores_fingerprint(root, &manifests);
+    let excludes = excludes_fingerprint(root);
+    let texts = texts_fingerprint(root, &manifests);
     format!(
-        "{}+store.{STORE_FORMAT}+build.{}+config.{config:016x}+stores.{stores:016x}+format.{formatter:016x}",
+        "{}+store.{STORE_FORMAT}+build.{}+config.{config:016x}+stores.{stores:016x}+excludes.{excludes:016x}+texts.{texts:016x}+format.{formatter:016x}",
         env!("CARGO_PKG_VERSION"),
         env!("SOKF_BUILD_FINGERPRINT")
     )
+}
+
+/// `excludes_fingerprint` returns a hash of the name and the bytes of each
+/// file of `/.sokf/excludes.d/`, so that a change of any of them rebuilds the
+/// store (CACHE-1_AC-98).
+// sokf-implements: CACHE-1_AC-98
+fn excludes_fingerprint(root: &RepoRoot) -> u64 {
+    let mut bytes: Vec<u8> = Vec::new();
+    add_files(
+        root,
+        &crate::config::excludes_files_lenient(root),
+        &mut bytes,
+    );
+    crate::source::fnv1a64(&bytes)
+}
+
+/// `texts_fingerprint` returns a hash of the name and the bytes of
+/// `/.sokf/texts.yaml` and of each file of `/.sokf/texts.d/`, and of the
+/// `primary-language` of each store's manifest, so that a change of the
+/// words of a label in any language rebuilds the store (CACHE-1_AC-99,
+/// CACHE-1_AC-100).
+// sokf-implements: CACHE-1_AC-99
+// sokf-implements: CACHE-1_AC-100
+fn texts_fingerprint(root: &RepoRoot, manifests: &[(RepoPath, crate::model::Manifest)]) -> u64 {
+    let mut bytes: Vec<u8> = Vec::new();
+    add_files(root, &crate::config::texts_files_lenient(root), &mut bytes);
+    for (r, m) in manifests {
+        bytes.extend(r.as_str().as_bytes());
+        bytes.push(0);
+        bytes.extend(m.primary_language.as_deref().unwrap_or_default().as_bytes());
+        bytes.push(0);
+    }
+    crate::source::fnv1a64(&bytes)
+}
+
+/// `manifests` returns the root and the manifest of each knowledge root of
+/// the configuration whose manifest can be read, own roots first.
+fn manifests(root: &RepoRoot) -> Vec<(RepoPath, crate::model::Manifest)> {
+    let roots = crate::config::read_lenient(root)
+        .map(|c| c.roots.into_iter().chain(c.registered).collect::<Vec<_>>())
+        .unwrap_or_default();
+    roots
+        .into_iter()
+        .filter_map(|r| {
+            let path = r.join("manifest.sokf.yaml")?;
+            let text = fs::read_to_string(path.to_fs(root)).ok()?;
+            Some((
+                r,
+                crate::model::manifest(crate::yaml::parse(&text, 1), &path),
+            ))
+        })
+        .collect()
+}
+
+/// `add_files` adds the path and the bytes of each file of `files` to
+/// `bytes`, each followed by a NUL. A file that can't be read adds no bytes.
+fn add_files(root: &RepoRoot, files: &[RepoPath], bytes: &mut Vec<u8>) {
+    for file in files {
+        bytes.extend(file.as_str().as_bytes());
+        bytes.push(0);
+        bytes.extend(fs::read(file.to_fs(root)).unwrap_or_default());
+        bytes.push(0);
+    }
 }
 
 /// `stores_fingerprint` returns a hash of what sets the stores of a run and
@@ -209,34 +281,19 @@ fn version(root: &RepoRoot) -> String {
 /// any of them rebuilds the store (CACHE-1_AC-95, CACHE-1_AC-96).
 // sokf-implements: CACHE-1_AC-95
 // sokf-implements: CACHE-1_AC-96
-fn stores_fingerprint(root: &RepoRoot) -> u64 {
+fn stores_fingerprint(root: &RepoRoot, manifests: &[(RepoPath, crate::model::Manifest)]) -> u64 {
     let mut bytes: Vec<u8> = Vec::new();
-    for file in crate::config::registry_files_lenient(root) {
-        bytes.extend(file.as_str().as_bytes());
-        bytes.push(0);
-        bytes.extend(fs::read(file.to_fs(root)).unwrap_or_default());
-        bytes.push(0);
-    }
-    let roots = crate::config::read_lenient(root)
-        .map(|c| c.roots.into_iter().chain(c.registered).collect::<Vec<_>>())
-        .unwrap_or_default();
-    let manifests: Vec<(RepoPath, crate::model::Manifest)> = roots
-        .into_iter()
-        .filter_map(|r| {
-            let path = r.join("manifest.sokf.yaml")?;
-            let text = fs::read_to_string(path.to_fs(root)).ok()?;
-            Some((
-                r,
-                crate::model::manifest(crate::yaml::parse(&text, 1), &path),
-            ))
-        })
-        .collect();
+    add_files(
+        root,
+        &crate::config::registry_files_lenient(root),
+        &mut bytes,
+    );
     // An `extends` resolves through the identities of the stores, so where
     // one store extends another, a rename can break or mend a store, whose
     // files the run then checks or skips (FORMAT-5_AC-10). Elsewhere a
     // rename dirties only the documents that name the store (CACHE-1_AC-16).
     let chains = manifests.iter().any(|(_, m)| m.extends.is_some());
-    for (r, m) in &manifests {
+    for (r, m) in manifests {
         let former: Vec<&str> = m.renamed_from.iter().map(|(f, _)| f.as_str()).collect();
         let mut fields = vec![
             r.as_str().to_string(),
@@ -393,6 +450,10 @@ const TABLES: &[(&str, &str)] = &[
          knowledge INTEGER NOT NULL, rule_id TEXT)",
     ),
     (
+        "anchors",
+        "CREATE TABLE anchors (path TEXT NOT NULL, slug TEXT NOT NULL)",
+    ),
+    (
         "markers",
         "CREATE TABLE markers (path TEXT NOT NULL, line INTEGER NOT NULL, \
          kind INTEGER NOT NULL, rel TEXT NOT NULL, target TEXT NOT NULL)",
@@ -409,6 +470,8 @@ const INDEXES: &[&str] = &[
     "CREATE INDEX ids_by_path ON ids (path)",
     "CREATE INDEX keys_by_path ON keys (path)",
     "CREATE INDEX keys_by_slug ON keys (slug)",
+    "CREATE INDEX anchors_by_path ON anchors (path)",
+    "CREATE INDEX anchors_by_slug ON anchors (slug)",
     "CREATE INDEX documents_by_type ON documents (store, type)",
     "CREATE INDEX deps_by_query ON deps (query)",
     "CREATE INDEX citations_by_target ON citations (target)",
@@ -541,6 +604,33 @@ mod tests {
         fs::create_dir_all(dir.join(".sokf")).unwrap();
         fs::write(dir.join(".sokf/config.toml"), "roots = [\"/docs\"]\n").unwrap();
         assert!(Cache::open(&root, CacheMode::On).is_fresh());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // sokf-tests: CACHE-1_AC-98
+    #[test]
+    fn a_change_of_the_files_of_excludes_d_rebuilds_the_store() {
+        let dir = temp("excludes-d");
+        let root = RepoRoot::new(dir.clone());
+        // `fresh_after` records a sync in the store, applies `change`, and
+        // tells whether the next open rebuilt the store.
+        let fresh_after = |change: &dyn Fn()| {
+            Cache::open(&root, CacheMode::On)
+                .conn()
+                .execute_batch("INSERT OR REPLACE INTO meta (key, value) VALUES ('synced_at', '5')")
+                .unwrap();
+            change();
+            Cache::open(&root, CacheMode::On).is_fresh()
+        };
+        let file = ".sokf/excludes.d/pakf/@acme/tool/excludes.toml";
+        assert!(!fresh_after(&|| ()));
+        assert!(fresh_after(&|| {
+            crate::test_support::write(&dir, file, "exclude = [\"/a/**\"]\n");
+        }));
+        assert!(fresh_after(&|| {
+            crate::test_support::write(&dir, file, "exclude = [\"/b/**\"]\n");
+        }));
+        assert!(fresh_after(&|| fs::remove_file(dir.join(file)).unwrap()));
         fs::remove_dir_all(&dir).unwrap();
     }
 

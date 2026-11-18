@@ -5,7 +5,11 @@
 //! Check, Fix, and Scaffold share the compiled schemas.
 
 use super::{FormatRegistry, Grammar, RegexCache, SokfSchema, compile, embedded_formats};
-use crate::{Finding, Model, RepoPath, config::RepoFormats, model::SchemaRef};
+use crate::{
+    Finding, Model, RepoPath,
+    config::{RepoFormats, Texts},
+    model::SchemaRef,
+};
 
 /// `Compiled` holds the grammar and the compiled schemas of one run.
 #[derive(Debug)]
@@ -26,6 +30,10 @@ pub struct Compiled {
     /// when the schema doesn't conform to the grammar, or when the run hasn't
     /// read the document.
     pub schemas: Vec<(SchemaRef, Option<SokfSchema>)>,
+    /// `texts` holds sokf's own texts, from which each host takes the words
+    /// of a label in the language of a schema, so that a check, a scaffold,
+    /// and a guide give a label the same words (`SOKF_SCHEMA_107`).
+    pub texts: Texts,
     /// `problems` holds the findings that compiling the schemas produced.
     pub problems: Vec<Finding>,
     /// `done` holds every schema compiled so far, including those that failed.
@@ -153,13 +161,31 @@ impl Compiled {
         doc.type_name()
             .and_then(|t| self.for_type(model, knowledge, t))
     }
+
+    /// `broken_for_doc` returns whether exactly one schema declares the type
+    /// of `doc` in `knowledge` and that schema hasn't compiled. The check
+    /// reports such a document under `SOKF_VALIDATION_41`.
+    pub fn broken_for_doc(&self, model: &Model, knowledge: usize, doc: &crate::Document) -> bool {
+        doc.type_name()
+            .is_some_and(|t| match model.claimants(knowledge, t).as_slice() {
+                [r] => self.for_ref(knowledge, *r).is_none(),
+                _ => false,
+            })
+    }
 }
 
 /// `compile_all` compiles the grammar's `schema-document` schema and every
-/// schema that the model has read.
+/// schema that the model has read, with `texts`, sokf's own texts, for the
+/// hosts that read them.
 // sokf-implements: SOKF_SCHEMA_15
 // sokf-implements: SOKF_SCHEMA_43
-pub fn compile_all(model: &Model, grammar: Grammar, formats: &RepoFormats) -> Compiled {
+// sokf-implements: SOKF_SCHEMA_107
+pub fn compile_all(
+    model: &Model,
+    grammar: Grammar,
+    formats: &RepoFormats,
+    texts: Texts,
+) -> Compiled {
     let regexes = RegexCache::new();
     let mut problems = Vec::new();
     let embedded = embedded_formats(&grammar, &regexes).unwrap_or_default();
@@ -188,6 +214,7 @@ pub fn compile_all(model: &Model, grammar: Grammar, formats: &RepoFormats) -> Co
         regexes,
         schema_document,
         schemas: Vec::new(),
+        texts,
         problems,
         done: std::collections::HashSet::new(),
         rebased: std::collections::HashMap::new(),
@@ -265,7 +292,7 @@ mod tests {
         fs::create_dir_all(dir.join("knowledge/schemas")).unwrap();
         fs::write(
             dir.join("knowledge/manifest.sokf.yaml"),
-            "sokf: \"0.6\"\nname: k\nscope: test\n",
+            "sokf: \"0.7\"\nname: k\nscope: test\n",
         )
         .unwrap();
         fs::write(
@@ -297,7 +324,12 @@ mod tests {
         let root = RepoRoot::new(dir.clone());
         let tree = collect(&root, &Config::default()).unwrap();
         let model = build(tree, &mut FsLoader::new(&root)).unwrap();
-        let compiled = compile_all(&model, load_grammar().unwrap(), &RepoFormats::default());
+        let compiled = compile_all(
+            &model,
+            load_grammar().unwrap(),
+            &RepoFormats::default(),
+            Texts::english(),
+        );
         assert_eq!(
             compiled.schema_document.dispatch,
             Dispatch::Type("Schema".into())
@@ -351,7 +383,7 @@ mod tests {
             messages.iter().any(|m| m.contains("no YAML fence")),
             "{messages:?}"
         );
-        assert!(compiled.registry.get("requirement-ears").is_some());
+        assert!(compiled.registry.types_seen().get("ref").is_some());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

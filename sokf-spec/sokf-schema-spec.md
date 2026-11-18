@@ -3,7 +3,7 @@ type: SokfSchemaSpecification
 id: sokf-schema-spec
 title: "SOKF: Schema specification"
 description: "This specification defines the schemas of a knowledge store: what a schema governs, and its rules, scaffolds, lifecycles, and templates."
-version: "0.6"
+version: "0.7"
 status: draft
 ---
 
@@ -81,9 +81,10 @@ A schema is strict: it requires everything it declares and allows nothing else. 
 - <a id="sokf_schema_15"></a>SOKF_SCHEMA_15 [ubiquitous]: the Schema document SHALL conform to the `schema-document` schema of the [SOKF schema extension][sokf:sokf-extension].
 - <a id="sokf_schema_16"></a>SOKF_SCHEMA_16 [ubiquitous]: the additional file SHALL conform to the schema whose glob matches it.
 - <a id="sokf_schema_17"></a>SOKF_SCHEMA_17 [ubiquitous]: the document SHALL receive every citation that the `cited-by` entries of its schema require.
-- <a id="sokf_schema_33"></a>SOKF_SCHEMA_33 [ubiquitous]: the document SHALL have, for each `links` entry of its schema, between `min` and `max` links with that `rel` to a type in `to-type`.
+- <a id="sokf_schema_33"></a>SOKF_SCHEMA_33 [ubiquitous]: the document SHALL have, for each `links` entry of its schema, at least `min` and at most the count of a hard `max` links with that `rel` to a type in `to-type`.
+- <a id="sokf_schema_103"></a>SOKF_SCHEMA_103 [event]: WHEN a document has more links of a `links` entry than the count of its hard `max`, the validator SHALL end the finding with `When at the limit:` and the entry's `when-at-limit`.
 - <a id="sokf_schema_34"></a>SOKF_SCHEMA_34 [ubiquitous]: the document SHALL have only links whose `rel` appears in an entry of its schema, unless the schema declares `links-open`.
-- <a id="sokf_schema_35"></a>SOKF_SCHEMA_35 [ubiquitous]: the schema SHALL name, in the `keys` of each `cited-by` entry, a rule that captures a key.
+- <a id="sokf_schema_35"></a>SOKF_SCHEMA_35 [ubiquitous]: the schema SHALL name, in the `keys` of each `cited-by` entry, a set of keys that holds a key: the `rule-id` of a section or a block, or a `key-of`.
 - <a id="sokf_schema_48"></a>SOKF_SCHEMA_48 [ubiquitous]: the schema SHALL declare in each `cited-by` entry exactly one of `from-type` and `from-marker`.
 - <a id="sokf_schema_49"></a>SOKF_SCHEMA_49 [ubiquitous]: the marker SHALL have one of the relationships in the `markers` list of the cited document's schema, where that schema declares `markers`.
 - <a id="sokf_schema_52"></a>SOKF_SCHEMA_52 [ubiquitous]: the schema SHALL name, in the `section` of each `plans-paths` entry, the `rule-id` of one of its sections.
@@ -94,7 +95,7 @@ A schema is strict: it requires everything it declares and allows nothing else. 
 - <a id="sokf_schema_37"></a>SOKF_SCHEMA_37 [ubiquitous]: the frontmatter SHALL contain the path of a file in the repository as each value that its schema binds to the format `repo-path`.
 - <a id="sokf_schema_38"></a>SOKF_SCHEMA_38 [ubiquitous]: the frontmatter SHALL contain the id of a document in its knowledge store as each value that its schema binds to the format `document-id`.
 
-A `sokf:` body link cites a document when a `cited-by` entry lists the type of the document that contains the link. The containing document can be in any knowledge store. The link cites the document whether or not it has a fragment. An entry can declare `keys`, the name of a rule that captures keys. Each key that this rule captures then needs its own citation. The citation is a link whose fragment is the slug of the key, or the slug of the key's heading when the key is in a heading. Included text, generated text, and links from the document to itself do not count as citations. A link counts even when the document that contains it has failures of its own.
+A `sokf:` body link cites a document when a `cited-by` entry lists the type of the document that contains the link. The containing document can be in any knowledge store. The link cites the document whether or not it has a fragment. An entry can declare `keys`, which names a set of keys: the `rule-id` of a section or a block, or a `key-of`. Each key in the set then needs its own citation. The citation is a link whose fragment is the slug of the key, or the slug of the key's heading when the key is in a heading. Included text, generated text, and links from the document to itself do not count as citations. A link counts even when the document that contains it has failures of its own.
 
 An entry that names `from-marker` counts markers in place of body links ([format specification][sokf:sokf-format-spec] §9.5). The value of `from-marker` is a relationship. A marker with that relationship cites the document or the key that its reference resolves to. A marker of another relationship does not count, so a test of a criterion does not stand in for its implementation.
 
@@ -106,7 +107,7 @@ A schema declares `current-links` to keep its promises current. Each entry is a 
 
 A unit rule declares `to-type` to say what a body link reaches, as a `links` entry does for the frontmatter. Each `sokf:` link in a unit that the rule accepts then resolves to a document of one of its types. A link with a fragment counts by the type of the document that the fragment lies in, so a story can cite a part of a contract. A link that resolves to nothing breaks SOKF_FORMAT_61 of the [format specification][sokf:sokf-format-spec] instead, and a path link or a URL has no type to check.
 
-A `links` entry requires at least one link unless it declares `min`, and allows any number unless it declares `max`. An entry with `only` applies only in the states that it names.
+A `links` entry requires at least one link unless it declares `min`, and allows any number unless it declares a hard `max`. An entry with `only` applies only in the states that it names.
 
 A rule uses `unique` to set the scope in which each key it captures is unique: its document (the default), its knowledge store (`knowledge`), or the whole repository (`repository`). The manifest of a store can narrow the repository to the store for every key of the store ([format specification][sokf:sokf-format-spec] §8.5).
 
@@ -129,12 +130,26 @@ The [tramlines-md specification](https://github.com/six5536/tramlines/blob/main/
 
 A `sokf:guidance` line is an HTML comment in the body and a YAML comment in the frontmatter.
 
-The frontmatter of a scaffold has one link for each `links` entry of the schema, and no optional region.
+A guidance line of a scaffold can also hold the validator's own texts, in the language of the schema. Before the schema's guidance for `description`, it holds the rule for writing a description ([format specification][sokf:sokf-format-spec] §3.1). Before each `when-at-limit`, it holds the words that state the limit, such as "At most 3 items. Never leave out or merge content to stay within the count. When at the limit:". Where the validator has no such text in the language of the schema, the line holds the limit in the syntax of the schema, as the tramlines-md specification states (TLMD_231 and TLMD_232).
 
-A `sokf:only` marker gates a part that only some states allow. In the body, the marker is a comment line before the part, and in the frontmatter, it is a comment at the end of a line.
+- <a id="sokf_schema_101"></a>SOKF_SCHEMA_101 [ubiquitous]: the validator SHALL take the language of a schema from its `language`, else from the `primary-language` of the store that holds the schema, else as `en`.
+- <a id="sokf_schema_102"></a>SOKF_SCHEMA_102 [unwanted]: IF the validator has no text of its own in the language of a schema, THEN the validator SHALL write no text of its own in another language into a scaffold of the schema.
+
+A schema can declare in `labels` both keys of the attribution labels, `human` and `agent` ([format specification][sokf:sokf-format-spec] §3.2), and no other key. The validator gives each label its own words for the label in the language of the schema, both when it checks a document and when it writes a scaffold, and the key is the label's words where it has none, as the tramlines-md specification states (TLMD_252 and TLMD_253). A scaffold labels each unit that carries a label `[agent]`, because an agent writes a new document.
+
+- <a id="sokf_schema_104"></a>SOKF_SCHEMA_104 [ubiquitous]: the schema SHALL declare in `labels` both `human` and `agent`, and no other key.
+- <a id="sokf_schema_105"></a>SOKF_SCHEMA_105 [ubiquitous]: the validator SHALL check each label of a document against the validator's own words for the label in the language of the document's schema.
+- <a id="sokf_schema_106"></a>SOKF_SCHEMA_106 [unwanted]: IF the validator has no words of its own for a label in the language of the schema, THEN the validator SHALL take the label's key as its words.
+- <a id="sokf_schema_107"></a>SOKF_SCHEMA_107 [ubiquitous]: the validator SHALL give each label the same words when it checks a document and when it writes a scaffold.
+- <a id="sokf_schema_108"></a>SOKF_SCHEMA_108 [ubiquitous]: the validator SHALL write the label `agent` on each unit of a scaffold that carries a label.
+
+The frontmatter of a scaffold has one link for each `links` entry of the schema that a hard `max` of 0 does not ban, and no optional region.
+
+A `sokf:only` marker gates a part that only some states allow. In the body, the marker is a comment line before the part, and in the frontmatter, it is a comment at the end of a line. Where `only` lists several maps of states, the marker joins them with ` | `, and admits the states that any one of them admits.
 
 ```text
 <!-- sokf:only state=open,done kind=bug -->
+<!-- sokf:only state=open | kind=bug -->
 resolution: none # sokf:only state=closed
 ```
 

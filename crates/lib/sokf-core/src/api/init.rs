@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(out.root, RepoPath::parse("/docs/kb").unwrap());
         assert_eq!(
             fs::read_to_string(dir.join("docs/kb/manifest.sokf.yaml")).unwrap(),
-            "sokf: \"0.6\"\nname: kb\nscope: test\n"
+            "sokf: \"0.7\"\nname: kb\nscope: test\n"
         );
         let out = init(&root, &opts(&dir, None, Some("project-kb"))).unwrap();
         assert_eq!(out.root, RepoPath::parse("/knowledge").unwrap());
@@ -421,7 +421,7 @@ mod tests {
         init(&root, &opts(&dir, Some("b/knowledge"), Some("b-knowledge"))).unwrap();
         fs::write(
             dir.join("a/knowledge/manifest.sokf.yaml"),
-            "sokf: \"0.6\"\nname: knowledge\nscope: test\nrenamed-from: [test/old]\n",
+            "sokf: \"0.7\"\nname: knowledge\nscope: test\nrenamed-from: [test/old]\n",
         )
         .unwrap();
         assert_eq!(

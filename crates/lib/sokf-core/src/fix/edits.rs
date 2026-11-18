@@ -7,7 +7,11 @@ use std::ops::Range;
 
 use tramlines_md::edit::{AnchorEdit, Edit, apply, line_edits};
 
-use crate::{Result, check::Repair, markdown::Segments};
+use crate::{
+    Result,
+    check::{LabelRepair, Repair},
+    markdown::Segments,
+};
 
 /// `include_edit` regenerates the interior of an include block: it replaces
 /// the lines between the block's markers with `interior` (`SOKF_FORMAT_85`).
@@ -69,9 +73,11 @@ impl ResourceEdit {
 }
 
 // sokf:begin rewrite
-/// `rewrite` applies three sets of edits to `text` in one pass: SOKF's
-/// `edits`, the engine's edits for `repairs`, and, when `anchors` is given,
-/// the engine's edits for the anchors and renames.
+/// `rewrite` applies four sets of edits to `text` in one pass: SOKF's
+/// `edits`, the engine's edits for `repairs`, the engine's edits for
+/// `labels`, each a label written as its key that the words of the schema's
+/// language replace, and, when `anchors` is given, the engine's edits for the
+/// anchors and renames.
 // sokf-implements: SOKF_VALIDATION_14
 // sokf-implements: SOKF_VALIDATION_25
 // sokf-implements: SOKF_VALIDATION_26
@@ -83,9 +89,10 @@ pub fn rewrite(
     segments: &Segments,
     mut edits: Vec<Edit>,
     repairs: &[Repair],
+    labels: &[LabelRepair],
     anchors: Option<&AnchorEdit<'_>>,
 ) -> Result<String> {
-    edits.extend(line_edits(text, segments, repairs, anchors));
+    edits.extend(line_edits(text, segments, repairs, labels, anchors));
     Ok(apply(text, &edits)?)
 }
 // sokf:end rewrite
@@ -113,7 +120,7 @@ mod tests {
             .collect();
         edits.extend(definition.map(|(marker, tail)| definition_edit(text, *marker, tail)));
         edits.extend(resource.map(ResourceEdit::edit));
-        rewrite(text, &segments, edits, repairs, None).unwrap()
+        rewrite(text, &segments, edits, repairs, &[], None).unwrap()
     }
 
     #[test]

@@ -1,13 +1,13 @@
 ---
 name: sokf
-description: This skill is the agent reference for SOKF, the Superdev Open Knowledge Format, and for sokf, the command that creates and checks SOKF knowledge. Read it before you run sokf, before you write or change a marker such as `// sokf-implements: <KEY>` in any file, and before you read or edit anything under a knowledge root. A knowledge root is a directory with a `manifest.sokf.yaml`. It covers the layout of a store, the shape of a document, the commands, the agent rules, links, markers, generated blocks, and schemas.
+description: Read this skill before you run sokf, before you write or change a `sokf-` marker, such as `sokf-implements` or `sokf-tests`, in any file, and before you read or edit anything under a knowledge root, a directory with a `manifest.sokf.yaml`.
 ---
 
-# SOKF v0.6 agent reference
+# SOKF v0.7 agent reference
 
-SOKF, the Superdev Open Knowledge Format, is a format for a project's knowledge. The knowledge is a set of Markdown files, kept in the project's git repository, and each file describes one thing. `sokf` is the command that works on the knowledge: it creates stores and documents, finds documents, shows how they link to each other and to code, and validates every file, repairing what it can.
+SOKF, the Superdev Open Knowledge Format, is a format for a project's knowledge, kept in its git repository as Markdown files that each describe one thing. `sokf` creates stores and documents, finds documents, shows how they link to each other and to code, and validates every file, repairing what it can.
 
-This reference describes what a store and a document look like, which command to run for each task, and which rules to follow when you write a document, a link, or a marker. `sokf validate` enforces every rule in this reference.
+This reference says which command to run for each task. It also gives the rules for writing documents, links, markers, and schemas that the tool doesn't state itself. `sokf validate` doesn't check every one of these rules, so follow them even when it reports nothing. For everything else, read `sokf <command> --help`, `sokf guide`, `sokf info grammar`, and each finding of `sokf validate`.
 
 This reference uses these terms throughout:
 
@@ -24,7 +24,7 @@ This reference has these sections:
 
 - [Layout](#layout)
 - [Document](#document)
-- [Sources and attribution](#sources-and-attribution)
+- [Sources and citations](#sources-and-citations)
 - [Commands](#commands)
 - [Agent rules](#agent-rules)
 - [New documents](#new-documents)
@@ -39,21 +39,15 @@ A knowledge store has this layout:
 
 ```
 <KNOWLEDGE>/
-  manifest.sokf.yaml   # Every store needs one. It contains sokf: "0.6", the store's name, and its scope, which is the store's owner. Both are slugs, lowercase words joined by hyphens, and the store's identity is scope/name. `unique: knowledge` keeps every key of the store unique only within the store, and `extends: <scope>/<name>` inherits the schemas of that store.
-  index.md             # a generated listing in every directory. `--fix` writes it, so never write it yourself.
-  schemas/<TYPE>.md    # one Schema document for each type. Put schemas only here.
-  **/*.md              # documents, whose frontmatter is YAML 1.2 without anchors, aliases, or tags
+  manifest.sokf.yaml   # sokf: "0.7", name, and scope (the store's owner), both slugs. `sokf init` writes it. Optional: `unique: knowledge` keeps the store's keys unique only within it, `extends: <scope>/<name>` inherits that store's schemas, and `primary-language: de` names the language of its text (default `en`).
+  index.md             # generated in every directory by `--fix`. Never edit it.
+  schemas/<TYPE>.md    # one Schema document for each type
+  **/*.md              # documents
   <FILE>               # an asset: a non-.md file that a schema's `asset-files` glob matches
   <FILE>.md            # the asset's sidecar, a document. Every asset has one.
 ```
 
-Every `.md` file under a knowledge root is a document, so give frontmatter to any Markdown file that you copy in. A document's schema gives the document's path a meaning by declaring a lifecycle, as the [schemas](#schemas) section describes. Without a lifecycle, the path has no meaning.
-
-Each asset, such as an image, a PDF, or a dataset, has a sidecar: the document `<FILE>.md` next to the asset, whose `resource` is the asset's path. An asset without a sidecar is an error that `--fix` cannot repair. To repair it, create the sidecar with `sokf new <TYPE> --for <FILE> --write`, where `TYPE` is the type whose `asset-files` glob, a path pattern with wildcards, matches the asset.
-
-A file that has to stay outside every store, such as a JSON Schema that its consumers fetch from a fixed path, can't be an asset, because a sidecar is a document and every document lies in a store. Describe such a file with an ordinary document in a store whose `resource` is the file's path, such as `resource: /schema/example.schema.json`, and `sokf graph` on the file shows the document that describes it. The document lacks five things that a sidecar has: a `sokf:<ID>` link that refers to the file, `verified` entries that cover the file, a `--fix` that moves the two files together, `sokf new --for`, and `sokf locate --asset`. Link to the file with its path.
-
-An _additional file_, such as a README or a CHANGELOG, is a repository file without frontmatter whose path matches one of a schema's globs. An additional file is not a document. A glob must not match a document or an `index.md` inside a knowledge root.
+A file that must stay outside every store, such as a JSON Schema that consumers fetch from a fixed path, can't be an asset. Describe it with an ordinary document whose `resource` is the file's path, and link to the file by its path. `sokf graph` on the file shows the document.
 
 ## Document
 
@@ -64,10 +58,10 @@ The following example shows a document, with its frontmatter and its body:
 type: Subsystem # required, free-form
 id: subsystem-logging # required: a unique kebab-case slug, which the schema's id template can constrain
 title: Logging subsystem
-description: The logging subsystem writes the log of every crate.
+description: How each crate writes its log, and which configuration settings it reads.
 resource: /crates/lib/example-core/src/logging.rs # the file that the document describes, or a list of paths. Omit it for an abstract document.
 tags: [core, logging]
-status: draft # draft, stable, or deprecated. A document without a status is stable. The status serves readers and the filters of `sokf graph`, such as -l "status=='draft'". draft and stable change no check. For deprecated, `sokf validate` warns at each link, marker, and include that cites the document, and names each document that supersedes it.
+status: draft # draft, stable (the default), or deprecated. validate warns at each link, marker, and include that cites a deprecated document.
 sources:
   - id: log4rs
     resource: https://crates.io/log4rs
@@ -89,40 +83,28 @@ The logging subsystem reads its settings from the [configuration][sokf:config].[
 [sokf:config]: /knowledge/config.md
 ```
 
-## Sources and attribution
+## Sources and citations
 
-Each entry of `sources` has `resource`, `id`, and `title`, and only those keys. `resource` is required: it is a path from the repository root, such as `/repo-root-path`, or a URL. `id` is required when the body cites the source. To attribute a claim, add a footnote labelled with the source's `sources[].id`, such as `claim.[^log4rs]`.
+Each `sources` entry has `resource`, a path from the repository root or a URL, and `title`, and an `id` when the body cites it. Cite the source of a claim with a footnote labelled with the id, such as `claim.[^log4rs]`.
 
 ## Commands
 
-sokf finds the repository root with git, and `--repo-root <DIR>` sets the root instead. The file `/.sokf/config.toml` lists the project's own knowledge roots and the paths that sokf skips. By default, the only own root is `/knowledge`. Each file `*.toml` at any depth below `/.sokf/roots.d/` holds only `roots = [...]`, a list of further roots, such as the stores that another tool delivers, which that tool writes. Never edit a file of `roots.d` that another tool wrote, because the tool rewrites it. A root of `roots.d` lies beside every other root, never inside or around one. sokf skips a path only outside the knowledge roots, so `sokf validate` warns at each glob of `repository.exclude` that lies under a root. sokf prints each path relative to the repository root, starting with `/`, such as `/src/main.rs`. Write paths in this form in `to` and `resource`. Only `locate` prints a path on disk.
+`/.sokf/config.toml` lists the project's own knowledge roots, `/knowledge` by default, and the paths that sokf skips. Another tool can add roots in a file below `/.sokf/roots.d/`, and paths to skip in a file below `/.sokf/excludes.d/`. Never edit a file there that another tool wrote, because the tool rewrites it. sokf prints each path from the repository root, starting with `/`, such as `/src/main.rs`. Write paths in that form in `to` and `resource`. Only `locate` prints a path on disk.
 
 sokf has these commands:
 
-- `sokf graph [START]` shows how the knowledge is linked, starting from `START`. It prints text by default, JSON with `--json`, or a Mermaid diagram with `--mermaid`. `START` can be a document id, a file, a key written as `#KEY`, or a directory:
-  - With no `START`, `graph` shows the layout: each store, its directories, and its documents. Run it at the start of a session.
-  - For a document id, `graph` shows the document's links, and the files whose markers cite the document, with the number of markers in each file.
-  - For a file, `graph` shows the documents that describe or include the file, and each marker in the file, with the key that it cites and its line. Before you change a file, run `graph` on it.
-  - For a `#KEY`, `graph` shows where the key is defined and what cites it, with the file and the line of each marker that cites it. For a key that is unique only within its document, `<ID>#KEY` starts at the key of the document `ID`. When one document captures such a key, `#KEY` starts there too, and prints a note with the `<ID>#KEY` to link. When several do, the error lists the `<ID>#KEY` of the first 10 and counts the others.
-  - For a directory, `graph` shows the directory's layout.
+- `sokf graph [START]` shows how the knowledge links, as text, as JSON with `--json`, or as a Mermaid diagram with `--mermaid`. Run it with no `START` at the start of a session to see each store's layout. `START` can be a document id, a file, a key as `#KEY`, or a directory. Before you change a file, run `graph` on it to see the documents that describe it and the keys that its markers cite.
 
-  The options `-l`, `--to`, and `--edge` each take a predicate over the fields that `--json` shows, written in JMESPath, a query language for JSON. `sokf graph --json-schema` prints the JSON Schema of those fields, and every command that takes `--json` takes `--json-schema` too. Read the schema before you write a predicate or a `--query`. `graph` takes these options:
-  - `--archived` includes archived documents, such as closed issues.
-  - `--all` lists every entry of a long group.
-  - `--depth <N>` follows links up to `N` steps away.
-  - `-l "type=='Decision'"` keeps only the rows whose document matches.
-  - `--to "type=='Subsystem'"` keeps only the links whose target matches.
-  - `--edge "rel=='depended-on-by'"` keeps only the matching links. This example shows what depends on a document.
-  - `--format '{id}  {title}'` sets the template of each document's line in text output.
-  - `--json --query <EXPR>` selects fields from the JSON with the JMESPath expression `EXPR`.
-- `sokf locate <ID>` prints the path on disk of the document whose id is `ID`. To read a document, run `cat "$(sokf locate <ID>)"`. `sokf locate --asset <ID>` prints the path of the asset that the sidecar `ID` describes, and `--json` prints both paths.
-- `sokf new <TYPE> --slug <SLUG> [--state <KEY>=<STATE>]... --write` creates a document of the type `TYPE` from its schema, with the id, title, and states filled in, at the path that its states require, and updates the index of each directory that holds it. `SLUG` is the kebab-case part of the id, and each `--state` sets the lifecycle key `KEY` to `STATE`. `--title <TITLE>` sets the title, which otherwise comes from the words of the slug. For a type whose schema sets a rule for `title`, such as a template, pass `--title`, because without it `new` refuses and gives the schema's example of a title. Without `--write`, `new` prints the document instead of writing it. `--json` prints `id`, `path`, and `document`, and with `--write` it prints them in place of the `created PATH` line, so you learn the id and the path of the file that `new` wrote. `--id-only` prints only the id. For a type whose schema declares no template for its id, pass `--id <ID>`. For a sidecar, pass `--for <ASSET>`, the path of the asset. For a schema, run `sokf new Schema --id <ID>`. When more than one store declares the type, put the store before it, as in `sokf new sokf-spec:Grammar`, or pass `--dir` or `--for` in that store. [New documents](#new-documents) says what to do with the document that `new` writes.
-- `sokf validate [PATHS]` checks the knowledge. `--fix` repairs what it can: it rewrites generated blocks and indexes, moves each file to the directory that its lifecycle state requires, updates each sidecar's `resource`, and rewrites each heading whose text a schema takes from a frontmatter value. `PATHS` limits what `validate` reports and repairs, but `validate` still checks all the knowledge.
-- `sokf init [DIR] [--name <NAME>] [--scope <SCOPE>]` creates a knowledge store in `DIR`, with its manifest and indexes, and adds `DIR` to the knowledge roots in `/.sokf/config.toml`. `DIR` is `/knowledge` by default. `DIR` can already hold documents: `init` then writes only the manifest and changes no file, `sokf validate` lists each document left to give frontmatter, and `sokf validate --fix` writes the indexes. `init` refuses the repository root and a `DIR` that already holds a `manifest.sokf.yaml`. `NAME` is the store's name, a slug that defaults to the last part of `DIR`. `SCOPE` is the slug of the store's owner, which defaults to the owner of the git remote `origin`. Use `init` instead of writing a manifest by hand, because `init` also adds the root.
-- `sokf harness install claude` adds the following to the repository's Claude Code files: this skill, a block of instructions for the agent, and permission to run `sokf`. A hook that runs `sokf validate` at each prompt and tells you how many errors remain is off by default, and `with = ["hooks"]` under `[harness.claude]` in `/.sokf/config.toml` turns it on. Name another harness, such as `codex`, `cursor`, `gemini`, `copilot`, `factory`, `pi`, `opencode`, `kilo`, `qwen`, `devin`, or `agents`, or several, or `all`, to install into its files instead. After you upgrade `sokf`, run the same command again. `sokf harness status claude` shows what is out of date, and `sokf validate` warns at each part that is stale or absent, even without `--warnings`. The command keeps each part that someone edited: `sokf harness diff claude` prints each edit as a patch, and `sokf harness install claude --force <PART>` overwrites that part, such as `skills`, or every part with `all`. To skip a part for good, list it in `without` under `[harness.claude]` in `/.sokf/config.toml`; no command writes `without` or `with`.
-- `sokf info grammar` prints the grammar of the schema language in three parts. First comes the core grammar of tramlines, a language for describing documents. Next comes the grammar of tramlines-md, the extension of tramlines for what a Markdown document has. Last come the keys that SOKF adds to those two grammars. `sokf info formats [--schema <ID>]` prints the line formats and placeholder types that a schema can use. `--layer <LAYER>` prints one layer of them: `embedded` for the formats built into sokf, `repo` for `/.sokf/formats.yaml`, `formats.d` for each file `*.yaml` at any depth below `/.sokf/formats.d/`, such as the formats that a pack of another tool ships, or `effective`, the default, for all three merged. No file of `formats.d` takes precedence over another, so a format or a type that two of them declare with values that differ is an error until `/.sokf/formats.yaml` declares it in full, while two declarations with the same parsed value count once, if a format's `variants` come in the same order, apart from those of the entry below that a patch changes in place. `--json` prints the registry as one JSON object, with a `types` map and a `registry` map from each name to its entry and its `source`, and `--query <EXPR>` selects from it, such as `--query types.slug`.
+  `-l`, `--to`, and `--edge` filter with a JMESPath predicate, such as `-l "type=='Decision'"`, over the fields that `--json` shows. Read `sokf graph --json-schema` before you write one.
+- `sokf locate <ID>` prints a document's path on disk, so read a document with `cat "$(sokf locate <ID>)"`.
+- `sokf guide <ID|PATH>` prints the guidance that the document's schema gives for each of its parts at its states, and `--state <KEY>=<STATE>` prints it at a state that the document is moving to. Read it before you write or change a document.
+- `sokf new <TYPE> --slug <SLUG> [--state <KEY>=<STATE>]... --write` creates a document from its schema, with the id, title, and states filled in, at the path that its states require. `sokf new --help` gives the options for an id without a template, a title, a sidecar, and a type that two stores declare. [New documents](#new-documents) says what to do next.
+- `sokf validate [PATHS]` checks the knowledge, and `--fix` repairs what it can: generated blocks, indexes, links written in a longer form, and the directory of a document whose state changed. `--fix` changes no file whose schema breaks the grammar, so repair the schema first.
+- `sokf init [DIR]` creates a store, in `/knowledge` by default, and makes it a knowledge root. Use it instead of writing a manifest by hand. `DIR` can already hold documents.
+- `sokf harness install <HARNESS>...`, such as `claude`, `codex`, or `all`, writes this skill, the agent's instructions, and the permission to run sokf into the harness's files. `--scope` chooses where: the repository's files (the default), your home directory, or the repository's files that stay out of git. Run the command again after you upgrade sokf. It keeps a part that someone edited: `sokf harness diff` shows the edit, and `--force <PART>` overwrites it. In `/.sokf/config.toml`, `with = ["hooks"]` under `[harness.<HARNESS>]` turns on a hook that runs `sokf validate` at each prompt, and `without` lists the parts to skip. No command writes either.
+- `sokf info grammar` prints the schema language. Read it before you write or change a schema. `sokf info formats [--schema <ID>]` prints the line formats and placeholder types that a schema can use.
 
-`sokf validate` prints each error as one line, `path:line: error: message (KEY)`. The key identifies the broken rule, such as `SOKF_FORMAT_53` from the specifications in `sokf-spec/`, or `TL_56` or `TLMD_152` from the tramlines specifications. When a schema rule causes the error, the line gives the schema id in parentheses before the key. The parentheses also hold the rule inside the schema when the error has one. `validate` counts warnings and lists those at a stale or an absent part of a harness, and at a `/.sokf/packs.lock` or a `/.sokf/packs/` that an older sokf wrote, which nothing reads any more, so delete them, and `--warnings` lists them all. A `[[pack]]` entry of `/.sokf/config.toml` stops every command, because packs are no longer part of sokf. `--json` prints one object with `errors`, `warnings`, and `fixes`, and `--query <EXPR>` selects fields from it with a JMESPath expression. sokf exits with code 1 when the knowledge has errors, and with code 2 on a usage error.
+`sokf validate` lists only the warnings at a stale or absent harness part and at files that an older sokf wrote, and counts the rest. Run `sokf validate --warnings` after you write a document, because a `sokf:optional` region left in it, a link to a deprecated document, and a custom rel are only warnings.
 
 ## Agent rules
 
@@ -130,33 +112,31 @@ Follow these rules when you write a document:
 
 - Write each fact in one place. If a README or another file already states a fact, summarise the fact and cite that file in `sources` instead of copying the fact.
 - Don't record an author or a date in the frontmatter, because git already records who changed each file and when.
+- Write each `description` for a reader of the index, which shows it beside the title. Tell someone who is deciding whether to open the document what they need beyond the title, in terms they already know, usually in one sentence. Judge what that is for each document, rather than follow a pattern such as a list of its parts. Follow the schema's guidance for `description` too.
 - You can choose the `id` of a new document, but never change an existing `id`, even when you rename or move the document, because other documents and markers cite it.
-- Create documents with `sokf new`, because `new` allocates the id and writes the file where its states require. If you place the file yourself, get the id from `sokf new <TYPE> --slug <SLUG> --id-only`. Never guess a sequence number, because sokf allocates the next free one, and a guessed number can collide with another document's. To keep a number that the work already has, such as when you move numbered plans into a store, pass `--seq <N>`, and `new` refuses `N` when a document of the type already has it. `new` also skips the numbers that the repository's other branches and worktrees gave their documents, but it can't see a branch of another clone that hasn't been pushed, or a document that another `new` is writing at the same moment, so create each document with `sokf new --write` in one step. So when `sokf validate` reports two documents of one type with the same sequence number after a merge, renumber the one from your own branch: take a free number from `sokf new <TYPE> --slug <SLUG> --id-only`, and rename its file, its `id`, and every link, `links` entry, and marker that cites it.
-- Never add, edit, reorder, or delete a `verified` entry. Each entry records that a human or a process checked the document, and only that human or process writes it. `verified` has the form `[{ by: human:<ID>|process:<ID>, at: ISO8601 }]`, and an entry older than the last change to the content has lapsed. A sidecar's `verified` covers its asset too, and lapses when either file changes. `sokf validate` warns at each lapsed entry, which stays until its author checks the document again, so leave the warning for that author.
-- Never write `generated`, or the manifest's `producer`, `generated`, or `counts`. Export tooling writes these keys when it exports a store for publication, and the working tree must not hold them.
+- Create each document, a sidecar too (`--for <ASSET>`), with `sokf new --write` in one step, because `new` allocates the id and writes the file where its states require. If you place the file yourself, get the id from `sokf new <TYPE> --slug <SLUG> --id-only`. Never guess a sequence number: `new` takes the next free one, and skips those that other branches and worktrees of this repository gave, but it can't see an unpushed branch of another clone, or a document that another `new` is writing at the same moment. So when `sokf validate` reports, after a merge, two documents of one type with the same sequence number, renumber the one from your own branch: take a free number from `sokf new <TYPE> --slug <SLUG> --id-only`, and rename its file, its `id`, and every link, `links` entry, and marker that cites it.
+- Never add, edit, reorder, or delete a `verified` entry: only the human or process that it names writes it. A sidecar's entry covers its asset too. Leave a warning that an entry has lapsed for its author.
 - To change a document's lifecycle state, set the state keys in its frontmatter and let `--fix` move the file. Never move the file by hand. `--fix` moves a sidecar together with its asset.
-- You can write every other key unless the project's conventions restrict it.
+- Label each part that you propose `[agent]`, and write `[human]` only where the developer said the part or confirmed it in so many words. One label covers the whole unit. A label names no person. `sokf guide` shows which parts take a label, and the words of each label in the schema's language.
 
 ## New documents
 
-Never copy a scaffold by hand, because `sokf new` adapts the scaffold to your document's states. `new` keeps or drops each part marked `<!-- sokf:only … -->` according to those states, and strips the markers. A `sokf:only` marker left in a document is an error.
+Never copy a scaffold by hand: `sokf new` adapts it to the document's states.
 
-After `sokf new` writes a document, replace the scaffold's example text and references with your own, because `validate` reports any that you leave. The new document also contains comments that you resolve as you write:
+After `sokf new` writes a document, replace every example text and reference of the scaffold with your own. `validate` doesn't report an example text that you leave, only a reference that resolves to nothing, such as `to: target-id`. Write the part that each `sokf:guidance` line guides, then delete the line.
 
-- A `<!-- sokf:guidance … -->` line (`# sokf:guidance …` in frontmatter) comes before each part that it guides. Read each guidance line, replace that part's example text with your own, and then delete the line. A guidance line left in a document is an error.
-- A `<!-- sokf:optional -->` … `<!-- /sokf:optional -->` region contains a part that the schema does not require. Either keep its content and delete both markers, or delete the whole region. A region left in a document produces a warning, and an unpaired marker is an error.
+Keep the content of a `sokf:optional` region and delete both markers, or delete the whole region. `validate` lists a region left in a document only with `--warnings`.
 
 ## Links
 
 Follow these rules when you link one document to another:
 
-- `rel` is the kind of link, and each kind has an inverse: relates-to↔relates-to, part-of→has-part, depends-on→depended-on-by, references→referenced-by, supersedes→superseded-by, implements→implemented-by, and contradicts↔contradicts. A custom kebab-case rel is allowed, but it produces a warning. There is no `derived-from` rel: use `sources` instead. Declare each link once, from one side, because sokf derives the inverse.
-- `to` is the target's `id`, with its store before it when the target is in another store, such as `sokf-spec:glossary`. `--fix` rewrites a path to a document as the document's id.
-- For every `links` entry, also link to the target in the body with `[text][sokf:<ID>]`. The opposite isn't required: a body link without a `links` entry counts as an untyped relates-to link.
-- In the body, link to documents and assets with a `sokf:<ID>` link, never with a path, because a `sokf:` link keeps working when its target moves. `--fix` rewrites an inline path to a document or an asset as a `sokf:` link. Link to anything else with a path or a URL. A path that starts with `/` resolves from the repository root, and a relative path resolves from the file that contains it. Every path in `resource`, `sources[].resource`, or a body link must point to an existing file or directory. A `/`-rooted body link that ends with `/`, such as `/src/`, must point to a directory, and `--fix` keeps the slash.
-- `sokf:<ID>` refers to a document's content. A sidecar's content is its asset, so `![Flowers][sokf:flowers]` shows the picture and keeps working when the picture moves. `sokf:<ID>#`, with an empty fragment, refers to the sidecar file itself. An image reference must use a sidecar's id.
-- To cite part of a document, add a fragment that names a heading or a key. A fragment is always a slug in the GitHub style: lowercase, with letters, digits, hyphens, and underscores kept, and spaces turned into hyphens. Write `[CLI-1_AC-2][sokf:req-cli#cli-1_ac-2]` for a key, or `[sokf:req-cli#acceptance-criteria]` for a heading. Within its store, you can cite a key whose schema declares `unique: knowledge` or `unique: repository` without the document's id, as `[sokf:#cli-1_ac-2]`. A fragment alone, `[text](#cli-1_ac-2)`, refers to the current document. The validator resolves every fragment, and `--fix` rewrites a fragment written as the key's text, such as `#CLI-1_AC-2`, as its slug.
-- To refer to another store, put the store name before the id: `[text][sokf:sokf-spec:glossary]`, `[sokf:sokf-spec:#user]`, `<!-- sokf:include sokf-spec:graph-schema -->`, or `to: sokf-spec:glossary`. Write a store in another scope as `scope/name`. Each target has one spelling, the shortest, and `--fix` writes that spelling. `sokf locate` and `sokf graph` accept every form.
+- `rel` is the kind of link, and sokf derives its inverse, so declare each link once, from one side: relates-to↔relates-to, part-of→has-part, depends-on→depended-on-by, references→referenced-by, supersedes→superseded-by, implements→implemented-by, tests→tested-by, and contradicts↔contradicts. Use a custom kebab-case rel, which produces a warning, only where none of these fits. Record what a document derives from in `sources`, not with a `derived-from` rel.
+- `to` is the target's id, with its store before it when the target is in another store, such as `sokf-spec:glossary`.
+- In the body, link to a document or an asset as `[text][sokf:<ID>]`, which keeps working when the target moves, and to anything else by a path or a URL. A path that starts with `/` resolves from the repository root, and any other path from the file that holds it.
+- For a sidecar, `sokf:<ID>` refers to its asset, so `![Flowers][sokf:flowers]` shows the picture, and `sokf:<ID>#` refers to the sidecar itself.
+- To cite part of a document, add the slug of a heading or a key as the fragment: `[CLI-1_AC-2][sokf:req-cli#cli-1_ac-2]` or `[sokf:req-cli#acceptance-criteria]`. Cite a key that its schema makes unique in the store or the repository as `[sokf:#cli-1_ac-2]`, and part of the current document as `[text](#cli-1_ac-2)`.
+- To refer to another store, put its name before the id, as in `[text][sokf:sokf-spec:glossary]`, `[sokf:sokf-spec:#user]`, or `<!-- sokf:include sokf-spec:graph-schema -->`, and write a store in another scope as `scope/name`.
 
 ## Markers
 
@@ -164,41 +144,28 @@ A marker is a comment line in a source file, outside any knowledge root, that ci
 
 Follow these rules when you write a marker:
 
-- Write a marker in a plain comment, such as `//` or `#`, never in a doc comment, such as `///` or `/** */`, because a linter of doc comments, such as clippy's `doc_markdown`, adds backticks round a key. sokf still reads a reference between backticks.
-- The tag `sokf-<REL>:` is the first word on the line after any whitespace and ASCII punctuation, such as a comment leader. Write the tag in lowercase. sokf reads a tag in any case as the tag in lowercase, so a linter's fix of a comment's case, such as `Sokf-Implements:`, breaks no marker. `REL` is a `links` rel, such as `implements`, `tests`, or `references`, and a custom rel produces a warning. After the tag come whitespace and exactly one reference, and only punctuation, such as `*/` or `-->`, can follow the reference. Two keys need two marker lines.
-- A bare lowercase kebab-case word in a reference is a document id, such as `design-cache`. Any other bare word is a key written as its text, such as `CLI-1_AC-2` or `SOKF_FORMAT_96`, and it matches only keys whose schema declares `unique: repository`. Every form that works after `sokf:` also works here: `id#fragment`, `store:id`, `#key`, and `store:#key`. sokf looks up a reference without a store in every store, except a store whose manifest declares `unique: knowledge`, whose documents and keys a marker reaches only with the store before them, as in `six5536/login:#login-2_ac-1`. If two stores have documents with the same id, put the store before the id. Fragments match by slug, so you can write a key as its text.
-- If `validate` reports that no `sokf-implements:` or `sokf-tests:` marker cites a key, the key's schema requires one. Add the marker above the code that implements the key or the test that tests it. Never put one on code that does neither.
+- The tag `sokf-<REL>:` comes first on the line, after the comment leader, in lowercase. `REL` is a `links` rel, such as `implements`, `tests`, or `references`. One reference follows it, so two keys need two lines.
+- A bare lowercase kebab-case word is a document id, such as `design-cache`. Any other bare word is a key's text, such as `CLI-1_AC-2`, and matches only a key whose schema declares `unique: repository`. Cite any other key as `<ID>#<KEY>`. The forms `store:id` and `store:#key` work as they do after `sokf:`. Put the store's name first for a store whose manifest declares `unique: knowledge`, and where two stores have a document with the same id, as in `six5536/login:#login-2_ac-1`.
+- Write a marker in a plain comment, such as `//` or `#`, not in a doc comment, such as `///`, which puts it in the generated documentation.
+- When `validate` reports that no `sokf-implements:` or `sokf-tests:` marker cites a key, add the marker above the code that implements the key or the test that tests it. Never put one on code that does neither.
 - Keep markers accurate: when you change what code implements or tests, update its markers in the same edit. When a key is renamed or removed, `sokf validate` reports every marker that cites it.
-- To write text that looks like a marker but is not one, such as a sample line in a test or a document, put it between `sokf:ignore-begin` and `sokf:ignore-end` lines, or after a `sokf:ignore-next-line` line. In an HTML or Markdown file, write each directive in a comment of its own, such as `<!-- sokf:ignore-begin -->`. Ignore regions do not nest. A line inside a fenced code block of a `.md` file outside the roots, such as a README, is already an example and needs no directive.
-- With `[markers] check = "warn"` in `/.sokf/config.toml`, `validate` reports each broken marker as a warning, and with `"off"` it skips markers. A broken marker has a reference that resolves to nothing, a rel that isn't kebab case, such as `sokf-foo_bar:`, no reference or a word after it, or a relationship that the cited schema refuses. An ignore directive without its pair is broken too. A missing marker isn't broken: the finding that no marker cites a key keeps the severity of its schema's `cited-by` entry, whatever `check` says.
+- To write text that looks like a marker but is not one, such as a sample line in a test, put it between `sokf:ignore-begin` and `sokf:ignore-end` lines, or after a `sokf:ignore-next-line` line. In HTML or Markdown, write each directive in a comment of its own, such as `<!-- sokf:ignore-begin -->`. A fenced code block in a `.md` file outside the roots needs none.
 
 ## Generated blocks
 
-A generated block is a part of a document whose content `--fix` writes. Write the comment lines that start a generated block, never its content:
+A generated block is a part of a document whose content `--fix` writes: the definition block after `<!-- sokf:links -->` at the end of a document, the anchor `<a id="…"></a>` of each key, and each `index.md`. Write the `sokf:` links and the comment lines that start a block, never a block's content.
 
-- A _definition block_ ends every document that has `sokf:` body links. It is the line `<!-- sokf:links -->`, followed by one `[<LABEL>]: /path` line for each cited label. Write the `sokf:` links, and `--fix` writes the block.
-- An _anchor_, `<a id="<SLUG>"></a>`, marks each key in the document, once. `--fix` writes, moves, and removes anchors, so never touch one yourself.
-- An _index_, the `index.md` in every directory, lists the directory's documents and subdirectories. `--fix` writes it. Read an index to see what its directory contains, but never edit one. `--fix` never overwrites an `index.md` that holds anything other than a heading, a list of entries, and a definition block, such as a page written by hand, and `validate` reports the file. To repair it, move its content into a document with another name, delete the file, and run `--fix`.
-- An _include block_ runs from `<!-- sokf:include <ID | /PATH[#REGION]> -->` to `<!-- /sokf:include -->`, and `--fix` fills it. Includes can nest, but a cycle is an error. The path form identifies a source file, never a document, an additional file, or an asset. To include a document or an asset, use its id. A block whose target is a sidecar's id includes its asset, a block whose target is `<ID>#<NAME>` includes the region `NAME` of the asset, and a block whose target is `<ID>#` includes the sidecar's body. A region in a file lies between a `sokf:begin <NAME>` comment line and a `sokf:end <NAME>` comment line. The name matches `[A-Za-z0-9_-]+`. The included text leaves those two lines out. An include comment inside a fenced code block has no effect.
-- A block that differs from what `--fix` would write is still current when the project's formatter, such as oxfmt or Prettier, gives both texts the same form, so a formatter's change of layout never makes a block stale. sokf finds the formatter from its configuration file at the repository root, or from `[format]` in `/.sokf/config.toml`. `--fix` writes a stale block as its source holds it, and leaves its layout to the formatter.
+An include block runs from `<!-- sokf:include <ID | /PATH[#REGION]> -->` to `<!-- /sokf:include -->`, and `--fix` fills it. Include a document or an asset by its id, and a source file by its path. A region of a file lies between a `sokf:begin <NAME>` and a `sokf:end <NAME>` comment line, and `<ID>#<NAME>` includes the region `NAME` of an asset.
 
 ## Schemas
 
-Every type in use, except `Schema`, has exactly one schema: a `type: Schema` document whose body is one YAML block fenced with four backticks. The schema declares the type that it defines as `frontmatter: { type: { const: <TYPE> } }`, a fixed value of the `type` key. Every document must validate against its type's schema.
+Read `sokf info grammar` before you write or change a schema: it gives every key and what it does. This section gives only the rules for writing a schema that the grammar doesn't.
 
-A schema is strict by default: the validator requires its declared sections, keys, and blocks, refuses undeclared ones, and enforces their order. To relax that strictness, declare `optional`, `repeat`, or `*-open`.
-
-A schema is made of rules. A rule describes the required form of a heading, paragraph, item, row, line, or frontmatter value with one of three _shapes_: `text` (exact), `template` (the text with typed placeholders, `${name:type}`, matched whole), or `pattern` (a regex, for what a template cannot express). Before sokf matches a text against a shape, sokf collapses each run of whitespace in the text to one space, and removes the indent from a line inside a fence.
-
-A placeholder type is a named regex or a list of choices, taken from the schema's `types`, `/.sokf/formats.yaml`, the files of `/.sokf/formats.d/`, the shared formats, or the built-ins `text`, `word`, `int`, `slug`, `seq`, `store`, and `ref`. Write a reference as `[${}][sokf:${:ref}]`, never as a regex, because the `ref` type already matches every target that a `sokf:` link can have.
-
-`sokf new` builds a scaffold only from the schema's rules: each part's text is the `text` or `example` of the rule that requires it. A rule with a `template`, `pattern`, or `source-pattern` needs an `example`. sokf checks each rule's `example` against the rule, shows the example whenever the rule fails, and copies it into every new document.
+Write a reference in a template as `[${}][sokf:${:ref}]`, never as a regex, because the `ref` type matches every target that a `sokf:` link can have.
 
 Make each example concrete, because agents imitate what they are shown: write a line that a real document would contain about a real subject, never a slot (`<name>`), an instruction (`Describe the component.`), or filler (`One item.`).
 
-An `example` of a block or a unit rule can be a list of strings, and `sokf new` writes one unit for each string, in order. A section that declares `repeat: true` can also declare `examples`, a list of texts. Each of these texts begins with a heading of the section's level. `sokf new` writes the texts unchanged after the occurrence that it derives from the rules. A schema can also list `examples`, real documents of the type for a reader to look at, and `sokf new` never copies them.
-
-Put what an example cannot show in `guidance`, on the schema or on a section, preamble, block, frontmatter key, lifecycle dimension, or link. Write guidance in the voice of the document, because guidance can leak into the text that a writer copies. Guidance follows these rules:
+Put what an example can't show in `guidance`. Write guidance in the voice of the document, because guidance can leak into the text that a writer copies:
 
 - It describes the part in the third person and the present tense.
 - It states each rule as a fact about the part, with its reason.
@@ -206,21 +173,6 @@ Put what an example cannot show in `guidance`, on the schema or on a section, pr
 - It never begins a sentence with a verb.
 - It never includes a counter-example.
 
-Put a ban in `prohibited-patterns`, a list of regexes.
+Give `guidance` for `description` only where the type needs something that the rule on descriptions in [Agent rules](#agent-rules) doesn't say. Never put the count in a `when-at-limit`, because `sokf new` and `sokf guide` write the count before it, as in "At most 3 items. Never leave out or merge content to stay within the count. When at the limit: Split the list." Write a `when-at-limit`'s own "Never … to stay within the count." only against another kind of squeeze, such as folding several systems into one node, because the words before it already forbid leaving out or merging content.
 
-A schema can describe additional files instead of a type of document: it declares `additional-files` globs and no `type` const, and its rules apply to the files that the globs match. A schema can also declare `asset-files` globs beside its `type` const. The files that those globs match are assets, and the schema's documents are their sidecars.
-
-A schema can also declare the following:
-
-- `root` is the `/`-rooted directory of the store that holds the type's documents. Without a `path: true` dimension, a document can lie at any depth under it. `sokf new` writes a new document there, and `--fix` moves a document that lies outside it into it.
-- `lifecycle` declares ordered dimensions. Each dimension has a `key`, its `states`, an optional `path: true`, and an optional `archived: [states]`. Each dimension becomes a required frontmatter key whose value is one of its states. When a dimension has `path: true`, the schema also declares `root`, and the document's state for that dimension is the name of the directory under `root` that holds the document. `sokf graph` hides a document in an `archived` state. A schema with no lifecycle can declare `archived: true` to archive all its documents. Any rule can have `only: { state: [closed] }`, so that it applies only in those states.
-- `plans-paths: [{ section: files, only: { state: [open] } }]` lets a document plan the files that its work creates: while the document is in those states, each `/`-rooted path that a link in the section with that `rule-id` names counts as existing, so any document, such as a design or a contract, can link it, list it in `resource`, or include it with a sketch before the code exists. A link that ends with `/` plans the directory and every path under it. `current-links: ['^Planned: ']` makes each matching paragraph link no archived document.
-- `links` declares the links that a document must or can declare, one entry for each `rel`, with `to-type`, `min`, `max`, and `only`.
-- A unit rule can declare `to-type` too, a type or a list of types: each `sokf:` link in a unit that the rule accepts must then reach a document of one of those types, and a link with a fragment, such as `[CLI-6][sokf:contract-cli#cli-6]`, counts by the type of its document.
-- `cited-by` is the inverse of `links`: it declares what must cite the type's documents. Each of its entries has exactly one of `from-type` and `from-marker`. `from-type` is a type, and `from-marker` is a marker rel. An entry can also have `keys`, which is a rule id, and it can have `only`, `severity`, and `message`, one sentence in the voice of the document that `validate` appends to each finding of the entry. With `from-type`, a document of that type, in any store, must link with a `sokf:` body link to each key that the rule given in `keys` extracts. Without `keys`, the document must link to the cited document itself. With `from-marker: implements`, a `sokf-implements:` marker must cite each one instead. A marker of any other rel does not count. Included text does not count either, and neither do a document's links to itself.
-- `markers: [implements, tests]` limits which marker rels can cite the type's documents and keys, and `markers: []` refuses all markers.
-- `frontmatter: { id: { template: "issue-${:seq}-${:slug}" } }` declares the id template, the form of the id. The template uses only placeholders that `sokf new` fills. A placeholder named after a lifecycle key, such as `${kind}`, stands for the document's state for that key: `issue-${:seq}-${kind}-${:slug}`. The `seq` placeholder is a sequence number that is unique within the type. It is `seq-width` digits wide, and `seq-width` is 3 by default. Write a fixed id as `id: { const: … }`.
-- `heading` is exact text, `{ from: <KEY> }` for a heading whose text is the value of the frontmatter key `KEY`, or a heading rule such as `{ template: '${n:int}. ${}', key: n, example: "8. Links" }`. `key` names the placeholder or named group whose matched text becomes the key. `key-derives-from`, beside `key`, requires the key's prefix to be a key that another rule extracts, or a frontmatter value, so that the criterion `CLI-1_AC-2` derives from its part `CLI-1`.
-- `sections` with `blocks` makes each section's body an ordered list of typed blocks, such as prose, lists, tables, and code, with rules for each unit. A _unit_ is one item, row, or paragraph of a block. `key` extracts identifiers as keys, and `unique` widens the scope in which each key must be unique. A key's slug must differ from every heading slug and every other key's slug in the document.
-- A block can apply its rules as a grammar: it can take `rules` instead of `each` or `sequence`, and a `code` or `html` block can apply `lines` rules to its content lines. sokf tries the rules in order. A rule's _guard_ is its `select-pattern`, a regex that selects units by something other than the rule's shape. A rule with a shape and no guard accounts for the units that its shape matches. A rule with a guard accounts for the units that its guard selects. A rule with only a guard and `min` or `max` counts the units that its guard selects, but accounts for none of them. A unit or line that no rule accounts for is an error unless the block sets `units-open` or `lines-open`.
-- `formats` declares line formats. Each format has either one shape and an `example`, or `variants`: shapes that sokf tries in order, each with its own `example`. A schema-local entry replaces the shared one whole, unless it declares `patch: true` and states only its difference as a JSON merge patch (RFC 7386), in which `null` deletes a key.
+sokf writes its own words into a scaffold and into `sokf guide`, such as the words before each `when-at-limit`. To give those words in a language other than English, write them in `/.sokf/texts.yaml` or a file below `/.sokf/texts.d/`, as a map from the language tag to the entries `attribution`, `description`, `labels`, `limit`, `rule-unit`, and `units`. A schema's `language`, or else the manifest's `primary-language`, picks the language.

@@ -17,7 +17,8 @@ pub enum Error {
     NoRepository,
 
     /// The tool refuses a `config.toml` file (CONF-1_AC-3, CONF-1_AC-4,
-    /// CONF-2_AC-6, CONF-2_AC-7, CONF-3_AC-5, CONF-3_AC-6).
+    /// CONF-2_AC-6, CONF-2_AC-7, CONF-3_AC-5, CONF-3_AC-6), or a file of
+    /// texts (CONF-12_AC-3, CONF-12_AC-4, CONF-12_AC-5).
     #[error("{path}: {message}")]
     Config {
         /// `path` is the path of the configuration file that the tool refuses.
@@ -62,6 +63,11 @@ pub enum Error {
     /// tool can read the argument (CLI-7_AC-19).
     #[error("graph: {0}")]
     Start(String),
+
+    /// `guide` refuses an argument, a document, or a `--state` (contract-cli
+    /// CLI-17), and the message names the argument or the document.
+    #[error("guide: {0}")]
+    Guide(String),
 
     /// `locate` refuses an `id`, and the message gives the `id` and the paths
     /// of the documents that declare it (CLI-8_AC-6).
@@ -199,6 +205,7 @@ mod tests {
         assert_eq!(Error::Harness("x".into()).to_string(), "harness: x");
         assert_eq!(Error::Start("x".into()).to_string(), "graph: x");
         assert_eq!(Error::Locate("x".into()).to_string(), "locate: x");
+        assert_eq!(Error::Guide("x".into()).to_string(), "guide: x");
         assert_eq!(Error::Query("x".into()).to_string(), "query: x");
         assert_eq!(Error::Internal("x".into()).to_string(), "internal: x");
         assert!(Error::NoRepository.to_string().contains("--repo-root"));

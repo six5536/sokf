@@ -32,7 +32,7 @@ fn a_pack_entry_of_the_configuration_stops_each_command() {
     let config = std::fs::read_to_string(f.path(".sokf/config.toml")).unwrap_or_default();
     f.write(
         ".sokf/config.toml",
-        &format!("{config}\n[[pack]]\nname = \"@sokf/sokf\"\nsource = \"@sokf/sokf\"\n"),
+        &format!("{config}\n[[pack]]\nname = \"@acme/tool\"\nsource = \"@acme/tool\"\n"),
     );
     let before = tree(&f);
     for args in [
@@ -64,7 +64,7 @@ fn validate_warns_at_each_file_that_the_packs_left() {
     let f = project();
     f.write(".sokf/packs.lock", "lock-version = 4\n");
     f.write(
-        ".sokf/packs/@sokf/sokf/base/knowledge/schemas/issue.md",
+        ".sokf/packs/@acme/tool/base/knowledge/schemas/issue.md",
         "# Issue\n",
     );
     let (out, err, code) = f.run(&["validate"]);

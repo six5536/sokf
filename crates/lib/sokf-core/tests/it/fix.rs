@@ -419,3 +419,49 @@ fn fix_leaves_a_hand_written_index_and_reports_it_once() {
         vec!["the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix` (SOKF_FORMAT_97)".to_string()]
     );
 }
+
+/// `FIX_BROKEN_SCHEMA_KEPT` lists the files of the `fix-broken-schema`
+/// fixture whose schema breaks the grammar: a document and an additional
+/// file, each with anchors, references to respell, and a missing definition
+/// block.
+const FIX_BROKEN_SCHEMA_KEPT: [&str; 2] = ["README.md", "knowledge/a.md"];
+
+/// `FIX_BROKEN_SCHEMA_THING` is the document of the `fix-broken-schema`
+/// fixture that no schema governs, as the fix leaves it. Its anchor is
+/// longer than the code span after it, so a code span read at its columns
+/// without the anchor would lie before the text that it holds.
+const FIX_BROKEN_SCHEMA_THING: &str = "---\ntype: Thing\nid: b\ntitle: B\ndescription: A thing that no schema governs.\n---\n\n# B\n\nThe thing links [the note][sokf:a] and [the note again][sokf:a].\n\n- <a id=\"t-1-an-anchor-longer-than-the-code-after-it\"></a>T-1 `[the note](/knowledge/a.md)` in code, then [the note][sokf:a].\n\n<!-- sokf:links -->\n\n[sokf:a]: /knowledge/a.md\n";
+
+// sokf-tests: CLI-4_AC-106
+// sokf-tests: CLI-4_AC-107
+// sokf-tests: SOKF_VALIDATION_41
+#[test]
+fn a_fix_under_a_broken_schema_changes_none_of_its_files() {
+    for cache in [CacheMode::Off, CacheMode::On] {
+        let tree = TempTree::fixture("fix-broken-schema");
+        let before = tree.files();
+        let fixed = tree.validate(true, cache);
+        insta::assert_snapshot!("fix_broken_schema_report", json(&fixed));
+        // The fix changes no file whose schema breaks the grammar, and the
+        // report names each one as a file that sokf doesn't check.
+        for rel in FIX_BROKEN_SCHEMA_KEPT {
+            let held = &before.iter().find(|(r, _)| r == rel).unwrap().1;
+            assert_eq!(&tree.read(rel), held, "{rel}");
+            assert!(
+                fixed
+                    .errors
+                    .iter()
+                    .any(|f| f.criterion == "SOKF_VALIDATION_41"
+                        && f.path.as_str() == format!("/{rel}")),
+                "{rel}: {}",
+                json(&fixed)
+            );
+        }
+        // The fix keeps the anchor of the document that no schema governs,
+        // and still respells its references, but none inside a code span.
+        assert_eq!(tree.read("knowledge/b.md"), FIX_BROKEN_SCHEMA_THING);
+        let again = tree.validate(true, cache);
+        assert!(again.fixes.is_empty(), "{}", json(&again));
+        assert_eq!(again.errors, fixed.errors);
+    }
+}

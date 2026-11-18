@@ -1,4 +1,4 @@
-sokf: "0.6"
+sokf: "0.7"
 name: fixture
 scope: test
 description: A clean fixture store.

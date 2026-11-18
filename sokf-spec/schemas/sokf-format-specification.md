@@ -37,11 +37,10 @@ frontmatter:
   title:
     const: "SOKF: Format specification"
   description:
-    guidance: The description lists the parts of a knowledge store that the specification defines.
     example: The format of a knowledge store, with its manifest, its documents and their frontmatter, its sidecars, its links, and the generated blocks of its files.
   version:
     template: '${:int}.${:int}'
-    example: "0.6"
+    example: "0.7"
     guidance: The version is the SOKF version that the document defines.
   status:
     enum: [draft, stable]
@@ -135,7 +134,8 @@ sections:
       - kind: prose
         rules:
           - text: "This specification defines the Superdev Open Knowledge Format (SOKF): what a knowledge store is, and what its files hold."
-            max: 1
+            rule-id: defining-sentence
+            max: { hard: 1, when-at-limit: "Write anything more as informative paragraphs after the fixed sentence." }
           - pattern: '.'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -168,7 +168,7 @@ sections:
     guidance: This section says, in fixed text, how the specification states its rules.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Put any other text in the section that it concerns." }
         each:
           text: "Each normative rule of this specification is a criterion in the EARS (Easy Approach to Requirements Syntax) form, with a key of the form `SOKF_FORMAT_n`."
   - heading: "1. Terminology"
@@ -176,7 +176,7 @@ sections:
     rule-id: section-1
     guidance: >
       This section defines each term of the specification, one item to a term: the term's
-      name in backticks, then what it is. The subject of each criterion is one of these terms,
+      name in backticks, then what it is. Each further fact about a term has a sentence of its own. The subject of each criterion is one of these terms,
       and the schema checks each subject against the type `sokf-subject`, which lists them.
     blocks:
       - kind: bullet-list
@@ -198,8 +198,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -212,7 +213,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -235,7 +236,7 @@ sections:
           A code block illustrates a criterion with an example, such as a manifest or the frontmatter of
           a document, and states no rule of its own, because only a criterion states a rule.
         example: |
-          sokf: "0.6"
+          sokf: "0.7"
           name: plumber
           scope: plan9
           description: The contract, the design, and the decisions of the Plan 9 plumber.
@@ -249,8 +250,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -263,7 +265,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -291,6 +293,57 @@ sections:
           title: Plumber
           description: How the plumber matches each message against the rules and delivers it to a port.
           resource: /sys/src/cmd/plumb
+  - heading: { template: '3.${:int} ${}', example: "3.1 Descriptions" }
+    level: 3
+    parent: section-3
+    optional: true
+    repeat: true
+    blocks-ordered: false
+    guidance: >
+      Each subsection covers one topic of its section, and its number begins with the section's
+      number, because the code and other documents cite a subsection by number.
+    blocks:
+      - kind: prose
+        optional: true
+        repeat: true
+        guidance: >
+          Prose explains the rules of the subsection and gives their reasons, and it is
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
+        each:
+          pattern: '.'
+          prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
+          example:
+            - 'The index of a directory lists each document by its title and its description, so a reader meets the description before they open the document.'
+      - kind: bullet-list
+        optional: true
+        repeat: true
+        guidance: >
+          A list is either a list of criteria or a named list, which takes the place of a
+          table. A sentence before a named list says what the list contains, and each item names one
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
+          two lists, because two lists in a row read as one.
+        rules:
+          - format: sokf-criterion
+            unique: repository
+            min: 0
+            example:
+              - 'SOKF_FORMAT_26 [ubiquitous]: the frontmatter SHALL give `title` and `description`, when present, as strings.'
+          - template: '`${}` - ${}'
+            min: 0
+            prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
+            example:
+              - '`description` - The text that the index shows beside the title.'
+      - kind: code
+        optional: true
+        repeat: true
+        lang: any
+        guidance: >
+          A code block illustrates a criterion with an example, such as the frontmatter of a
+          document, and states no rule of its own, because only a criterion states a rule.
+        example: |
+          description: How the plumber matches each message against the rules and delivers it to a port.
   - heading: "4. Write classes"
     level: 2
     rule-id: section-4
@@ -301,8 +354,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -315,7 +369,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -350,8 +404,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -363,7 +418,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -395,8 +450,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -409,7 +465,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -447,8 +503,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -461,7 +518,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -498,8 +555,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -512,7 +570,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -560,8 +618,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the subsection and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -573,7 +632,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -607,8 +666,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the section and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -621,7 +681,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -670,8 +730,9 @@ sections:
         repeat: true
         guidance: >
           Prose explains the rules of the subsection and gives their reasons, and it is
-          informative. A sentence that says what has to be true is a criterion in a list.
-          Only a criterion has a key, and the code and the tests cite that key.
+          informative. Each reason is one sentence, and a paragraph can give several. A
+          sentence that says what has to be true is a criterion in a list. Only a
+          criterion has a key, and the code and the tests cite that key.
         each:
           pattern: '.'
           prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -684,7 +745,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -723,7 +784,8 @@ sections:
       - kind: prose
         rules:
           - text: "A knowledge store conforms to SOKF when it meets each criterion of this specification and of the [schema specification][sokf:sokf-schema-spec] that applies to it."
-            max: 1
+            rule-id: conformance-sentence
+            max: { hard: 1, when-at-limit: "Write anything more as informative paragraphs after the fixed sentence." }
           - pattern: '.'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -734,7 +796,7 @@ sections:
         guidance: >
           A list is either a list of criteria or a named list, which takes the place of a
           table. A sentence before a named list says what the list contains, and each item names one
-          thing in backticks and then says what it is. A paragraph or a code block separates
+          thing in backticks and then says what it is. Each further fact about the thing has a sentence of its own. A paragraph or a code block separates
           two lists, because two lists in a row read as one.
         rules:
           - format: sokf-criterion
@@ -756,7 +818,7 @@ sections:
         repeat: true
         guidance: >
           A list is either a list of criteria or a named list of faults, one fault to an item: its
-          name in backticks, then what it is.
+          name in backticks, then what it is. Each further fact about a fault has a sentence of its own.
         rules:
           - format: sokf-criterion
             unique: repository
