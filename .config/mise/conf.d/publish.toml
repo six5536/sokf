@@ -15,6 +15,14 @@ run = "node .config/mise/scripts/github-publish.mts"
 description = "Print the jobs of build.yml as JSON"
 run = "node .config/mise/scripts/ci-matrix-build.mts"
 
+[tasks."test:fast:github-publish"]
+hide = true
+run = "node --test .config/mise/scripts/github-publish.test.mts"
+
+[tasks."coverage:check:github-publish"]
+hide = true
+depends = ["test:fast:github-publish"]
+
 [tasks."test:fast:ci-matrix-build"]
 hide = true
 run = "node --test .config/mise/scripts/ci-matrix-build.test.mts"

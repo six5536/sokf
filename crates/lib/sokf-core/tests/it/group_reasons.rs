@@ -109,7 +109,7 @@ fn a_refused_group_sets_aside_every_block_it_spanned() {
     assert_eq!(
         errors("1", &format!("{GOOD}\n{GOOD}")),
         vec![
-            "the group block allows at most 1 unit; it has 2. When at the limit: Each figure past the limit goes in a document of its own."
+            "the group block allows at most 1 repetition; it has 2. When at the limit: Each figure past the limit goes in a document of its own."
         ]
     );
 }

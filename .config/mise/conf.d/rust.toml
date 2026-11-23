@@ -9,6 +9,9 @@ cargo-binstall = "1.26.2"
 "cargo:cargo-nextest" = "0.9.151"
 "cargo:cargo-llvm-cov" = "0.9.1"
 "cargo:cargo-deny" = "0.20.2"
+# sccache, for CI, where only the environment turns it on, never .cargo/config.toml. The
+# dev container pins its own in mise's system config, so that it works in every directory.
+sccache = "0.19.0"
 
 [tasks."audit:rust"]
 hide = true

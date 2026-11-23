@@ -1,9 +1,19 @@
 name: Set up the tools
-description: Keeps the tools in one folder and installs what is missing.
+description: >-
+  Keeps the tools in one folder and installs what is missing. Where the project has the
+  local action cache-restore, it runs it before the install and again after it.
 
 inputs:
   tools:
     description: The tools to install, such as node. By default, every tool.
+    required: false
+    default: ""
+  cache-s3-access-key-id:
+    description: The key id of the S3 store of the pack ci-cache-s3, which only its action cache-restore gets.
+    required: false
+    default: ""
+  cache-s3-secret-access-key:
+    description: The secret key of the S3 store of the pack ci-cache-s3, which only its action cache-restore gets.
     required: false
     default: ""
 
@@ -18,9 +28,25 @@ runs:
           echo "MISE_DATA_DIR=$TOOLS/mise"
           echo "MISE_RUSTUP_HOME=$TOOLS/rustup"
           echo "npm_config_cache=$TOOLS/npm"
+          echo "MISE_DISABLE_TOOLS=${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}npm:@anthropic-ai/claude-code"
         } >> "$GITHUB_ENV"
+    - name: Restore the caches
+      if: hashFiles('.github/actions/cache-restore/action.yml') != ''
+      uses: ./.github/actions/cache-restore
+      with:
+        tools: ${{ inputs.tools }}
+        access-key-id: ${{ inputs.cache-s3-access-key-id }}
+        secret-access-key: ${{ inputs.cache-s3-secret-access-key }}
     - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
       with:
         version: 2026.11.4
         cache: false
         install_args: ${{ inputs.tools }}
+    - name: Cache the build
+      if: hashFiles('.github/actions/cache-restore/action.yml') != ''
+      uses: ./.github/actions/cache-restore
+      with:
+        tools: ${{ inputs.tools }}
+        access-key-id: ${{ inputs.cache-s3-access-key-id }}
+        secret-access-key: ${{ inputs.cache-s3-secret-access-key }}
+        phase: build

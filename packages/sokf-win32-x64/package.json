@@ -1,6 +1,6 @@
 {
   "name": "@six5536/sokf-win32-x64",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Prebuilt sokf binary for win32-x64.",
   "keywords": [
     "cli",
