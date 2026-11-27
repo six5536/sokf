@@ -1,20 +1,23 @@
 //! This module implements `sokf guide` (CLI-17), which prints the guidance that
 //! a document's schema gives for the document's parts at the document's
-//! lifecycle states. The engine's `derive::guide` returns that guidance, and
-//! `sokf new` writes the same words in its scaffold.
+//! lifecycle states, with each part's example. The engine's
+//! `derive::guide_for` returns that guidance, and the example that the
+//! schema's scaffold writes for each part with the document's own values,
+//! and `sokf new` prints the guide of the document that it creates.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
 };
 
-use schemars::JsonSchema;
-use serde::Serialize;
-use tramlines_md::{check::Counts, derive};
+use tramlines_md::{
+    check::{self, Counts, HeadingMatch},
+    derive,
+};
 
 use crate::{
-    Cache, CacheMode, Document, Error, Model, RepoPath, RepoRoot, Result, config,
-    grammar::{self, Label, LimitKind, Section, Shape, SokfSchema, States, Text, squash},
+    Cache, CacheMode, Document, Error, Model, RepoPath, RepoRoot, Result, Spanned, Yaml, config,
+    grammar::{self, Label, LimitKind, Section, SokfSchema, States, squash},
     graph,
     model::{ParseMode, parse_source},
     scaffold, source,
@@ -34,343 +37,9 @@ pub struct GuideOptions {
     pub cache: CacheMode,
 }
 
-// sokf:begin guide-report
-/// `GuideReport` is the report of `sokf guide --json`: the guide of each
-/// document that an argument names, in the order of the arguments
-/// (CLI-17_AC-17).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-#[schemars(title = "sokf guide report")]
-pub struct GuideReport {
-    /// `documents` holds one guide for each argument, in the order of the
-    /// arguments.
-    pub documents: Vec<DocumentGuide>,
-}
+mod report;
 
-/// `DocumentGuide` holds the guidance that a document's schema gives for
-/// the parts that the document's lifecycle states admit, in the schema's
-/// order (CLI-17_AC-6). Each `text` holds the words of the guidance line
-/// that `sokf new` writes before the same part at the same states.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct DocumentGuide {
-    /// `path` is the path of the document.
-    pub path: RepoPath,
-    /// `id` is the `id` of the document. It is absent when the frontmatter
-    /// has none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub id: Option<String>,
-    /// `type` is the `type` of the document.
-    #[serde(rename = "type")]
-    pub type_name: String,
-    /// `schema` is the path of the schema that governs the document. It is
-    /// absent for a schema, which the grammar of the schema language
-    /// governs. Each `line` of the guide is a line of this file.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "RepoPath")]
-    pub schema: Option<RepoPath>,
-    /// `states` maps each lifecycle key, in the order of the lifecycle, to
-    /// the state at which the guide shows the document: the document's own
-    /// state, or the state that `--state` gives.
-    #[schemars(with = "BTreeMap<String, String>")]
-    pub states: serde_json::Map<String, serde_json::Value>,
-    /// `guidance` is the schema's top-level `guidance`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub guidance: Option<String>,
-    /// `bans` holds the message of each ban of the whole body, in order.
-    pub bans: Vec<String>,
-    /// `text` holds the words of the guidance line that opens the body: the
-    /// schema's guidance, then the message of each ban of the whole body. It
-    /// is absent when the schema has neither.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub text: Option<String>,
-    /// `labels` holds each attribution label that the schema declares, in
-    /// the schema's order, once for the whole document (CLI-17_AC-35). It is
-    /// empty for a schema without labels.
-    pub labels: Vec<LabelGuide>,
-    /// `frontmatter` holds each frontmatter key that the schema declares and
-    /// the states admit, in the schema's order, then each lifecycle key.
-    pub frontmatter: Vec<KeyGuide>,
-    /// `links` holds each `links` rule that the states admit, in the schema's
-    /// order, except a rule whose hard limit of 0 bans its links.
-    pub links: Vec<LinkGuide>,
-    /// `preamble` is the part of the body before the first heading, where
-    /// the schema declares one that the states admit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "PreambleGuide")]
-    pub preamble: Option<PreambleGuide>,
-    /// `sections` holds each section that the states admit, in the schema's
-    /// order, with each section that declares `parent` after its parent.
-    pub sections: Vec<SectionGuide>,
-}
-
-/// `LabelGuide` holds one attribution label of the schema.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct LabelGuide {
-    /// `key` is the label's key, `human` or `agent`.
-    pub key: String,
-    /// `words` are the words that a document writes between the label's
-    /// square brackets: sokf's words for the label in the language of the
-    /// schema, or else the key.
-    pub words: String,
-    /// `meaning` is sokf's sentence that says what the label means, in the
-    /// language of the schema. It is absent where sokf's texts hold none in
-    /// that language.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub meaning: Option<String>,
-}
-
-/// `KeyGuide` holds the guidance of one frontmatter key.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct KeyGuide {
-    /// `key` is the key.
-    pub key: String,
-    /// `lifecycle` is true when the key is a lifecycle key rather than a
-    /// declared one.
-    pub lifecycle: bool,
-    /// `optional` is true when the key can be absent.
-    pub optional: bool,
-    /// `guidance` is the key's own `guidance`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub guidance: Option<String>,
-    /// `limit` is the limit on the elements of the key's list. It is absent
-    /// when the key has no `max`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "GuideLimit")]
-    pub limit: Option<GuideLimit>,
-    /// `text` holds the words of the guidance line before the key: sokf's own
-    /// text for the key, which is the rule for writing a `description`, then
-    /// the key's guidance, then the words that state its limit and the limit's
-    /// `when-at-limit`. It is absent when the key has none of them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub text: Option<String>,
-    /// `line` is the line of the key's rule in the schema.
-    pub line: usize,
-}
-
-/// `LinkGuide` holds the guidance of one `links` rule.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct LinkGuide {
-    /// `rel` is the relationship of the links that the rule governs.
-    pub rel: String,
-    /// `optional` is true when the rule's `min` is 0.
-    pub optional: bool,
-    /// `limit` is the limit on the links of the rule. It is absent when the
-    /// rule has no `max`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "GuideLimit")]
-    pub limit: Option<GuideLimit>,
-    /// `text` holds the words of the guidance line before the link: the
-    /// rule's guidance, then the words that state its limit and the limit's
-    /// `when-at-limit`. It is absent when the rule has neither.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub text: Option<String>,
-}
-
-/// `PreambleGuide` holds the guidance of the preamble.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct PreambleGuide {
-    /// `guidance` is the preamble's own `guidance`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub guidance: Option<String>,
-    /// `text` holds the words of the guidance line before the preamble.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub text: Option<String>,
-    /// `blocks` holds each block that the states admit, in order.
-    pub blocks: Vec<BlockGuide>,
-    /// `line` is the line of the preamble in the schema.
-    pub line: usize,
-}
-
-/// `SectionGuide` holds the guidance of one section.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct SectionGuide {
-    /// `heading` is the heading as a finding of `validate` names it: its
-    /// text, its template or pattern, or `<key>` for a heading that takes
-    /// the value of the frontmatter key `key`.
-    pub heading: String,
-    /// `level` is the level of the heading.
-    pub level: u8,
-    /// `rule_id` is the section's `rule-id`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub rule_id: Option<String>,
-    /// `parent` is the `rule-id` of the section that this one lies inside.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub parent: Option<String>,
-    /// `optional` is true when the section can be absent at the states.
-    pub optional: bool,
-    /// `repeat` is true when the heading can occur more than once.
-    pub repeat: bool,
-    /// `held` is true when the document has a heading at the section's
-    /// level whose text has the section's heading shape, or one of its
-    /// `renamed-from` texts (CLI-17_AC-15).
-    pub held: bool,
-    /// `guidance` is the section's own `guidance`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub guidance: Option<String>,
-    /// `text` holds the words of the guidance line before the heading.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub text: Option<String>,
-    /// `blocks` holds each block of the section's body that the states
-    /// admit, in order.
-    pub blocks: Vec<BlockGuide>,
-    /// `line` is the line of the section's rule in the schema.
-    pub line: usize,
-}
-
-/// `BlockGuide` holds the guidance of one block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct BlockGuide {
-    /// `kind` is the kind of the block, as the grammar names it, such as
-    /// `prose` or `bullet-list`.
-    pub kind: String,
-    /// `rule_id` is the block's `rule-id`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub rule_id: Option<String>,
-    /// `pos` is the block's place in the list that declares it, from 1.
-    pub pos: usize,
-    /// `optional` is true when the block can be absent at the states.
-    pub optional: bool,
-    /// `guidance` is the block's own `guidance`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub guidance: Option<String>,
-    /// `limits` holds the block's own limit, then the limit of each of its
-    /// unit rules and line rules, in the schema's order.
-    pub limits: Vec<RuleLimit>,
-    /// `labels` holds the block's own `label`, then the `label` of each of its
-    /// unit rules that declares one, in the schema's order (CLI-17_AC-37).
-    pub labels: Vec<RuleLabel>,
-    /// `bans` holds the message of each ban of the block's unit rules, of
-    /// the formats that they bind, and of their line rules, each once, in
-    /// order.
-    pub bans: Vec<String>,
-    /// `text` holds the words of the guidance line before the block: its
-    /// guidance, then the words that state each limit and the limit's
-    /// `when-at-limit`, then the message of each ban. It is absent when the
-    /// block has none of them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub text: Option<String>,
-    /// `blocks` holds the blocks of a group, and the blocks inside the items
-    /// of a list, that the states admit, in order.
-    pub blocks: Vec<BlockGuide>,
-    /// `line` is the line of the block's rule in the schema.
-    pub line: usize,
-}
-
-/// `RuleLimit` is one limit of a block: its own, or one of a unit rule's or
-/// a line rule's.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct RuleLimit {
-    /// `rule` is the place of the unit rule or the line rule whose limit this
-    /// is, among the unit rules of the schema, counted from 0. It is absent for
-    /// the block's own limit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "usize")]
-    pub rule: Option<usize>,
-    /// `format` is the name of the format that the unit rule or the line
-    /// rule binds. It is absent for the block's own limit and for a rule
-    /// that binds no format.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub format: Option<String>,
-    /// `rule_id` is the `rule-id` of the unit rule or the line rule. It is
-    /// absent for the block's own limit and for a rule without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub rule_id: Option<String>,
-    /// `counts` is what the unit rule or the line rule counts: the units of
-    /// the block, or the content lines of a code block or an HTML block. It
-    /// is absent for the block's own limit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "GuideCounts")]
-    pub counts: Option<GuideCounts>,
-    /// `line` is the line of the rule in the schema.
-    pub line: usize,
-    /// The limit.
-    #[serde(flatten)]
-    pub limit: GuideLimit,
-}
-
-/// `RuleLabel` says whether the units of a block, or the units of one of its
-/// unit rules, carry a label.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct RuleLabel {
-    /// `rule` is the place of the unit rule whose `label` this is, among the
-    /// unit rules of the schema, counted from 0. It is absent for the block's
-    /// own `label`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "usize")]
-    pub rule: Option<usize>,
-    /// `rule_id` is the `rule-id` of the unit rule. It is absent for the
-    /// block's own `label` and for a rule without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub rule_id: Option<String>,
-    /// `line` is the line of the rule in the schema.
-    pub line: usize,
-    /// `label` is `required` where each unit carries a label, and `optional`
-    /// where a unit carries one if its writer gives one.
-    pub label: GuideLabel,
-}
-
-/// `GuideLabel` says whether a unit carries a label.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GuideLabel {
-    /// Every unit carries a label.
-    Required,
-    /// A unit carries a label where its writer gives one.
-    Optional,
-}
-
-/// `GuideLimit` is a limit on a part: its kind, the number of units, lines, or
-/// elements that it states, and what the writer does at the limit.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct GuideLimit {
-    /// `kind` is `soft` for the usual length, which nothing checks, or
-    /// `hard` for the most that a part can hold.
-    pub kind: GuideLimitKind,
-    /// `count` is the number that the limit states.
-    pub count: usize,
-    /// `when_at_limit` is the schema's text that says what the writer does at
-    /// the limit.
-    pub when_at_limit: String,
-}
-
-/// `GuideCounts` is what the limit of a unit rule or a line rule counts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GuideCounts {
-    /// The units of the block: its paragraphs, items, rows, or repetitions.
-    Units,
-    /// The content lines of a code block or an HTML block.
-    Lines,
-}
-
-/// `GuideLimitKind` is the kind of a limit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GuideLimitKind {
-    /// The usual length, which nothing checks.
-    Soft,
-    /// The most that a part can hold.
-    Hard,
-}
-// sokf:end guide-report
+pub use report::*;
 
 /// `guide` returns the guide of each document that `opts.documents` names,
 /// in the order of the arguments. It reads the tree as a lookup does, reads
@@ -509,6 +178,7 @@ fn own_states(doc: &Document, schema: &SokfSchema, states: &States) -> Result<()
 // sokf-implements: CLI-17_AC-9
 // sokf-implements: CLI-17_AC-10
 // sokf-implements: CLI-17_AC-29
+// sokf-implements: CLI-17_AC-38
 fn document_guide(
     doc: &Document,
     type_name: &str,
@@ -518,16 +188,24 @@ fn document_guide(
     words: &scaffold::Words<'_>,
 ) -> DocumentGuide {
     // The engine's guide holds each part that the states admit, each with
-    // the words of the scaffold's guidance line for it, and no rule,
-    // pattern, or example.
+    // the words of the scaffold's guidance line for it, and the example that
+    // the scaffold writes for it with the document's own values, and no rule
+    // or pattern.
     let host = scaffold::SokfScaffold::with_words(schema, words);
-    let g = derive::guide(&schema.core, states, &host);
-    let admitted: Vec<&Section> = schema
-        .core
-        .sections
-        .iter()
-        .filter(|s| s.common.only.admits(states))
+    let (g, plain) = guides(doc, schema, states, &host);
+    let (frontmatter_text, body_text) = texts(doc);
+    let key_example = |key: &str| {
+        plain
+            .frontmatter
+            .iter()
+            .find(|k| k.key == key)
+            .and_then(|k| k.example.clone())
+    };
+    let admitted: Vec<usize> = (0..schema.core.sections.len())
+        .filter(|&i| schema.core.sections[i].common.only.admits(states))
         .collect();
+    // The check's own match of each heading to its section.
+    let matches = check::match_headings(crate::check::doc_view(doc).engine(), &schema.core, states);
     // The scaffold opens its body with the schema's guidance, then the
     // message of each ban of the whole body, on one line.
     let opening: Vec<String> = g
@@ -569,7 +247,10 @@ fn document_guide(
         frontmatter: g
             .frontmatter
             .into_iter()
-            .map(|k| key_guide(k, words))
+            .map(|mut k| {
+                k.example = key_example(&k.key);
+                key_guide(k, words)
+            })
             .collect(),
         // The scaffold writes the guidance of each `links` rule that the
         // states admit before the rule's entries, as one line, and leaves
@@ -583,11 +264,13 @@ fn document_guide(
                 optional: r.min == 0,
                 limit: r.max.clone().map(limit),
                 text: scaffold::link_text(r, Some(words)),
+                example: scaffold::link_example(r),
             })
             .collect(),
         preamble: g.preamble.map(|p| PreambleGuide {
             guidance: p.guidance,
             text: p.text,
+            example: p.example,
             blocks: p.blocks.into_iter().map(block_guide).collect(),
             line: p.line,
         }),
@@ -599,8 +282,9 @@ fn document_guide(
             .into_iter()
             .enumerate()
             .map(|(i, s)| {
-                debug_assert_eq!(admitted[i].common.line, s.line);
-                let held = holds(doc, &admitted, i);
+                let section = admitted[i];
+                debug_assert_eq!(schema.core.sections[section].common.line, s.line);
+                let held = holds(doc, &schema.core.sections, &matches, section);
                 SectionGuide {
                     heading: s.heading,
                     level: s.level,
@@ -611,12 +295,106 @@ fn document_guide(
                     held,
                     guidance: s.guidance,
                     text: s.text,
+                    example: s.example,
                     blocks: s.blocks.into_iter().map(block_guide).collect(),
                     line: s.line,
                 }
             })
             .collect(),
+        frontmatter_text,
+        body_text,
     }
+}
+
+/// `texts` returns the YAML of the frontmatter of `doc` and its body, as the
+/// source's split gives them.
+fn texts(doc: &Document) -> (String, String) {
+    let split = source::split(&doc.source);
+    let front = split.frontmatter.map_or("", |(yaml, _)| yaml);
+    (front.to_string(), split.body.to_string())
+}
+
+/// `guides` returns the engine's guide of `doc` at `states` twice: with each
+/// scalar frontmatter value of the document, and with its id and its title
+/// alone, from which the example of each other frontmatter key comes, because
+/// the writer's own value, right or wrong, is no example of the key. A value
+/// of the document that no scaffold can hold, such as a title that a
+/// paragraph bound to it can't hold, would leave every part without an
+/// example, so both then carry the schema's values.
+fn guides(
+    doc: &Document,
+    schema: &SokfSchema,
+    states: &States,
+    host: &scaffold::SokfScaffold<'_>,
+) -> (derive::Guide, derive::Guide) {
+    let mut values = scalar_values(doc);
+    if derive::derive_for(&schema.core, states, host, &values).is_err() {
+        values.clear();
+    }
+    let own: BTreeMap<String, String> = values
+        .iter()
+        .filter(|(k, _)| matches!(k.as_str(), "id" | "title"))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    (
+        derive::guide_for(&schema.core, states, host, &values),
+        derive::guide_for(&schema.core, states, host, &own),
+    )
+}
+
+/// `scalar_values` returns each top-level frontmatter key of `doc` whose
+/// value is a scalar that holds text, with that text, which the engine
+/// splices into each example in place of the schema's, so that an example
+/// carries the document's own values.
+// sokf-implements: CLI-17_AC-39
+fn scalar_values(doc: &Document) -> BTreeMap<String, String> {
+    let Some(Spanned {
+        value: Yaml::Map(entries),
+        ..
+    }) = &doc.frontmatter
+    else {
+        return BTreeMap::new();
+    };
+    entries
+        .iter()
+        .filter(|(_, v)| !matches!(v.value, Yaml::Null | Yaml::Seq(_) | Yaml::Map(_)))
+        .filter_map(|(k, v)| Some((k.value.clone(), v.scalar_text()?)))
+        .filter(|(_, v)| !v.trim().is_empty())
+        .collect()
+}
+
+/// `new_guide` returns the guide of the new document `text`, which `sokf new`
+/// builds at `path` of the type `type_name` at `states`, as `sokf guide`
+/// returns it for the document once written, with `words`, sokf's texts in
+/// the language of the schema.
+// sokf-implements: CLI-6_AC-127
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the guide of a new document needs what `new` resolved, field by field"
+)]
+pub(super) fn new_guide(
+    path: &RepoPath,
+    text: &str,
+    type_name: &str,
+    schema: &SokfSchema,
+    model: &Model,
+    compiled: &grammar::Compiled,
+    knowledge: Option<usize>,
+    states: &States,
+    words: &scaffold::Words<'_>,
+) -> DocumentGuide {
+    let source = crate::Source::from_text(path.clone(), text);
+    let parsed = parse_source(&source, ParseMode::Document);
+    let doc = Document::new(source, parsed);
+    // The store that holds the path chooses the schema's path, as `guide`
+    // chooses it for the document once written.
+    let schema_path = model
+        .knowledge_of(path)
+        .or(knowledge)
+        .and_then(|k| compiled.for_type(model, k, type_name))
+        .filter(|_| type_name != "Schema")
+        .map(|(r, _)| model.schema(r).doc.path.clone());
+    document_guide(&doc, type_name, schema, schema_path, states, words)
 }
 
 /// `key_guide` copies the engine's guide of one frontmatter key, with sokf's
@@ -633,6 +411,7 @@ fn key_guide(k: derive::KeyGuide, words: &scaffold::Words<'_>) -> KeyGuide {
         guidance: k.guidance,
         limit: k.limit.map(limit),
         text,
+        example: k.example,
         line: k.line,
         key: k.key,
     }
@@ -643,6 +422,9 @@ fn key_guide(k: derive::KeyGuide, words: &scaffold::Words<'_>) -> KeyGuide {
 /// it at the start of the guidance line before the key: the rule for
 /// writing a description, in the language of the schema.
 // sokf-implements: CLI-17_AC-32
+// sokf-implements: CLI-6_AC-118
+// sokf-implements: CLI-6_AC-119
+// sokf-implements: CLI-6_AC-123
 fn host_text(key: &str, words: &scaffold::Words<'_>) -> Option<String> {
     (key == "description")
         .then(|| words.description())
@@ -691,6 +473,7 @@ fn block_guide(b: derive::BlockGuide) -> BlockGuide {
             .collect(),
         bans: b.bans,
         text: b.text,
+        example: b.example,
         blocks: b.blocks.into_iter().map(block_guide).collect(),
         line: b.line,
     }
@@ -707,75 +490,54 @@ fn limit(l: grammar::Limit) -> GuideLimit {
     }
 }
 
-/// `holds` reports whether `doc` has a heading of the section `i` of
-/// `sections`, the sections that the states admit, as `takes` reads a
-/// heading.
+/// `holds` reports whether `doc` has a heading of the section `i` of the
+/// schema's sections, as `takes` reads a heading, given `matches`, the
+/// section that the check matches each heading to.
 // sokf-implements: CLI-17_AC-15
-fn holds(doc: &Document, sections: &[&Section], i: usize) -> bool {
-    (0..doc.body.headings.len()).any(|h| takes(doc, sections, i, h))
+fn holds(doc: &Document, sections: &[Section], matches: &[Option<HeadingMatch>], i: usize) -> bool {
+    (0..doc.body.headings.len()).any(|h| takes(doc, sections, matches, i, h))
 }
 
 /// `takes` reports whether the heading `h` of `doc` is a heading of the
-/// section `i` of `sections`, the sections that the states admit: a heading
-/// at the section's level whose text has the section's heading shape or one
-/// of its `renamed-from` texts. A section whose heading has a template or a
-/// pattern leaves a heading whose text another section gives exactly, at
-/// any level, as the check gives the heading to that section first, and
-/// a `renamed-from` text takes a heading only where no section takes it by
-/// its text or its shape. A section inside a parent takes only a heading
-/// that lies under a heading of the parent.
+/// section `i` of `sections`, the schema's sections: the check matches the
+/// heading to the section, the heading stands at the section's level, and
+/// a heading bound to the frontmatter reads as the value. The match reads
+/// each heading in tramlines' fixed spelling of its markup, gives a heading
+/// whose text another section gives exactly to that section, and gives a
+/// heading to a section by a `renamed-from` text only where no section
+/// takes it by its text or its shape. A section inside a parent takes only
+/// a heading that lies under a heading of the parent, which the match
+/// doesn't read.
 // sokf-implements: CLI-17_AC-25
 // sokf-implements: CLI-17_AC-26
 // sokf-implements: CLI-17_AC-27
-fn takes(doc: &Document, sections: &[&Section], i: usize, h: usize) -> bool {
-    let section = sections[i];
+fn takes(
+    doc: &Document,
+    sections: &[Section],
+    matches: &[Option<HeadingMatch>],
+    i: usize,
+    h: usize,
+) -> bool {
+    if !crate::check::headings::opens(doc, sections, matches, h, i) {
+        return false;
+    }
     let headings = &doc.body.headings;
-    let heading = &headings[h];
-    if heading.level != section.level {
-        return false;
-    }
-    // A heading of exact text equals the text as written, as the check
-    // compares it, and a shape reads the text squashed.
-    let exact = |s: &Section| match &s.heading.shape {
-        Shape::Text(Text::Literal(t)) => t == &heading.text,
-        Shape::Text(Text::From(key)) => doc
-            .frontmatter
-            .as_ref()
-            .and_then(|f| f.get(key))
-            .and_then(crate::Spanned::scalar_text)
-            .is_some_and(|v| v == heading.text),
-        _ => false,
-    };
-    let text = squash(&heading.text);
-    let shaped = |s: &Section| {
-        !s.is_exact() && s.level == heading.level && s.heading.shape.matches(&text, |_| None)
-    };
-    let named = if section.is_exact() {
-        exact(section)
-    } else {
-        shaped(section) && !sections.iter().any(|s| exact(s))
-    };
-    // A `renamed-from` text takes only a heading that no section takes by
-    // its exact text or by its shape, as the check tries those first.
-    let renamed = section.renamed_from.iter().any(|r| r == &heading.text)
-        && !sections.iter().any(|s| exact(s) || shaped(s));
-    if !(named || renamed) {
-        return false;
-    }
-    let Some(parent) = &section.parent else {
+    let Some(parent) = &sections[i].parent else {
         return true;
     };
-    let Some(p) = sections
-        .iter()
-        .position(|s| s.rule_id.as_deref() == Some(parent.as_str()))
-    else {
-        return false;
-    };
     // The heading lies under the nearest heading above it at the parent's
-    // level or above, as the check finds the parent of a heading.
-    let level = sections[p].level;
-    (0..h)
-        .rev()
-        .find(|&j| headings[j].level <= level)
-        .is_some_and(|j| takes(doc, sections, p, j))
+    // level or above, as the check finds the parent of a heading. Only a
+    // parent that the states admit takes a heading.
+    (0..sections.len())
+        .filter(|&p| sections[p].rule_id.as_deref() == Some(parent.as_str()))
+        .any(|p| {
+            let level = sections[p].level;
+            (0..h)
+                .rev()
+                .find(|&j| headings[j].level <= level)
+                .is_some_and(|j| takes(doc, sections, matches, p, j))
+        })
 }
+
+#[cfg(test)]
+mod tests;

@@ -9,7 +9,6 @@ use tramlines_md::{
     markdown::BlockKind,
 };
 
-use super::front::guidance_comment;
 use crate::{
     Model,
     config::{Texts, fill_template, placeholders},
@@ -192,39 +191,6 @@ fn language_of(schema: &SokfSchema, manifest: Option<&Manifest>) -> String {
     given(&schema.core.core.language)
         .or_else(|| manifest.and_then(|m| given(&m.primary_language)))
         .unwrap_or_else(|| "en".to_string())
-}
-
-/// `with_description` returns `document`, a scaffold, with `rule`, the rule
-/// for writing a description, at the start of the guidance line before its
-/// `description` key, or on a guidance line of its own where the key has
-/// none. A scaffold without the key comes back as it was.
-// sokf-implements: CLI-6_AC-118
-// sokf-implements: CLI-6_AC-119
-pub fn with_description(document: &str, rule: &str) -> String {
-    let lines: Vec<&str> = document.split_inclusive('\n').collect();
-    // The frontmatter runs from the first line, `---`, to the next `---`.
-    if lines.first().map(|l| l.trim_end()) != Some("---") {
-        return document.to_string();
-    }
-    let Some(end) = lines.iter().skip(1).position(|l| l.trim_end() == "---") else {
-        return document.to_string();
-    };
-    let Some(at) = lines[1..=end]
-        .iter()
-        .position(|l| l.starts_with("description:"))
-        .map(|i| i + 1)
-    else {
-        return document.to_string();
-    };
-    // The engine writes the schema's guidance for the key on the line
-    // before it.
-    let own = guidance_comment("");
-    let mut out: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
-    match out[at - 1].strip_prefix(&own) {
-        Some(rest) => out[at - 1] = format!("{} {rest}", guidance_comment(rule)),
-        None => out.insert(at, format!("{}\n", guidance_comment(rule))),
-    }
-    out.concat()
 }
 
 #[cfg(test)]
@@ -424,30 +390,5 @@ mod tests {
             words.link_lead(&part_of, "part-of").as_deref(),
             Some("Keine. Stattdessen:")
         );
-    }
-
-    // sokf-tests: CLI-6_AC-118
-    // sokf-tests: CLI-6_AC-119
-    #[test]
-    fn the_rule_for_a_description_opens_the_line_before_the_key() {
-        let own =
-            "---\ntype: Note\n# sokf:guidance The note says why.\ndescription: Why.\n---\n\nBody\n";
-        assert_eq!(
-            with_description(own, "The rule."),
-            "---\ntype: Note\n# sokf:guidance The rule. The note says why.\ndescription: Why.\n---\n\nBody\n"
-        );
-        let bare = "---\ntype: Note\ndescription: Why.\n---\n";
-        assert_eq!(
-            with_description(bare, "The rule."),
-            "---\ntype: Note\n# sokf:guidance The rule.\ndescription: Why.\n---\n"
-        );
-        // Without the key, and in the body, nothing changes.
-        for text in [
-            "---\ntype: Note\n---\n\ndescription: x\n",
-            "# Title\n",
-            "---\ntype: Note\n",
-        ] {
-            assert_eq!(with_description(text, "The rule."), text);
-        }
     }
 }

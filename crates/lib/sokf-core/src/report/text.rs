@@ -7,19 +7,24 @@ use super::{Finding, FixOp, Report, Severity};
 
 /// `LISTED_WARNINGS` holds the keys of the warnings that the text report
 /// lists even without `--warnings`: the warnings at a stale and at an absent
-/// part of a harness, the warning that the formatter failed, and the warning
-/// at a file of the packs that an older sokf wrote, which the agent can act
-/// on at once (CLI-4_AC-43).
-pub(crate) const LISTED_WARNINGS: [&str; 4] = [
+/// part of a harness and at a part that may not be an edit, the warning that
+/// the formatter failed, and the warning at a file of the packs that an older
+/// sokf wrote, which the agent can act on at once (CLI-4_AC-43).
+pub(crate) const LISTED_WARNINGS: [&str; 5] = [
     STALE_PART,
     ABSENT_PART,
-    crate::formatter::WARNING,
+    UNVOUCHED_PART,
+    crate::compare::WARNING,
     LEFTOVER_PACKS,
 ];
 /// `STALE_PART` is the key of the warning at a stale part of a harness.
 pub(crate) const STALE_PART: &str = "CLI-4_AC-40";
 /// `ABSENT_PART` is the key of the warning at an absent part of a harness.
 pub(crate) const ABSENT_PART: &str = "CLI-4_AC-42";
+/// `UNVOUCHED_PART` is the key of the warning at a part of a harness that may
+/// not be an edit, because its record doesn't tell an edit from an earlier
+/// version of sokf's content.
+pub(crate) const UNVOUCHED_PART: &str = "CLI-4_AC-118";
 /// `LEFTOVER_PACKS` is the key of the warning at a file of the packs that an
 /// older sokf wrote.
 pub(crate) const LEFTOVER_PACKS: &str = "CLI-4_AC-104";
@@ -105,6 +110,32 @@ pub fn text(report: &Report, warnings: bool) -> String {
         tramlines_core::text::count(report.errors.len(), "error", "errors")
     );
     out
+}
+
+/// `fixable_line` returns the line that follows the line of counts in a run
+/// without `--fix`: the number of the findings that the report lists and
+/// that `--fix` repairs, followed by `potentially fixable with` and the
+/// command, or `None` where it lists none (CLI-4_AC-30). A file whose schema
+/// breaks the grammar holds none, because `--fix` leaves it unchanged
+/// (CLI-4_AC-106).
+// sokf-implements: CLI-4_AC-30
+pub fn fixable_line(report: &Report, warnings: bool) -> Option<String> {
+    let unchecked: std::collections::BTreeSet<&crate::RepoPath> = report
+        .errors
+        .iter()
+        .filter(|f| f.criterion == "SOKF_VALIDATION_41")
+        .map(|f| &f.path)
+        .collect();
+    let listed = report.errors.iter().chain(
+        report
+            .warnings
+            .iter()
+            .filter(|f| warnings || LISTED_WARNINGS.contains(&f.criterion.as_str())),
+    );
+    let fixable = listed
+        .filter(|f| !unchecked.contains(&f.path) && super::fixable::fixable(f))
+        .count();
+    (fixable > 0).then(|| format!("{fixable} potentially fixable with `sokf validate --fix`"))
 }
 
 #[cfg(test)]

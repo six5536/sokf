@@ -2,7 +2,8 @@
 // release-smoke.mts is a smoke test of a compiled sokf binary. It runs the
 // binary and checks what a user sees: the version line, the grammar and the
 // formats, a store that `sokf init` creates and `sokf validate` checks, a
-// schema that `sokf new` creates, and the exit codes 0, 1, and 2. Release
+// schema and a note that `sokf new` starts and their writer writes, and the
+// exit codes 0, 1, and 2. Release
 // continuous integration (CI) runs the script against each built artifact that its runner can execute. To
 // run it on your machine, run `mise run test:smoke`, which builds the release
 // binary first.
@@ -98,27 +99,92 @@ try {
     fail(`after a second harness install, not every part is current: ${JSON.stringify(again)}`);
   }
 
-  // `sokf new` creates a schema from the grammar's own template and updates
-  // the index that lists it. The schema passes `sokf validate` after its
-  // writer deletes the guidance lines.
-  const made = run(
-    ["--repo-root", repo, "new", "Schema", "--id", "schema-note", "--write"],
-    0,
-  ).stdout;
-  if (made !== "created /knowledge/schemas/schema-note.md\nupdated /knowledge/schemas/index.md\n") {
-    fail(`unexpected new report: ${JSON.stringify(made)}`);
+  // `sokf new` writes the skeleton of a schema, updates the index that lists
+  // it, and prints on stderr the guide of the new document, which names it.
+  // `--json` puts the same guide in its object, and writes nothing.
+  const made = run(["--repo-root", repo, "new", "Schema", "--id", "schema-note", "--write"], 0);
+  if (
+    made.stdout !==
+    "created /knowledge/schemas/schema-note.md\nupdated /knowledge/schemas/index.md\n"
+  ) {
+    fail(`unexpected new report: ${JSON.stringify(made.stdout)}`);
+  }
+  if (!made.stderr.includes("\n/knowledge/schemas/schema-note.md (Schema)\n")) {
+    fail(`the guide of the new schema does not name it: ${JSON.stringify(made.stderr)}`);
+  }
+  const drafted = run(["--repo-root", repo, "new", "Schema", "--id", "schema-draft", "--json"], 0);
+  let draft: unknown;
+  try {
+    draft = JSON.parse(drafted.stdout);
+  } catch (err) {
+    fail(
+      `new --json output is not valid JSON (${err instanceof Error ? err.message : String(err)}): ${JSON.stringify(drafted.stdout)}`,
+    );
+  }
+  if (
+    !isRecord(draft) ||
+    !isRecord(draft.guide) ||
+    draft.guide.path !== "/knowledge/schemas/schema-draft.md"
+  ) {
+    fail(`new --json holds no guide of the new document: ${drafted.stdout}`);
+  }
+  if (existsSync(join(repo, "knowledge", "schemas", "schema-draft.md"))) {
+    fail("new --json without --write wrote the document");
+  }
+
+  // The skeleton holds no example, so `sokf validate` reports each part that
+  // is still to write, and passes once the writer writes them: the
+  // description, and the fence of a schema of a note with one paragraph.
+  const unfilled = run(["--repo-root", repo, "validate"], 1).stdout;
+  if (
+    !unfilled.includes("/knowledge/schemas/schema-note.md:5: error: frontmatter key `description`")
+  ) {
+    fail(`the unfilled schema is not reported: ${JSON.stringify(unfilled)}`);
   }
   const schema = join(repo, "knowledge", "schemas", "schema-note.md");
+  const skeleton = readFileSync(schema, "utf8");
+  if (!skeleton.endsWith("\ndescription:\n---\n")) {
+    fail(`unexpected skeleton of a schema: ${JSON.stringify(skeleton)}`);
+  }
   writeFileSync(
     schema,
-    readFileSync(schema, "utf8")
-      .split("\n")
-      .filter((line) => !line.includes("sokf:guidance"))
-      .join("\n"),
+    skeleton.replace(
+      "\ndescription:\n",
+      "\ndescription: A note with a title and one paragraph.\n",
+    ) +
+      [
+        "",
+        "````yaml",
+        "line-limit: 40",
+        "frontmatter:",
+        "  type:",
+        "    const: Note",
+        "sections:",
+        "  - heading: { from: title }",
+        "    level: 1",
+        "    blocks:",
+        "      - kind: prose",
+        "        example: Milk, bread, and the good coffee.",
+        "````",
+        "",
+      ].join("\n"),
   );
   run(["--repo-root", repo, "validate", "--fix"], 0);
   if (run(["--repo-root", repo, "validate"], 0).stdout !== "0 errors, 0 warnings\n") {
-    fail("the created schema does not validate");
+    fail("the written schema does not validate");
+  }
+
+  // A document of the new type starts as a skeleton too, which `sokf
+  // validate` reports until its writer writes the paragraph.
+  run(["--repo-root", repo, "new", "Note", "--id", "groceries", "--write"], 0);
+  if (!run(["--repo-root", repo, "validate"], 1).stdout.includes("/knowledge/groceries.md:")) {
+    fail("the unfilled note is not reported");
+  }
+  const note = join(repo, "knowledge", "groceries.md");
+  writeFileSync(note, `${readFileSync(note, "utf8")}\nEggs, and flour for the cake.\n`);
+  run(["--repo-root", repo, "validate", "--fix"], 0);
+  if (run(["--repo-root", repo, "validate"], 0).stdout !== "0 errors, 0 warnings\n") {
+    fail("the written note does not validate");
   }
 
   writeFileSync(

@@ -19,10 +19,13 @@ use sokf_core::Output;
 // The `version` attribute puts the version in the man page header and in
 // `--help`. The built-in `-V` flag is disabled because `main::run` prints the
 // version itself. The built-in `-h` flag is disabled so that `help` below can
-// describe `--help` in a full sentence.
+// describe `--help` in a full sentence. The `about` text is the crate's
+// description without its last sentence, the mark of an unstable crate, which
+// crates.io shows but the help leaves out. A test of the help checks that the
+// two texts still agree.
 #[command(
     name = "sokf",
-    about,
+    about = "sokf validates knowledge stores in the Superdev Open Knowledge Format (SOKF): directories of Markdown documents with YAML frontmatter, which sokf checks against their schemas.",
     long_about = None,
     version,
     disable_version_flag = true,
@@ -68,7 +71,7 @@ pub enum Command {
     Validate(ValidateArgs),
     /// Print the schema language or the format registry that the validator uses.
     Info(InfoArgs),
-    /// Create a document of a type from its schema's scaffold.
+    /// Create a document of a type from its schema's skeleton, and print its guide.
     New(NewArgs),
     /// Print the knowledge as a graph, starting from any document, file, key, or directory.
     Graph(GraphArgs),
@@ -300,8 +303,8 @@ pub struct ValidateArgs {
     #[arg(long, value_name = "EXPR", requires = "json")]
     pub query: Option<String>,
 
-    /// List each warning. Default: list only the warnings at a stale or an absent part of a
-    /// harness, and print the number of warnings.
+    /// List each warning. Default: list only the warnings at a part of a harness that is
+    /// stale, is absent, or may not be an edit, and print the number of warnings.
     #[arg(long)]
     pub warnings: bool,
 
@@ -528,7 +531,7 @@ pub enum Layer {
 /// `NewArgs` holds the arguments of `new` (CLI-6).
 #[derive(Debug, Args)]
 pub struct NewArgs {
-    /// The document type. When more than one store declares the type, put the store before it, as in `sokf-spec:Grammar`, or give `--dir` or `--for` in that store. The scaffold of `Schema` comes from the grammar of the schema language, the set of rules that says what a schema can contain. `sokf info grammar` prints that grammar.
+    /// The document type. When more than one store declares the type, put the store before it, as in `sokf-spec:Grammar`, or give `--dir` or `--for` in that store. The skeleton of `Schema` comes from the grammar of the schema language, the set of rules that says what a schema can contain. `sokf info grammar` prints that grammar.
     #[arg(value_name = "TYPE", required = true)]
     pub type_name: Option<String>,
 
@@ -560,11 +563,11 @@ pub struct NewArgs {
     #[arg(long = "for", value_name = "PATH")]
     pub for_asset: Option<PathBuf>,
 
-    /// Write the file at its derived path and report `created PATH`, where PATH is that path. With `--json`, print the JSON object instead of that line.
+    /// Write the file at its derived path and report `created PATH`, where PATH is that path, with the guide on stderr. With `--json`, print the JSON object instead of that line.
     #[arg(long, conflicts_with = "id_only")]
     pub write: bool,
 
-    /// Print one JSON object with the id, the path, and the document, instead of the document alone, or, with `--write`, instead of the `created` line. `--json-schema` prints its schema.
+    /// Print one JSON object with the id, the path, the document, and its guide, instead of the document alone and the guide on stderr, or, with `--write`, instead of the `created` line. `--json-schema` prints its schema.
     #[arg(long, conflicts_with = "id_only")]
     pub json: bool,
 

@@ -10,8 +10,9 @@ mod pairs;
 mod region;
 
 pub use expand::{
-    DefinitionEntry, Expected, expected, expected_for, path_link_label, render_definitions,
+    DefinitionEntry, Expected, Fenced, expected, expected_for, path_link_label, render_definitions,
 };
 pub use graph::{includes_body, knowledge_of_additional};
-pub use pairs::pairs;
-pub use region::{RegionError, extract};
+pub(crate) use pairs::index_labels_as_written;
+pub use pairs::{definition_pair, index_pair, labels_as_written, pairs};
+pub use region::{Extraction, RegionError, extract, extract_lines};

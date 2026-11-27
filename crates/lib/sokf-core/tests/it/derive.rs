@@ -4,7 +4,7 @@
 
 // sokf-tests: CLI-6_AC-1
 
-use common::{TempTree, json, new_options, on};
+use common::{TempTree, examples, json, new_options, not_missing, on};
 use sokf_core::{CacheMode, NewOptions, new};
 
 use crate::common;
@@ -106,9 +106,11 @@ fn a_schema_with_no_templates_derives_one_per_state_and_passes() {
     );
 }
 
-// `sokf new` copies the scaffold, so a document that it creates from a
-// schema with no template passes validation.
+// `sokf new` writes the skeleton of the schema, so a document that it
+// creates from a schema with no template lacks only what its writer writes,
+// and the guide holds the scaffold's example of each part.
 // sokf-tests: CLI-6_AC-1
+// sokf-tests: CLI-6_AC-126
 #[test]
 fn new_creates_a_document_from_the_derived_template() {
     let tree = TempTree::fixture("clean");
@@ -126,16 +128,20 @@ fn new_creates_a_document_from_the_derived_template() {
         )
         .unwrap();
         assert!(result.created, "{}", result.path);
-        tree.drop_guidance(result.path.to_string().trim_start_matches('/'));
-        assert!(
-            !result.document.contains("sokf:only"),
-            "{}",
-            result.document
-        );
+        assert!(!result.document.contains("sokf:"), "{}", result.document);
         assert_eq!(result.document.contains("## Outcome"), state == "done");
+        assert_eq!(
+            examples(&result).iter().any(|e| e == "What was done."),
+            state == "done"
+        );
+        let report = tree.validate(true, CacheMode::Off);
+        assert_eq!(
+            not_missing(&report, result.path.as_str()),
+            Vec::<String>::new(),
+            "{}",
+            json(&report)
+        );
     }
-    let report = tree.validate(true, CacheMode::Off);
-    assert!(report.errors.is_empty(), "{}", json(&report));
 }
 
 // When a block has no `example`, no bound format, and no `text`, the
@@ -279,9 +285,13 @@ fn the_derived_title_is_the_one_new_fills() {
         "{}",
         made.document
     );
-    tree.drop_guidance(made.path.to_string().trim_start_matches('/'));
     let report = tree.validate(true, CacheMode::Off);
-    assert!(report.errors.is_empty(), "{}", json(&report));
+    assert_eq!(
+        not_missing(&report, made.path.as_str()),
+        Vec::<String>::new(),
+        "{}",
+        json(&report)
+    );
 }
 
 /// `STATED_SCHEMA` gives an example of the whole fence of its diagram, and
@@ -352,25 +362,33 @@ fn a_fence_the_schema_states_is_written_whole_and_gives_up_its_keys() {
     o.slug = Some("thing".into());
     o.write = true;
     let made = new(&tree.root(), &o).unwrap();
-    // The fence is the example that the rule gives, not one line for each
-    // line rule.
+    // The fence of the example is the example that the rule gives, not one
+    // line for each line rule.
+    let all = examples(&made).join("\n");
     assert!(
-        made.document
-            .contains("flowchart LR\n  one[\"One\"]:::box\n  two[\"Two\"]:::box\n  one --> two\n"),
-        "{}",
-        made.document
+        all.contains("flowchart LR\n  one[\"One\"]:::box\n  two[\"Two\"]:::box\n  one --> two\n"),
+        "{all}"
     );
     // Each of the two keys in the fence has the section that the schema
-    // demands, and that section carries the key's anchor (SOKF_FORMAT_84).
+    // demands in the example.
     assert!(
-        made.document.contains("## <a id=\"one\"></a>Box: One")
-            && made.document.contains("## <a id=\"two\"></a>Box: Two"),
+        all.contains("## Box: One") && all.contains("## Box: Two"),
+        "{all}"
+    );
+    // The skeleton holds neither the fence nor a section whose heading
+    // comes from an example, so it captures no key and holds no anchor.
+    assert!(
+        !made.document.contains("flowchart") && !made.document.contains("<a id="),
         "{}",
         made.document
     );
-    tree.drop_guidance(made.path.to_string().trim_start_matches('/'));
     let after = tree.validate(true, CacheMode::Off);
-    assert!(after.errors.is_empty(), "{}", json(&after));
+    assert_eq!(
+        not_missing(&after, made.path.as_str()),
+        Vec::<String>::new(),
+        "{}",
+        json(&after)
+    );
 }
 
 /// `OPTIONAL_SCHEMA` has three optional sections: two that the derivation
@@ -416,10 +434,12 @@ sections:
 ````
 "#;
 
-// A template is a sheet of prompts, so the derivation writes an optional
+// A scaffold is a sheet of prompts, so the derivation writes an optional
 // part when it can. When a rule inside the part gives nothing to write,
 // the derivation leaves the part out instead of refusing, and a warning
-// describes the block whose rule kept it out.
+// describes the block whose rule kept it out. A new document holds no
+// optional part, and its guide gives the example of each one that the
+// scaffold writes, marked optional.
 // sokf-tests: CLI-6_AC-7
 #[test]
 fn an_optional_part_is_written_where_it_can_be_and_named_where_it_cannot() {
@@ -447,42 +467,25 @@ fn an_optional_part_is_written_where_it_can_be_and_named_where_it_cannot() {
     o.slug = Some("thing".into());
     o.write = true;
     let made = new(&tree.root(), &o).unwrap();
-    assert!(!made.document.contains("## Shape"), "{}", made.document);
-    // The part the derivation wrote carries its marker, so the reader of
-    // the created document knows the schema does not demand it.
-    assert!(
-        made.document.contains(
-            "<!-- sokf:optional -->\n\n<!-- sokf:guidance What the reader should know. -->\n## Notes"
-        ),
-        "{}",
-        made.document
-    );
-    assert!(
-        made.document.contains("\n<!-- /sokf:optional -->\n"),
-        "{}",
-        made.document
-    );
-    // Each optional section is a region of its own, so the author keeps
-    // one and deletes the next.
-    assert_eq!(made.document.matches("<!-- sokf:optional -->").count(), 2);
-    assert_eq!(made.document.matches("<!-- /sokf:optional -->").count(), 2);
-    assert!(made.document.contains("## Aside"), "{}", made.document);
-    // A marker left in the document is untidy, not wrong: the document has
-    // no errors, and validation gives one warning for each decision that
-    // the author hasn't made.
-    tree.drop_guidance(made.path.to_string().trim_start_matches('/'));
+    for heading in ["## Notes", "## Aside", "## Shape", "sokf:optional"] {
+        assert!(!made.document.contains(heading), "{}", made.document);
+    }
+    let guide = made.guide.as_ref().unwrap();
+    let section = |h: &str| guide.sections.iter().find(|s| s.heading == h).unwrap();
+    for (heading, example) in [
+        ("Notes", Some("## Notes\n\n- One item.")),
+        ("Aside", Some("## Aside\n\nOne line of prose.")),
+        ("Shape", None),
+    ] {
+        let s = section(heading);
+        assert!(s.optional, "{heading}");
+        assert_eq!(s.example.as_deref(), example, "{heading}");
+    }
+    // The untouched skeleton lacks no part, because each section is
+    // optional, and it holds no region to warn about.
     let after = tree.validate(true, CacheMode::Off);
     assert!(after.errors.is_empty(), "{}", json(&after));
-    let warned: Vec<String> = on(&after.warnings, "opt-thing.md")
-        .map(sokf_core::report_message)
-        .collect();
-    assert_eq!(
-        warned,
-        vec![
-            "a `sokf:optional` region is left here: keep what it holds and drop both markers, or drop the region (TLMD_11)",
-            "a `sokf:optional` region is left here: keep what it holds and drop both markers, or drop the region (TLMD_11)",
-        ]
-    );
+    assert_eq!(on(&after.warnings, "opt-thing.md").count(), 0);
 }
 
 /// `GUIDED_SCHEMA` gives guidance at every level where it can: the schema,
@@ -523,13 +526,14 @@ sections:
 ````
 "#;
 
-// The template writes each piece of guidance on a line of its own before
-// the part it guides, and validation reports an error for each guidance
-// line left in a created document.
+// A new document holds no guidance, and the guide gives each piece of it,
+// for the part that it guides. Validation reports an error for each
+// guidance line left in a document, such as one that an older `sokf new`
+// wrote.
 // sokf-tests: FORMAT-3_AC-1
 // sokf-tests: FORMAT-3_AC-2
-// sokf-tests: EXT-8_AC-1
 // sokf-tests: CLI-6_AC-7
+// sokf-tests: CLI-6_AC-126
 #[test]
 fn guidance_stands_before_what_it_guides_and_may_not_stay() {
     let tree = TempTree::fixture("clean");
@@ -538,15 +542,26 @@ fn guidance_stands_before_what_it_guides_and_may_not_stay() {
     o.slug = Some("thing".into());
     o.write = true;
     let made = new(&tree.root(), &o).unwrap();
-    let doc = &made.document;
-    for wanted in [
-        "title: Thing\n# sokf:guidance The person who answers for the decision.\nowner: someone\n",
-        "links:\n  # sokf:guidance A decision this one depends on.\n  - rel: relates-to\n",
-        "---\n\n<!-- sokf:guidance One decision, and the reason it was taken. -->\n\n# Thing\n",
-        "<!-- sokf:guidance What made the other options worse. -->\n## Reason\n",
-    ] {
-        assert!(doc.contains(wanted), "{wanted}\n---\n{doc}");
-    }
+    assert!(!made.document.contains("sokf:"), "{}", made.document);
+    let guide = made.guide.as_ref().unwrap();
+    assert_eq!(
+        guide.text.as_deref(),
+        Some("One decision, and the reason it was taken.")
+    );
+    let owner = guide.frontmatter.iter().find(|k| k.key == "owner").unwrap();
+    assert_eq!(
+        owner.text.as_deref(),
+        Some("The person who answers for the decision.")
+    );
+    assert_eq!(owner.example.as_deref(), Some("owner: someone"));
+    assert_eq!(
+        guide.links[0].text.as_deref(),
+        Some("A decision this one depends on.")
+    );
+    // An older `sokf new` wrote the scaffold with each guidance line before
+    // the part that it guides.
+    let doc = &"---\ntype: Guided\nid: guided-thing\ntitle: Thing\n# sokf:guidance The person who answers for the decision.\nowner: someone\n---\n\n<!-- sokf:guidance One decision, and the reason it was taken. -->\n\n# Thing\n\n<!-- sokf:guidance What made the other options worse. -->\n## Reason\n\nThe cache cannot hold a second copy of the index.\n".to_string();
+    tree.write(made.path.as_str().trim_start_matches('/'), doc);
     // Each guidance line left is an error at that line, and the repair pass
     // leaves the line in place.
     let rel = made.path.to_string().trim_start_matches('/').to_string();
@@ -624,7 +639,7 @@ sections:
 
 // The scaffold writes a list item's nested blocks under the item,
 // indented to the item's text, so that a scaffold of a schema that demands
-// nested blocks passes that schema.
+// nested blocks passes that schema, and the guide shows it so.
 #[test]
 fn a_list_item_is_written_with_its_nested_blocks() {
     let tree = TempTree::fixture("clean");
@@ -641,11 +656,23 @@ fn a_list_item_is_written_with_its_nested_blocks() {
     let mut o = new_options(tree.dir(), "Nest");
     o.slug = Some("thing".into());
     let made = new(&tree.root(), &o).unwrap();
+    let all = examples(&made).join("\n");
     assert!(
-        made.document
-            .contains("`Lookup` finds the address of a code.\n  <!-- sokf:guidance At most 1 item. Never leave out or merge content to stay within the count. When at the limit: Name the other files of the part in its text. -->\n  - Code: lookup.go\n"),
-        "{}",
-        made.document
+        all.contains("- `Lookup` finds the address of a code.\n  - Code: lookup.go"),
+        "{all}"
+    );
+    // The guide gives the nested list its limit, and its example without the
+    // indent of the item that holds it.
+    let parts = &made.guide.as_ref().unwrap().sections[1].blocks[0];
+    assert_eq!(
+        parts.blocks[0].text.as_deref(),
+        Some(
+            "At most 1 item. Never leave out or merge content to stay within the count. When at the limit: Name the other files of the part in its text."
+        )
+    );
+    assert_eq!(
+        parts.blocks[0].example.as_deref(),
+        Some("- Code: lookup.go")
     );
 }
 
@@ -680,7 +707,8 @@ sections:
 
 // A table with `columns: []` and `columns-open: true` takes the header of
 // its scaffold from `example-columns`, so the scaffold is a table that
-// passes the schema, and `sokf new` writes a document that validates.
+// passes the schema, which the guide of a new document gives as the
+// example, and the new document lacks only its table.
 // sokf-tests: CLI-6_AC-1
 #[test]
 fn a_table_with_no_columns_writes_the_header_of_its_example_columns() {
@@ -697,15 +725,18 @@ fn a_table_with_no_columns_writes_the_header_of_its_example_columns() {
     o.slug = Some("editors".into());
     o.write = true;
     let made = new(&tree.root(), &o).unwrap();
+    let all = examples(&made).join("\n");
     assert!(
-        made.document
-            .contains("\n| Port | Program |\n| --- | --- |\n| edit | acme |\n"),
-        "{}",
-        made.document
+        all.contains("| Port | Program |\n| --- | --- |\n| edit | acme |"),
+        "{all}"
     );
-    tree.drop_guidance(made.path.to_string().trim_start_matches('/'));
     let report = tree.validate(true, CacheMode::Off);
-    assert!(report.errors.is_empty(), "{}", json(&report));
+    assert_eq!(
+        not_missing(&report, made.path.as_str()),
+        Vec::<String>::new(),
+        "{}",
+        json(&report)
+    );
 }
 
 // The schema check refuses `example-columns` beside declared columns, and

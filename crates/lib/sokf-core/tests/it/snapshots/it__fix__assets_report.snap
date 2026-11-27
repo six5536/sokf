@@ -1,6 +1,5 @@
 ---
 source: crates/lib/sokf-core/tests/it/fix.rs
-assertion_line: 200
 expression: json(&fixed)
 ---
 {
@@ -32,7 +31,7 @@ expression: json(&fixed)
     {
       "path": "/knowledge/notes/broken.md",
       "line": 12,
-      "message": "the image `/knowledge/notes/album.md` does not match `^/knowledge/media/`; a target of this kind reads ![Flowers][sokf:flowers] (schema schema-note, section \"<title>\" block 2) (TLMD_163)"
+      "message": "the image `/knowledge/notes/album.md` does not match `^/knowledge/media/`; a target of this kind reads `![Flowers][sokf:flowers]` (schema schema-note, section \"<title>\" block 2) (TLMD_163)"
     },
     {
       "path": "/knowledge/notes/broken.md",

@@ -8,8 +8,13 @@ validator for Superdev Open Knowledge Format (SOKF) knowledge stores.
 > tool, not this crate. The maintainers publish the library API mainly so that
 > the binary can depend on a released version. The API isn't stable.
 
+- [Status](#status)
 - [What it does](#what-it-does)
 - [License](#license)
+
+## Status
+
+**Unstable.** The library is at a 0.x version, and its interface can change in any release.
 
 ## What it does
 
@@ -43,15 +48,15 @@ starting a process. The crate exposes these entry points:
   tramlines core grammar, the tramlines-md grammar, and then SOKF's schema
   extension) and the
   three-layer format registry.
-- `new` builds a document of the given type from the template in that type's
-  schema.
-  It drops each part of the template whose `sokf:only` marker excludes the
-  requested states. It fills in the id with the next
-  sequence number, and fills in the title and the lifecycle keys. It rewrites
-  each heading that is bound to a frontmatter key to the value of that key.
-  It places the document in the directory that its states determine. It
-  writes the document when the caller sets `write`. `new` builds a `Schema`
-  document from the grammar's own template.
+- `new` builds a document of the given type from the skeleton of that type's
+  schema at the requested states, which holds only what is true of the new
+  document, and no example and no guidance. It fills in the id with the next
+  sequence number, and fills in the title and the lifecycle keys. It writes
+  each heading that is bound to a frontmatter key as the value of that key.
+  It places the document in the directory that its states determine, and
+  returns the guide of the new document with it. It writes the document when
+  the caller sets `write`. `new` builds a `Schema` document from the
+  grammar's own skeleton.
 - `graph` builds a graph of the knowledge, with nodes and edges, and adds the
   inverse of every edge. It runs a query that starts at any node and follows
   edges to a given depth. JMESPath predicates filter the documents, the
@@ -61,8 +66,10 @@ starting a process. The crate exposes these entry points:
 - `locate` finds the filesystem path of a document by its id, and, when
   asked, the path of the asset that a sidecar describes.
 - `guide` returns the guidance that a document's schema gives for each part
-  of the document at its lifecycle states, in the words that `new` writes
-  into its scaffold.
+  of the document at its lifecycle states, in the words of the scaffold's
+  guidance lines, and each part's example, the text that the scaffold
+  writes for it with the document's own values. `new` returns the skeleton of
+  a new document with its guide.
 - `markdown`, `grammar`, `include`, `check`, `fix`, `graph`, and `Expr` are
   the layers behind these entry points, exposed for tests and tooling.
 - `Error` and `Result` are the crate's one error type and its result type.

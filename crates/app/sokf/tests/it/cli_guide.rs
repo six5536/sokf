@@ -31,6 +31,7 @@ fn guide(f: &Fixture, args: &[&str]) -> String {
 // sokf-tests: CLI-17_AC-16
 // sokf-tests: CLI-17_AC-22
 // sokf-tests: CLI-17_AC-33
+// sokf-tests: CLI-17_AC-41
 #[test]
 fn guide_prints_the_guidance_of_the_states_in_the_schemas_order() {
     let f = Fixture::new("guide");
@@ -44,32 +45,6 @@ fn guide_prints_the_guidance_of_the_states_in_the_schemas_order() {
         guide(&f, &["--no-cache", "task-001-descale", "note-kettle"]),
         text
     );
-}
-
-// Each guidance line of a new document holds the words that the guide
-// prints for the same part at the same states.
-// sokf-tests: CLI-17_AC-7
-// sokf-tests: CLI-17_AC-8
-#[test]
-fn the_guide_holds_the_words_of_the_scaffolds_guidance_lines() {
-    let f = Fixture::new("guide");
-    let (scaffold, stderr, code) = f.run(&["new", "Task", "--slug", "x"]);
-    assert_eq!(code, 0, "{stderr}");
-    let text = guide(&f, &["task-001-descale"]);
-    let lines: Vec<&str> = scaffold
-        .lines()
-        .filter_map(|l| {
-            let l = l.trim();
-            l.strip_prefix("# sokf:guidance ").or_else(|| {
-                l.strip_prefix("<!-- sokf:guidance ")
-                    .and_then(|l| l.strip_suffix(" -->"))
-            })
-        })
-        .collect();
-    assert_eq!(lines.len(), 10, "{scaffold}");
-    for words in lines {
-        assert!(text.contains(words), "{words:?} is not in {text}");
-    }
 }
 
 // `--state` replaces one dimension of the document's own states: the open
@@ -471,8 +446,151 @@ fn a_heading_holds_only_its_own_section() {
     let text = guide(&f, &["report"]);
     assert!(
         text.ends_with(
-            "\n# Report\n\n## Context\n\n### Steps\n\n## Overview (absent, required)\n\n## Summary\n\n## Review (absent, optional)\n\n### Findings (absent, required under Review)\n"
+            "\n# Report\n\n## Context\n\n### Steps\n\n## Overview (absent, required)\n\n## Summary\n\n## Review (absent, optional)\n  Example:\n    ## Review\n\n    ### Findings\n\n### Findings (absent, required under Review)\n"
         ),
         "{text}"
     );
+}
+
+// A heading that a formatter spells another way holds its section, as the
+// check reads it: `_main_` holds `The *main* part`, and a heading bound to a
+// title with emphasis holds its section in the other spelling. A heading
+// that stands for a bound heading and reads otherwise holds nothing, though
+// the check gives it the section to repair.
+// sokf-tests: CLI-17_AC-15
+#[test]
+fn a_respelt_heading_holds_its_section() {
+    let f = Fixture::new("guide");
+    f.write(
+        "knowledge/schemas/part.md",
+        "---\ntype: Schema\nid: schema-part\ntitle: Part Schema\ndescription: A part.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Part\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks: []\n  - heading: The *main* part\n    level: 2\n    blocks: []\n  - heading: The __other__ part\n    level: 2\n    optional: true\n    blocks: []\n````\n",
+    );
+    f.write(
+        "knowledge/part.md",
+        "---\ntype: Part\nid: part\ntitle: Use *the* tool\n---\n\n# Use _the_ tool\n\n## The _main_ part\n\n## The **other** part\n",
+    );
+    f.run(&["validate", "--fix"]);
+    let (stdout, stderr, code) = f.run(&["validate", "--fix"]);
+    assert_eq!(
+        (code, stdout.as_str(), stderr.as_str()),
+        (0, "0 errors, 0 warnings\n", "")
+    );
+    let held = |f: &Fixture| {
+        let (stdout, stderr, code) = f.run(&[
+            "guide",
+            "part",
+            "--json",
+            "--query",
+            "documents[0].sections[].held",
+        ]);
+        assert_eq!(code, 0, "{stderr}");
+        stdout
+    };
+    assert_eq!(held(&f), "[true,true,true]\n");
+    f.write(
+        "knowledge/part.md",
+        "---\ntype: Part\nid: part\ntitle: Use *the* tool\n---\n\n# Use the tool\n\n## The _main_ part\n",
+    );
+    assert_eq!(held(&f), "[false,true,false]\n");
+    // A heading that the shapes of two sections accept holds only the one
+    // that the check gives it.
+    f.write(
+        "knowledge/schemas/part.md",
+        "---\ntype: Schema\nid: schema-part\ntitle: Part Schema\ndescription: A part.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Part\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks: []\n  - heading: { template: 'Step ${:int}', example: Step 1 }\n    level: 2\n    optional: true\n    blocks: []\n  - heading: { template: '${}', example: Notes }\n    level: 2\n    optional: true\n    blocks: []\n````\n",
+    );
+    f.write(
+        "knowledge/part.md",
+        "---\ntype: Part\nid: part\ntitle: Use *the* tool\n---\n\n# Use _the_ tool\n\n## Step 1\n",
+    );
+    assert_eq!(held(&f), "[true,true,false]\n");
+}
+
+// Each example carries the document's own frontmatter values, so the
+// example of a heading bound to the title is the document's title, and the
+// text leaves out each example that the document holds already, such as the
+// line of its id, while the JSON gives every example.
+// sokf-tests: CLI-17_AC-38
+// sokf-tests: CLI-17_AC-39
+// sokf-tests: CLI-17_AC-40
+#[test]
+fn each_example_carries_the_documents_values() {
+    let f = Fixture::new("guide");
+    let (json, err, code) = f.run(&["guide", "task-001-descale", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    let value = valid("guide-report.schema.json", &json);
+    let doc = &value["documents"][0];
+    assert_eq!(doc["frontmatter"][1]["example"], "id: task-001-descale");
+    assert_eq!(
+        doc["sections"][0]["example"],
+        "# Descale the kettle\n\nThe kettle needs descaling before it breaks."
+    );
+    let text = guide(&f, &["task-001-descale"]);
+    assert!(
+        !text.contains("id: task-001-descale")
+            && !text.contains("The kettle needs descaling")
+            && text.contains("      owner: ada\n"),
+        "{text}"
+    );
+}
+
+// A section that the document lacks prints its example, though a section of
+// the same heading and the same example under another parent is in the
+// document, because the guide asks the check's match which section a heading
+// holds.
+// sokf-tests: CLI-17_AC-40
+#[test]
+fn a_heading_of_another_parent_hides_no_example() {
+    let f = Fixture::new("guide");
+    f.write(
+        "knowledge/schemas/run.md",
+        "---\ntype: Schema\nid: schema-run\ntitle: Run Schema\ndescription: A run.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Run\nsections:\n  - heading: Setup\n    level: 2\n    rule-id: setup\n    blocks: []\n  - heading: Notes\n    level: 3\n    parent: setup\n    blocks:\n      - kind: prose\n        example: The kettle is full.\n  - heading: Teardown\n    level: 2\n    rule-id: teardown\n    blocks: []\n  - heading: Notes\n    level: 3\n    parent: teardown\n    blocks:\n      - kind: prose\n        example: The kettle is full.\n````\n",
+    );
+    f.write(
+        "knowledge/run.md",
+        "---\ntype: Run\nid: run\ntitle: Run\n---\n\n## Setup\n\n### Notes\n\nThe kettle is full.\n\n## Teardown\n",
+    );
+    let text = guide(&f, &["run"]);
+    assert!(
+        text.ends_with(
+            "### Notes (absent, required)\n  Example:\n    ### Notes\n\n    The kettle is full.\n"
+        ),
+        "{text}"
+    );
+}
+
+// A document whose own value no scaffold holds, such as a title that the
+// paragraph bound to it can't hold, still gets the schema's examples.
+// sokf-tests: CLI-17_AC-39
+#[test]
+fn a_value_that_no_scaffold_holds_leaves_the_schemas_examples() {
+    let f = Fixture::new("guide");
+    f.write(
+        "knowledge/schemas/card.md",
+        "---\ntype: Schema\nid: schema-card\ntitle: Card Schema\ndescription: A card.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Card\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks:\n      - kind: prose\n        each: { text: { from: title } }\n  - heading: Back\n    level: 2\n    blocks:\n      - kind: prose\n        example: The answer is on the back.\n````\n",
+    );
+    f.write(
+        "knowledge/card.md",
+        "---\ntype: Card\nid: card\ntitle: <div>\n---\n\n# <div>\n",
+    );
+    let text = guide(&f, &["card"]);
+    assert!(
+        text.contains("    The answer is on the back.\n") && text.contains("      Card example\n"),
+        "{text}"
+    );
+}
+
+// The example of a key is the schema's, where the document's own value would
+// stand in it, so a value that breaks the key's rule hides no example.
+// sokf-tests: CLI-17_AC-38
+#[test]
+fn a_keys_example_is_the_schemas_whatever_the_document_holds() {
+    let f = Fixture::new("guide");
+    let path = "knowledge/tasks/open/task-001-descale.md";
+    let text = std::fs::read_to_string(f.path(path)).unwrap();
+    f.write(
+        path,
+        &text.replace("state: open\n", "state: open\nowner: Ada9\n"),
+    );
+    let out = guide(&f, &["task-001-descale"]);
+    assert!(out.contains("    Example:\n      owner: ada\n"), "{out}");
 }

@@ -18,7 +18,11 @@ dist/
 packages/*-*/bin/
 *.tsbuildinfo
 
+__pycache__/
+.venv/
+
 /target
+*.profraw
 **/*.rs.bk
 
 # Reference material that the project has no license to distribute

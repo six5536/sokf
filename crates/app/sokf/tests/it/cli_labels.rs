@@ -51,11 +51,10 @@ fn fix(f: &Fixture) -> String {
     first
 }
 
-/// `scaffold` returns what `sokf new Memo` prints on `f`.
+/// `scaffold` returns the scaffold of a new memo on `f`, as the guide that
+/// `sokf new Memo` prints gives it.
 fn scaffold(f: &Fixture) -> String {
-    let (out, err, code) = f.run(&["new", "Memo", "--slug", "kettle"]);
-    assert_eq!(code, 0, "{out}{err}");
-    out
+    f.scaffold(&["Memo", "--slug", "kettle"])
 }
 
 /// `doc` returns a memo whose units carry the labels `first`, for the prose,
@@ -76,10 +75,12 @@ fn errors(f: &Fixture) -> Vec<String> {
         .collect()
 }
 
-// A scaffold labels `[agent]` each unit whose rule requires a label, after
+// A scaffold, which the guide of a new document gives as its examples,
+// labels `[agent]` each unit whose rule requires a label, after
 // the key of a unit that begins with one, and each unit whose rule allows a
 // label and whose example carries one, and leaves unlabelled a unit whose
-// example carries none. The new document passes the check.
+// example carries none. The new document holds no unit with a label to
+// check.
 // sokf-tests: CLI-6_AC-124
 // sokf-tests: CLI-6_AC-125
 // sokf-tests: SOKF_SCHEMA_108
@@ -89,7 +90,7 @@ fn a_scaffold_labels_its_units_agent() {
     let out = scaffold(&f);
     for line in [
         "\n[agent] The kettle goes back to the shop.\n",
-        "\n- <a id=\"p-1\"></a>P-1 [agent] The kettle leaks.\n",
+        "\n- P-1 [agent] The kettle leaks.\n",
         "\n- [agent] Note that the shop opens at nine.\n",
         "\nThe memo ends here.\n",
     ] {
@@ -213,7 +214,7 @@ fn the_guide_states_each_label_once() {
         "\n\nLabels:\n  [human]: A person said all of the text that the label covers, or confirmed all of it in so many words.\n  [agent]: An agent proposed the text that the label covers, or some of it.\n\n",
         "\n  prose (label required): At most 1 paragraph.",
         "\n  bullet-list (label optional; required for `point`)\n",
-        "\n  prose (label optional)\n",
+        "\n  prose (optional; label optional)\n",
     ] {
         assert!(text.contains(line), "{line:?} is not in {text}");
     }

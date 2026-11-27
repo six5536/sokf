@@ -108,7 +108,7 @@
       ]
     },
     "Summary": {
-      "description": "The summary holds the number of errors, warnings, and fixes in the report. The last line of the text output shows the same counts of errors and warnings (CLI-4_AC-31).",
+      "description": "The summary holds the number of errors, warnings, and fixes in the report. The line of counts of the text output shows the same counts of errors and warnings (CLI-4_AC-31).",
       "type": "object",
       "properties": {
         "errors": {

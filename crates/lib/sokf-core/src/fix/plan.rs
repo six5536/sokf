@@ -469,7 +469,11 @@ fn plan_indexes(
             // reports it (SOKF_VALIDATION_56).
             // sokf-implements: SOKF_VALIDATION_56
             Some((current, eol)) => {
-                if !expected.layout.same("md", &text, &current) && index::is_generated(&current) {
+                let held = expected
+                    .layout
+                    .same(&crate::include::index_pair(&path, &text, &current))
+                    && crate::include::index_labels_as_written(&text, &current);
+                if !held && index::is_generated(&current) {
                     out.rewrites.push(Rewrite { path, text, eol });
                 }
             }
@@ -484,10 +488,12 @@ fn plan_indexes(
 }
 
 /// `include_edits` returns the edits that rewrite each stale include block
-/// of `view` with its expected interior. A block that the formatter gives
-/// the form of its expected text stays as it is, and a stale one gets its
-/// source's text as the source holds it (CLI-4_AC-50, CLI-4_AC-51).
+/// of `view` with its expected interior. A block that same-same finds the
+/// same as its expected text stays as it is, and a stale one gets its
+/// source's text as the source holds it, with no run of a formatter
+/// (CLI-4_AC-50, CLI-4_AC-51, CLI-4_AC-115).
 // sokf-implements: CLI-4_AC-50
+// sokf-implements: CLI-4_AC-115
 // sokf-implements: CLI-4_AC-51
 fn include_edits(view: DocView<'_>, expected: &Expected) -> Vec<Edit> {
     let path = view.path;
@@ -638,9 +644,12 @@ fn definition_of(
                 None => !rendered.is_empty(),
                 Some(d) => {
                     d.trailing
-                        || !expected
-                            .layout
-                            .same("md", rendered.trim_end(), d.text.trim_end())
+                        || !crate::include::labels_as_written(&remapped, d)
+                        || !expected.layout.same(&crate::include::definition_pair(
+                            path,
+                            rendered.trim_end(),
+                            d.text.trim_end(),
+                        ))
                 }
             };
             differs.then(|| definition_edit(view.text, current.map(|d| d.line), &rendered))

@@ -5,7 +5,6 @@ title: Stories schema
 description: A Stories document holds the stories for one user goal, and each story links the contracts that deliver it.
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 root: /knowledge/stories

@@ -168,6 +168,8 @@ The frontmatter of a document can hold these core fields:
 - `verified` - The confirmations of the document (§7).
 - `generated` - `{ by, at }`, taken from the git history at export.
 
+A core field other than `type`, `id`, and `generated` whose value is empty, a null or a text of only whitespace, is absent, so a criterion of a field that is present doesn't apply to it. A schema that requires the field reports it as missing its value instead.
+
 Each core field has a write class (§4). The following document has most of the core fields:
 
 ```markdown
@@ -214,6 +216,7 @@ set of logs.[^log4rs]
 - <a id="sokf_format_29"></a>SOKF_FORMAT_29 [ubiquitous]: the frontmatter SHALL give `resource`, when present, as a URL, a `/` path, or a non-empty list of these.
 - <a id="sokf_format_30"></a>SOKF_FORMAT_30 [ubiquitous]: the frontmatter SHALL make each `/` path in `resource` resolve to a file or directory in the repository.
 - <a id="sokf_format_31"></a>SOKF_FORMAT_31 [ubiquitous]: the sidecar SHALL give `resource` as a single string: the `/` path of its asset.
+- <a id="sokf_format_256"></a>SOKF_FORMAT_256 [ubiquitous]: the consumer SHALL read a core field other than `type`, `id`, and `generated` whose value is a null or a text of only whitespace as absent.
 
 ### 3.1 Descriptions
 

@@ -1,6 +1,6 @@
 [package]
 name = "sokf"
-description = "sokf validates knowledge stores in the Superdev Open Knowledge Format (SOKF): directories of Markdown documents with YAML frontmatter, which sokf checks against their schemas."
+description = "sokf validates knowledge stores in the Superdev Open Knowledge Format (SOKF): directories of Markdown documents with YAML frontmatter, which sokf checks against their schemas. Unstable: its commands, options and file formats can change in any release."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

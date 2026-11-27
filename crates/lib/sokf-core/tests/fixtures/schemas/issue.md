@@ -5,7 +5,6 @@ title: Issue schema
 description: An issue lies in the folder of its state, for the tests of the indexes that `sokf new` writes.
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 root: /knowledge/issues

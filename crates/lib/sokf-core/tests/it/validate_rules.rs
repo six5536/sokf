@@ -154,8 +154,8 @@ fn guarded_rules_govern_lines_and_units() {
         vec![
             "14: no `/^Node: (?P<k>[a-z][a-z0-9]*)$/` section for key `four`",
             "14: the lines matching `^[a-z][a-z0-9]*\\[`: at most 3 are allowed; there are 4. When at the limit: Split the diagram in two.",
-            "15: `one --> two` does not match `\\-\\->\\|\"`; a line of this kind reads   one -->|\"calls\"| two",
-            "18: `NOTE: no period` does not match `\\.$`; an item of this kind reads NOTE: One.",
+            "15: `one --> two` does not match `\\-\\->\\|\"`; a line of this kind reads `  one -->|\"calls\"| two`",
+            "18: `NOTE: no period` does not match `\\.$`; an item of this kind reads `NOTE: One.`",
             "19: `plain` matches no rule of the block; declare it or set `units-open`",
         ],
         "{}",
@@ -263,8 +263,8 @@ fn a_schema_finding_names_the_rule_it_came_from() {
     assert_eq!(
         messages,
         vec![
-            "`one --> two` does not match `\\-\\->\\|\"`; a line of this kind reads   one -->|\"calls\"| two (schema schema-diagram, rule `nodes`)",
-            "`NOTE: no period` does not match `\\.$`; an item of this kind reads NOTE: One. (schema schema-diagram, section \"<title>\" block 2)",
+            "`one --> two` does not match `\\-\\->\\|\"`; a line of this kind reads `  one -->|\"calls\"| two` (schema schema-diagram, rule `nodes`)",
+            "`NOTE: no period` does not match `\\.$`; an item of this kind reads `NOTE: One.` (schema schema-diagram, section \"<title>\" block 2)",
         ]
     );
 }

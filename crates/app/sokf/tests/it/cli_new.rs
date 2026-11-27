@@ -10,30 +10,40 @@ use crate::common;
 // sokf-tests: CLI-6_AC-11
 // sokf-tests: CLI-6_AC-12
 // sokf-tests: CLI-6_AC-13
+// sokf-tests: CLI-6_AC-127
+// sokf-tests: CLI-6_AC-129
+// sokf-tests: CLI-6_AC-130
 #[test]
 fn the_document_the_created_line_the_id_and_the_json() {
     let f = Fixture::new("new");
     let (stdout, stderr, code) = f.run(&["new", "Issue", "--slug", "x"]);
     assert_eq!(code, 0, "{stderr}");
-    assert!(
-        stdout.starts_with("---\ntype: Issue\nid: issue-002-x\ntitle: X\nstate: open\nkind: bug\n"),
-        "{stdout}"
+    // The skeleton goes to stdout and the guide of the new document, with
+    // each part's guidance and example, to stderr.
+    assert_eq!(
+        stdout,
+        "---\ntype: Issue\nid: issue-002-x\ntitle: X\nstate: open\nkind: bug\n---\n\n# X\n\n## Reproduction\n"
     );
-    assert!(
-        stdout.ends_with("1. Move a document with `--fix`.\n"),
-        "{stdout}"
-    );
-    let (stdout, _, code) = f.run(&["new", "Issue", "--slug", "x", "--id-only"]);
+    insta::assert_snapshot!("new_issue_guide", stderr);
+    let (stdout, stderr, code) = f.run(&["new", "Issue", "--slug", "x", "--id-only"]);
     assert_eq!(code, 0);
     assert_eq!(stdout, "issue-002-x\n");
-    let (stdout, _, code) = f.run(&["new", "Issue", "--slug", "x", "--json", "--no-cache"]);
+    assert_eq!(stderr, "");
+    let (stdout, stderr, code) = f.run(&["new", "Issue", "--slug", "x", "--json", "--no-cache"]);
     assert_eq!(code, 0);
+    assert_eq!(stderr, "");
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(value["id"], "issue-002-x");
     assert_eq!(value["path"], "/knowledge/issues/open/bug/issue-002-x.md");
     assert!(value["document"].as_str().unwrap().starts_with("---\n"));
     assert!(value.get("created").is_none());
-    let (stdout, _, code) = f.run(&[
+    // The object holds the guide, as `sokf guide --json` gives it.
+    assert_eq!(value["guide"]["type"], "Issue");
+    assert_eq!(
+        value["guide"]["sections"][1]["example"],
+        "## Reproduction\n\n1. Move a document with `--fix`."
+    );
+    let (stdout, stderr, code) = f.run(&[
         "new",
         "Issue",
         "--slug",
@@ -43,6 +53,10 @@ fn the_document_the_created_line_the_id_and_the_json() {
         "--write",
     ]);
     assert_eq!(code, 0);
+    assert!(
+        stderr.starts_with("\nThe guide of the new document: the guidance and the example of each part.\n\n/knowledge/issues/open/feature/issue-002-x.md (Issue, state=open, kind=feature)\n"),
+        "{stderr}"
+    );
     // The index of each directory that holds the document lists it.
     assert_eq!(
         stdout,

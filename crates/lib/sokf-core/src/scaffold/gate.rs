@@ -1,5 +1,5 @@
 //! This module gates the text of a scaffold by its `sokf:only` markers. It
-//! follows the rule in the SOKF schema specification (§5) for what `sokf new`
+//! follows the rule in the SOKF schema specification (§5) for what a tool
 //! copies from a scaffold.
 
 use crate::{
@@ -34,10 +34,10 @@ fn drop_guidance_above(lines: &[&str], out: &mut [Option<String>], i: usize, flo
 /// reader decides whether to keep that region. A marked part of the body is
 /// the section that a heading opens, or else the block that starts on the
 /// marked line. A marked frontmatter key includes its continuation lines.
-// sokf-implements: CLI-6_AC-35
+/// `sokf new` gated its scaffold so before it wrote a skeleton, which holds
+/// no marker, and no command calls `gate` now: it keeps the rule for copying
+/// a scaffold that EXT_P-4 states.
 // sokf-implements: EXT_P-4
-// sokf-implements: CLI-6_AC-2
-// sokf-implements: CLI-6_AC-7
 pub fn gate(document: &str, states: &States) -> String {
     let lines: Vec<&str> = document.lines().collect();
     let source = Source::from_text(RepoPath::root(), document);
@@ -178,7 +178,7 @@ mod tests {
 
     const TEMPLATE: &str = "---\ntype: Issue\nid: x\nstate: open\nresolution: none # sokf:only state=closed\nreviewers: # sokf:only kind=feature\n  - a\n  - b\ntags: [t]\n---\n\n# Title\n\nIntro.\n\n<!-- sokf:only kind=bug -->\n## Reproduction\n\nSteps.\n\n### Detail\n\nMore.\n\n<!-- sokf:only state=closed -->\n## Conclusion\n\nDone.\n\n## Notes\n\n<!-- sokf:only kind=bug -->\n- one\n- two\n\nAfter.\n\n```\n<!-- sokf:only state=closed -->\nkept as text\n```\n";
 
-    // sokf-tests: CLI-6_AC-2
+    // sokf-tests: EXT_P-4
     #[test]
     fn an_open_bug_keeps_the_bug_parts_and_drops_the_closed_ones() {
         let out = gate(TEMPLATE, &states(&[("state", "open"), ("kind", "bug")]));
@@ -188,7 +188,7 @@ mod tests {
         );
     }
 
-    // sokf-tests: CLI-6_AC-2
+    // sokf-tests: EXT_P-4
     #[test]
     fn a_closed_feature_keeps_the_other_parts() {
         let out = gate(
@@ -201,7 +201,7 @@ mod tests {
         );
     }
 
-    // sokf-tests: CLI-6_AC-2
+    // sokf-tests: EXT_P-4
     #[test]
     fn edge_cases_two_markers_a_top_heading_and_the_last_line() {
         // `gate` drops a part with two markers when either marker excludes the states.

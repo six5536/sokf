@@ -32,7 +32,12 @@ fn a_missing_and_a_stale_index_are_errors_at_the_index_path() {
     // The CRLF index is current after its line endings are normalised. The
     // misplaced issue is the only other error.
     assert!(!stdout.contains("/knowledge/crlf/index.md"), "{stdout}");
-    assert!(stdout.ends_with("\n4 errors, 0 warnings\n"), "{stdout}");
+    assert!(
+        stdout.ends_with(
+            "\n4 errors, 0 warnings\n3 potentially fixable with `sokf validate --fix`\n"
+        ),
+        "{stdout}"
+    );
     assert_eq!(stderr, "");
 }
 

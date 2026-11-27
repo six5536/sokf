@@ -1,4 +1,7 @@
 //! This file holds the entry point of the `sokf` command-line tool.
+//!
+//! **This crate is unstable.** It is at a 0.x version, and its commands,
+//! options and file formats can change in any release.
 // When the nightly coverage job sets `coverage_nightly` through cargo-llvm-cov,
 // this line turns on the attribute that leaves untestable glue code out of the
 // coverage report. Normal builds and tests use the stable toolchain, which

@@ -6,6 +6,7 @@
 mod d_folder;
 mod excludes_d;
 mod file;
+mod format;
 mod formats;
 mod formats_d;
 mod root;
@@ -13,9 +14,8 @@ mod roots_d;
 mod texts;
 
 pub use excludes_d::{AddedExclude, excludes_files_lenient};
-pub use file::{
-    Config, ConfigText, FormatConfig, MarkerCheck, config_path, load_config, read_lenient,
-};
+pub use file::{Config, ConfigText, MarkerCheck, config_path, load_config, read_lenient};
+pub use format::{FormatConfig, FormatRule, format_config};
 pub use formats::{FORMATS_DIR, RepoFormats, load_repo_formats};
 pub use root::{PathArg, Scope, discover_root, resolve_paths};
 pub use roots_d::registry_files_lenient;

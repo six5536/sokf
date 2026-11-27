@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use common::{TempTree, json, new_options};
+use common::{TempTree, examples, json, new_options, not_missing};
 use sokf_core::{CacheMode, NewResult, new};
 
 use crate::common;
@@ -47,10 +47,13 @@ fn json_result(r: &NewResult) -> String {
 // sokf-tests: CLI-6_AC-4
 // sokf-tests: CLI-6_AC-5
 // sokf-tests: CLI-6_AC-6
+// sokf-tests: CLI-6_AC-126
 #[test]
 fn each_state_combination_is_seeded_gated_filled_and_placed() {
     let tree = TempTree::fixture("new");
-    // An open bug keeps its Reproduction section.
+    // An open bug keeps its Reproduction section, as a heading alone: the
+    // skeleton holds no example and no guidance, and the guide holds the
+    // example of each part.
     let r = issue(&tree, "retry-logic", &[]).unwrap();
     assert_eq!(r.id, "issue-002-retry-logic");
     assert_eq!(
@@ -59,7 +62,13 @@ fn each_state_combination_is_seeded_gated_filled_and_placed() {
     );
     assert_eq!(
         r.document,
-        "---\ntype: Issue\nid: issue-002-retry-logic\ntitle: Retry logic\nstate: open\nkind: bug\nlinks:\n  # sokf:guidance The decision the issue delivers.\n  - rel: implements\n    to: target-id\n---\n\n# Retry logic\n\nThe index writer drops the entry of a moved file.\n\n<!-- sokf:guidance Steps that show the bug. -->\n## Reproduction\n\n1. Move a document with `--fix`.\n"
+        "---\ntype: Issue\nid: issue-002-retry-logic\ntitle: Retry logic\nstate: open\nkind: bug\n---\n\n# Retry logic\n\n## Reproduction\n"
+    );
+    let all = examples(&r).join("\n");
+    assert!(
+        all.contains("The index writer drops the entry of a moved file.")
+            && all.contains("1. Move a document with `--fix`."),
+        "{all}"
     );
     assert!(!r.created);
     // An open feature drops its Reproduction section.
@@ -84,7 +93,14 @@ fn each_state_combination_is_seeded_gated_filled_and_placed() {
     let r = issue(&tree, "done", &[("state", "closed"), ("kind", "feature")]).unwrap();
     assert_eq!(
         r.document,
-        "---\ntype: Issue\nid: issue-002-done\ntitle: Done\nstate: closed\nkind: feature\nlinks:\n  # sokf:guidance The decision the issue delivers.\n  - rel: implements\n    to: target-id\n---\n\n# Done\n\nThe index writer drops the entry of a moved file.\n\n<!-- sokf:guidance What was done. -->\n## Conclusion\n\nThe move now rewrites both indexes it touches.\n"
+        "---\ntype: Issue\nid: issue-002-done\ntitle: Done\nstate: closed\nkind: feature\n---\n\n# Done\n\n## Conclusion\n"
+    );
+    assert!(
+        examples(&r)
+            .iter()
+            .any(|e| e == "The move now rewrites both indexes it touches."),
+        "{:?}",
+        examples(&r)
     );
 }
 
@@ -92,6 +108,7 @@ fn each_state_combination_is_seeded_gated_filled_and_placed() {
 // sokf-tests: CLI-6_AC-10
 // sokf-tests: CLI-6_AC-20
 // sokf-tests: CLI_P-24
+// sokf-tests: CLI-6_AC-126
 #[test]
 fn a_written_document_validates_but_for_its_placeholder_references() {
     let tree = TempTree::fixture("new");
@@ -104,18 +121,17 @@ fn a_written_document_validates_but_for_its_placeholder_references() {
         tree.read("knowledge/issues/open/bug/issue-002-retry-logic.md"),
         r.document
     );
-    // The index stays stale until validation fixes it. After the author reads
-    // and deletes the guidance, only the placeholder reference fails.
-    tree.drop_guidance("knowledge/issues/open/bug/issue-002-retry-logic.md");
+    // The untouched skeleton reports each part that its writer has still to
+    // write as missing, and nothing else.
     let report = tree.validate(true, CacheMode::Off);
-    let own: Vec<&str> = report
-        .errors
-        .iter()
-        .filter(|e| e.path == r.path)
-        .map(|e| e.message.as_str())
-        .collect();
-    assert!(!own.is_empty(), "{}", json(&report));
-    assert!(own.iter().all(|m| m.contains("target-id")), "{own:?}");
+    let own = report.errors.iter().filter(|e| e.path == r.path).count();
+    assert!(own > 0, "{}", json(&report));
+    assert_eq!(
+        not_missing(&report, r.path.as_str()),
+        Vec::<String>::new(),
+        "{}",
+        json(&report)
+    );
     // When a type has no sequence number, `sokf new` refuses to write the same
     // document twice, because the file already exists.
     let mut note = new_options(tree.dir(), "Note");
@@ -125,13 +141,25 @@ fn a_written_document_validates_but_for_its_placeholder_references() {
     assert!(new(&tree.root(), &note).unwrap().created);
     let e = err(new(&tree.root(), &note));
     assert!(e.contains("exists, so sokf writes nothing"), "{e}");
-    // A note links nowhere, so with its guidance gone it validates clean.
+    // A note's skeleton lacks only its paragraph, and with it written the
+    // note validates clean.
     let mut o = new_options(tree.dir(), "Note");
     o.id = Some("note-clean".into());
     o.title = Some("Clean".into());
     o.write = true;
     let r = new(&tree.root(), &o).unwrap();
-    tree.drop_guidance("knowledge/note-clean.md");
+    let report = tree.validate(true, CacheMode::Off);
+    let own: Vec<&str> = report
+        .errors
+        .iter()
+        .filter(|e| e.path == r.path)
+        .map(|e| e.criterion.as_str())
+        .collect();
+    assert_eq!(own, ["TLMD_152"], "{}", json(&report));
+    tree.write(
+        "knowledge/note-clean.md",
+        &(r.document.clone() + "\nEggs and the dark bread.\n"),
+    );
     let report = tree.validate(true, CacheMode::Off);
     assert!(
         report.errors.iter().all(|e| e.path != r.path),
@@ -187,7 +215,7 @@ fn a_type_with_no_template_takes_an_id_and_a_dir() {
     assert_eq!(r.path.as_str(), "/knowledge/note-retry.md");
     assert_eq!(
         r.document,
-        "---\ntype: Note\nid: note-retry\ntitle: Retry\n---\n\n# Retry\n\n<!-- sokf:guidance At most 3 paragraphs. Never leave out or merge content to stay within the count. When at the limit: Start another note for the rest. -->\nMilk, bread, and the good coffee.\n"
+        "---\ntype: Note\nid: note-retry\ntitle: Retry\n---\n\n# Retry\n"
     );
     // `--dir` accepts a path with or without a leading slash.
     for dir in ["knowledge/notes", "/knowledge/notes"] {
@@ -285,7 +313,16 @@ fn a_schema_is_created_from_the_grammar_template() {
         "{}",
         r.document
     );
-    assert!(r.document.contains("````yaml\n"), "{}", r.document);
+    // The skeleton of a schema holds its frontmatter alone, and the guide
+    // gives the fence of the schema as the example of the preamble.
+    assert!(!r.document.contains("```"), "{}", r.document);
+    let preamble = r.guide.as_ref().and_then(|g| g.preamble.as_ref());
+    assert!(
+        preamble
+            .and_then(|p| p.example.as_deref())
+            .is_some_and(|e| e.starts_with("````yaml\n")),
+        "{preamble:?}"
+    );
     // With two roots, the author must give the schemas directory with `--dir`.
     tree.add_other_store();
     tree.write("other/schemas/index.md", "# schemas\n");
@@ -320,13 +357,16 @@ fn a_sidecar_is_created_beside_its_asset() {
     assert_eq!(r.path.as_str(), "/knowledge/media/draft/flowers.png.md");
     assert_eq!(
         r.document,
-        "---\ntype: Image\nid: flowers\ntitle: Flowers\nresource: /knowledge/media/draft/flowers.png\nstate: draft\n---\n\n<!-- sokf:guidance One line under the picture. -->\n<!-- sokf:guidance At most 1 paragraph. Never leave out or merge content to stay within the count. When at the limit: Put more about the picture in a document that links it. -->\nFlowers on the kitchen table.\n"
+        "---\ntype: Image\nid: flowers\ntitle: Flowers\nresource: /knowledge/media/draft/flowers.png\nstate: draft\n---\n"
     );
-    // After the sidecar is written, its guidance deleted, and the index fixed,
-    // the asset and its sidecar validate clean.
+    // After the sidecar is written, its line under the picture written, and
+    // the index fixed, the asset and its sidecar validate clean.
     o.write = true;
     new(&tree.root(), &o).unwrap();
-    tree.drop_guidance("knowledge/media/draft/flowers.png.md");
+    tree.write(
+        "knowledge/media/draft/flowers.png.md",
+        &(r.document.clone() + "\nFlowers on the kitchen table.\n"),
+    );
     let report = tree.validate(true, CacheMode::Off);
     assert!(
         report
@@ -377,6 +417,7 @@ fn a_sidecar_is_created_beside_its_asset() {
 
 // sokf-tests: CLI-6_AC-12
 // sokf-tests: CLI-6_AC-13
+// sokf-tests: CLI-6_AC-130
 // sokf-tests: CLI-6_AC-50
 #[test]
 fn the_json_object_and_the_id_alone() {
@@ -389,8 +430,12 @@ fn the_json_object_and_the_id_alone() {
         .keys()
         .map(String::as_str)
         .collect();
-    assert_eq!(keys, ["id", "path", "document"]);
+    assert_eq!(keys, ["id", "path", "document", "guide"]);
     assert_eq!(value["path"], "/knowledge/issues/open/bug/issue-002-x.md");
+    // The object holds the guide of the new document, as `sokf guide --json`
+    // gives it for the document.
+    assert_eq!(value["guide"]["path"], value["path"]);
+    assert_eq!(value["guide"]["id"], "issue-002-x");
     let mut o = new_options(tree.dir(), "Issue");
     o.slug = Some("x".into());
     o.id_only = true;
@@ -453,9 +498,7 @@ fn a_bound_paragraph_follows_the_filled_title() {
     o.id = Some("note-retry".into());
     o.title = Some("Retry".into());
     let r = new(&tree.root(), &o).unwrap();
-    assert!(r.document.ends_with(
-            "# Retry\n\n<!-- sokf:guidance At most 3 paragraphs. Never leave out or merge content to stay within the count. When at the limit: Start another note for the rest. -->\nRetry\n"
-        ), "{}", r.document);
+    assert!(r.document.ends_with("# Retry\n\nRetry\n"), "{}", r.document);
 }
 
 // sokf-tests: CLI-6_AC-23
@@ -508,5 +551,147 @@ fn a_lifecycle_key_in_the_id_template_is_filled_and_checked() {
             .contains("holds `bug` for `kind`, but `kind` is `feature`")),
         "{}",
         json(&report)
+    );
+}
+
+/// `BOUND_SCHEMA` binds the paragraph of its title section to the title, and
+/// requires one `part-of` link.
+const BOUND_SCHEMA: &str = "---\ntype: Schema\nid: schema-boundp\ntitle: Bound Schema\ndescription: A paragraph bound to the title, and a required link.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Boundp\n  id:\n    template: \"boundp-${:slug}\"\nlinks:\n  - rel: part-of\n    guidance: The note that this one belongs to.\n  - rel: relates-to\n    min: 0\nsections:\n  - heading: { from: title }\n    level: 1\n    blocks:\n      - kind: prose\n        each:\n          text: { from: title }\n````\n";
+
+// A skeleton writes `links` empty where a rule requires a link, and writes no
+// entry, so the check reports the link as missing, and the guide gives the
+// example entry of each rule.
+// sokf-tests: CLI-6_AC-128
+#[test]
+fn a_required_link_leaves_links_empty() {
+    let tree = TempTree::fixture("new");
+    tree.write("knowledge/schemas/boundp.md", BOUND_SCHEMA);
+    let mut o = new_options(tree.dir(), "Boundp");
+    o.slug = Some("milk".into());
+    o.title = Some("Milk".into());
+    o.write = true;
+    let r = new(&tree.root(), &o).unwrap();
+    assert_eq!(
+        r.document,
+        "---\ntype: Boundp\nid: boundp-milk\ntitle: Milk\nlinks:\n---\n\n# Milk\n\nMilk\n"
+    );
+    let guide = r.guide.as_ref().unwrap();
+    assert_eq!(
+        guide.links[0].example,
+        "links:\n  - rel: part-of\n    to: target-id"
+    );
+    let report = tree.validate(true, CacheMode::Off);
+    let own: Vec<&str> = report
+        .errors
+        .iter()
+        .filter(|e| e.path == r.path)
+        .map(|e| e.criterion.as_str())
+        .collect();
+    assert_eq!(own, ["SOKF_SCHEMA_33"], "{}", json(&report));
+    // Without a required link, the skeleton holds no `links` at all.
+    tree.write(
+        "knowledge/schemas/boundp.md",
+        &BOUND_SCHEMA.replace(
+            "  - rel: part-of\n    guidance: The note that this one belongs to.\n",
+            "",
+        ),
+    );
+    o.slug = Some("bread".into());
+    o.write = false;
+    let r = new(&tree.root(), &o).unwrap();
+    assert!(!r.document.contains("links:"), "{}", r.document);
+}
+
+// A title that the paragraph bound to it can't hold leaves no document of
+// the schema that passes, so `sokf new` refuses it, names the rule, and
+// writes nothing.
+// sokf-tests: CLI-6_AC-131
+#[test]
+fn a_title_that_no_bound_unit_holds_is_refused() {
+    let tree = TempTree::fixture("new");
+    tree.write("knowledge/schemas/boundp.md", BOUND_SCHEMA);
+    let before = tree.files();
+    let mut o = new_options(tree.dir(), "Boundp");
+    o.slug = Some("milk".into());
+    o.title = Some("<div>".into());
+    o.write = true;
+    let e = err(new(&tree.root(), &o));
+    assert!(
+        e.starts_with("new: the new document fails the schema of `Boundp`")
+            && e.contains("/knowledge/schemas/boundp.md:")
+            && e.contains("`<div>`"),
+        "{e}"
+    );
+    assert_eq!(tree.files(), before);
+}
+
+// A new Schema document holds its frontmatter alone, and its check reports
+// the description and the fence that its writer writes, each once: the
+// missing fence is a missing block of the preamble, and no second finding
+// says that the document has no schema.
+// sokf-tests: CLI_P-24
+#[test]
+fn a_new_schema_lacks_its_description_and_its_fence_once() {
+    let tree = TempTree::fixture("new");
+    let mut o = new_options(tree.dir(), "Schema");
+    o.id = Some("schema-task".into());
+    o.write = true;
+    let r = new(&tree.root(), &o).unwrap();
+    let report = tree.validate(true, CacheMode::Off);
+    let own: Vec<&str> = report
+        .errors
+        .iter()
+        .filter(|e| e.path == r.path)
+        .map(|e| e.criterion.as_str())
+        .collect();
+    assert_eq!(own, ["TL_143", "TLMD_152"], "{}", json(&report));
+    // A fence that holds no YAML still draws the finding of its schema.
+    tree.write(
+        r.path.as_str().trim_start_matches('/'),
+        &format!(
+            "{}\n````yaml\n: [\n````\n",
+            r.document.replace("description:", "description: A task.")
+        ),
+    );
+    let report = tree.validate(true, CacheMode::Off);
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|e| e.path == r.path && e.criterion == "SOKF_SCHEMA_2"),
+        "{}",
+        json(&report)
+    );
+}
+
+// A sidecar's skeleton binds a heading to `resource` as it binds one to the
+// title: the heading reads the path of the asset that `--for` names.
+// sokf-tests: CLI-6_AC-126
+// sokf-tests: CLI-6_AC-14
+#[test]
+fn a_heading_bound_to_the_resource_takes_the_assets_path() {
+    let tree = TempTree::fixture("new");
+    let schema = tree.read("knowledge/schemas/image.md").replace(
+        "preamble:\n  guidance: One line under the picture.\n  blocks:\n",
+        "sections:\n  - heading: { from: resource }\n    level: 1\n    blocks:\n",
+    );
+    tree.write("knowledge/schemas/image.md", &schema);
+    let mut o = new_options(tree.dir(), "Image");
+    o.id = Some("flowers".into());
+    o.for_asset = Some(PathBuf::from("knowledge/media/draft/flowers.png"));
+    let r = new(&tree.root(), &o).unwrap();
+    assert!(
+        r.document
+            .ends_with("---\n\n# /knowledge/media/draft/flowers.png\n"),
+        "{}",
+        r.document
+    );
+    assert_eq!(
+        r.document
+            .matches("resource: /knowledge/media/draft/flowers.png")
+            .count(),
+        1,
+        "{}",
+        r.document
     );
 }

@@ -82,7 +82,7 @@ pub enum Query {
     /// A qualified id, a link to another store, or an include from another
     /// store resolves through them.
     Identities,
-    /// The query reads the form of a text that the formatter left
+    /// The query reads the answer for a pair that the formatter left
     /// unsettled, such as one that it didn't start for. No stat records
     /// the formatter, so every run checks the readers of this query again.
     Unsettled,

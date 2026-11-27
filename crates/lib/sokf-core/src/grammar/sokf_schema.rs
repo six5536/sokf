@@ -5,8 +5,8 @@
 
 use std::collections::BTreeMap;
 
-use tramlines_core::grammar::Lowerer;
-use tramlines_md::grammar::lower_common;
+use tramlines_core::{grammar::Lowerer, text};
+use tramlines_md::{check, grammar::lower_common};
 
 use super::{Block, Limit, RegexCache, RuleCommon, Schema, States, TypeRegistry, Unit};
 use crate::{Finding, RepoPath, Spanned};
@@ -242,14 +242,7 @@ impl SokfSchema {
         let cited_by = lw.cited_by();
         let markers = lw.markers();
         let plans_paths = lw.plans_paths();
-        // The grammar checks that each pattern compiles (TL_118).
-        let current_links = lw
-            .ext("current-links")
-            .map(list)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|p| regex::Regex::new(p).ok())
-            .collect();
+        let current_links = lw.current_links();
         let findings = lw.findings;
         let unit_types = unit_types(&core);
         let schema = SokfSchema {
@@ -309,6 +302,46 @@ impl<'a> Lowering<'a> {
     /// declares it.
     fn ext(&self, key: &str) -> Option<&'a Spanned> {
         self.core.extensions.get(key)
+    }
+
+    /// `current_links` compiles the patterns of `current-links`, and warns
+    /// about each run of literal text of a pattern whose reading differs
+    /// from the run, as the engine warns about a pattern of its own
+    /// (`TLMD_264`), because a pattern matches a paragraph in tramlines'
+    /// fixed spelling and never matches such a run there. The grammar
+    /// checks that each pattern compiles (`TL_118`).
+    // sokf-implements: SOKF_SCHEMA_110
+    // sokf-implements: EXT-2_AC-5
+    fn current_links(&mut self) -> Vec<regex::Regex> {
+        let Some(node) = self.ext("current-links") else {
+            return Vec::new();
+        };
+        let items: Vec<(usize, String)> = match node.as_seq() {
+            Some(items) => items
+                .iter()
+                .filter_map(|i| Some((i.line, i.as_str()?.to_string())))
+                .collect(),
+            None => list(node).into_iter().map(|p| (node.line, p)).collect(),
+        };
+        for (line, pattern) in &items {
+            for (run, reading) in check::respelt(pattern) {
+                self.findings.push(Finding::warning(
+                    self.path.clone(),
+                    Some(*line),
+                    "SOKF_SCHEMA_110",
+                    format!(
+                        "the pattern {} names {}, which reads {}; a pattern reads the fixed spelling, so it never matches that text outside a code span",
+                        text::code(pattern),
+                        text::code(&run),
+                        text::code(&reading)
+                    ),
+                ));
+            }
+        }
+        items
+            .iter()
+            .filter_map(|(_, p)| regex::Regex::new(p).ok())
+            .collect()
     }
 
     /// `dispatch` reads how the schema selects its files, from its `type`

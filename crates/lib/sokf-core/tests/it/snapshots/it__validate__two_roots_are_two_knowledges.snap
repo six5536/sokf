@@ -1,6 +1,5 @@
 ---
 source: crates/lib/sokf-core/tests/it/validate.rs
-assertion_line: 141
 expression: json(&report)
 ---
 {
@@ -17,7 +16,7 @@ expression: json(&report)
     {
       "path": "/other/note.md",
       "line": 8,
-      "message": "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:fixture:req-cli]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+      "message": "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:fixture:req-cli]` (SOKF_FORMAT_60)"
     },
     {
       "path": "/other/schemas/index.md",

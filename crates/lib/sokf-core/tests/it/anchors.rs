@@ -164,9 +164,9 @@ fn a_fragment_names_its_anchor_by_slug_and_fix_rewrites_the_text_form() {
     assert_eq!(
         errors(&t, false),
         vec![
-            "0: the definition block is missing; run `sokf validate --fix`",
+            "0: the definition block is missing",
             "21: `#Short%20code` matches no heading or key in this document",
-            "21: `[sokf:terms#Visit]` gives the fragment as text, not as a slug. Use `#visit`, which `--fix` writes for you",
+            "21: `[sokf:terms#Visit]` gives the fragment as text, not as a slug. Use `#visit`",
         ]
     );
     let t = tree(&GOOD.replace(
@@ -176,9 +176,9 @@ fn a_fragment_names_its_anchor_by_slug_and_fix_rewrites_the_text_form() {
     assert_eq!(
         errors(&t, false),
         vec![
-            "0: the definition block is missing; run `sokf validate --fix`",
-            "21: `#One` uses the heading text. Use the slug `#one` instead (`--fix` makes this change)",
-            "21: `[sokf:terms#Visit]` gives the fragment as text, not as a slug. Use `#visit`, which `--fix` writes for you",
+            "0: the definition block is missing",
+            "21: `#One` uses the heading text. Use the slug `#one` instead",
+            "21: `[sokf:terms#Visit]` gives the fragment as text, not as a slug. Use `#visit`",
         ]
     );
     assert_eq!(errors(&t, true), [] as [std::string::String; 0]);
@@ -411,26 +411,21 @@ fn a_new_document_carries_its_anchors() {
         },
     )
     .unwrap();
-    for anchor in [
-        "- <a id=\"short-code\"></a>`Short code` -",
-        "<a id=\"alpha\"></a>\n\n```text",
-        "## <a id=\"one\"></a>Part: one",
-    ] {
-        assert!(made.document.contains(anchor), "{}", made.document);
+    // The skeleton holds no part whose text an example gives, so it
+    // captures no key and holds no anchor, and the guide gives each key in
+    // its example.
+    assert!(!made.document.contains("<a id="), "{}", made.document);
+    let all = crate::common::examples(&made).join("\n");
+    for key in ["`Short code` -", "```text", "## Part: one"] {
+        assert!(all.contains(key), "{all}");
     }
-    let rel = made.path.to_string();
-    t.drop_guidance(rel.trim_start_matches('/'));
-    // Validation reports two expected errors: a duplicate term, because the
-    // new document repeats the terms of `terms.md`, and a stale index, because
-    // the index doesn't list the new document yet. It reports no others.
     let report = t.validate_all(false, CacheMode::Off);
-    let other: Vec<&String> = report
-        .errors
-        .iter()
-        .map(|f| &f.message)
-        .filter(|m| !m.contains("is also captured by") && !m.contains("the index is stale"))
-        .collect();
-    assert!(other.is_empty(), "{other:?}");
+    assert_eq!(
+        crate::common::not_missing(&report, made.path.as_str()),
+        Vec::<String>::new(),
+        "{}",
+        crate::common::json(&report)
+    );
 }
 
 proptest! {
@@ -474,4 +469,152 @@ proptest! {
             json(&again)
         );
     }
+}
+
+// A key that holds emphasis is captured in tramlines' fixed spelling, and
+// its anchor, and every fragment that names it, takes the slug of its plain
+// text, whichever spelling the document writes.
+// sokf-tests: SOKF_FORMAT_72
+#[test]
+fn a_key_with_emphasis_is_named_by_the_slug_of_its_plain_text() {
+    let schema = TERM_SCHEMA
+        .replace(
+            "          pattern: '^`(?P<term>[^`]+)` - '\n",
+            "          pattern: '^(?P<term>_[A-Z][a-z]+_) - '\n",
+        )
+        .replace(
+            "          example: '`Short code` - Seven letters.'\n",
+            "          example: '_Short_ - Five letters.'\n",
+        );
+    for term in ["*Short*", "_Short_"] {
+        let doc = GOOD
+            .replace(
+                "- <a id=\"short-code\"></a>`Short code` - Seven letters.\n- <a id=\"visit\"></a>`Visit` - One opening of [a part](#one).\n",
+                &format!("- {term} - Five letters, as [the term](#short) says.\n"),
+            );
+        let other = GOOD
+            .replace("id: terms\ntitle: Terms", "id: others\ntitle: Others")
+            .replace("# Terms", "# Others")
+            .replace(
+                "- <a id=\"short-code\"></a>`Short code` - Seven letters.\n- <a id=\"visit\"></a>`Visit` - One opening of [a part](#one).\n",
+                "- <a id=\"long\"></a>_Long_ - Four letters, unlike [the short term][sokf:#short] of [the terms][sokf:terms#short].\n",
+            );
+        let t = TempTree::clean_with(&[
+            ("knowledge/schemas/term.md", &schema),
+            ("knowledge/terms.md", &doc),
+            ("knowledge/others.md", &other),
+        ]);
+        let errors = |t: &TempTree, fix: bool| -> Vec<String> {
+            t.validate_all(fix, CacheMode::Off)
+                .errors
+                .iter()
+                .filter(|f| {
+                    f.path.as_str().starts_with("/knowledge/")
+                        && !f.path.as_str().ends_with("index.md")
+                })
+                .map(lined)
+                .collect()
+        };
+        let found = errors(&t, true);
+        assert!(found.is_empty(), "{term}: {found:?}");
+        let fixed = t.read("knowledge/terms.md");
+        assert!(
+            fixed.contains(&format!("- <a id=\"short\"></a>{term} - Five letters")),
+            "{fixed}"
+        );
+        let left = errors(&t, false);
+        assert!(left.is_empty(), "{term}: {left:?}");
+        let again = t.validate_all(true, CacheMode::Off);
+        assert!(again.fixes.is_empty(), "{term}: {}", json(&again));
+    }
+}
+
+// A key that a line of a fence captures has the slug of its text as
+// written for its id, so a fragment that gives the key's text resolves to
+// it and `--fix` writes that id, though the plain text of the key differs.
+// sokf-tests: SOKF_FORMAT_72
+// sokf-tests: SOKF_VALIDATION_32
+#[test]
+fn a_fragment_names_a_key_of_a_fence_by_the_slug_of_its_text() {
+    let schema = TERM_SCHEMA.replace(
+        "            - template: 'node ${name:slug}'\n",
+        "            - template: 'node ${name}'\n",
+    );
+    let doc = GOOD
+        .replace("node beta", "node Option<T>")
+        .replace("<a id=\"beta\"></a>", "<a id=\"optiont\"></a>")
+        .replace(
+            "The first part.",
+            "The first part, after [an option][sokf:terms#Option<T>].",
+        );
+    let t = TempTree::clean_with(&[
+        ("knowledge/schemas/term.md", &schema),
+        ("knowledge/terms.md", &doc),
+    ]);
+    assert_eq!(
+        errors(&t, false),
+        vec![
+            "0: the definition block is missing",
+            "21: `[sokf:terms#Option<T>]` gives the fragment as text, not as a slug. Use `#optiont`",
+        ]
+    );
+    let left = errors(&t, true);
+    assert!(left.is_empty(), "{left:?}");
+    let fixed = t.read("knowledge/terms.md");
+    assert!(
+        fixed.contains("[an option][sokf:terms#optiont]."),
+        "{fixed}"
+    );
+    let report = t.validate_all(true, CacheMode::Off);
+    assert!(report.fixes.is_empty(), "{}", json(&report));
+}
+
+// A bare fragment that gives a key's text is rewritten only to the id that
+// first names a key: where the slug of the text names a key of a fence that
+// two documents capture, `--fix` leaves the fragment and doesn't rewrite it
+// to a key of prose whose plain text has the same slug.
+// sokf-tests: SOKF_FORMAT_72
+#[test]
+fn a_bare_fragment_is_never_rewritten_to_another_key() {
+    let schema = TERM_SCHEMA
+        .replace(
+            "          pattern: '^`(?P<term>[^`]+)` - '\n",
+            "          pattern: '^(?P<term>_[A-Z][a-z]+_) - '\n",
+        )
+        .replace(
+            "          example: '`Short code` - Seven letters.'\n",
+            "          example: '_Short_ - Five letters.'\n",
+        )
+        .replace(
+            "            - template: 'node ${name:slug}'\n              key: name\n",
+            "            - template: 'node ${name}'\n              key: name\n              unique: knowledge\n",
+        );
+    let doc = |id: &str, node: &str, term: &str, tail: &str| {
+        GOOD.replace("id: terms\ntitle: Terms", &format!("id: {id}\ntitle: Terms"))
+            .replace(
+                "- <a id=\"short-code\"></a>`Short code` - Seven letters.\n- <a id=\"visit\"></a>`Visit` - One opening of [a part](#one).\n",
+                &format!("- {term} - Five letters{tail}.\n"),
+            )
+            .replace("node beta", &format!("node {node}"))
+            .replace("<a id=\"beta\"></a>", "")
+    };
+    let t = TempTree::clean_with(&[
+        ("knowledge/schemas/term.md", &schema),
+        ("knowledge/a.md", &doc("a", "_Short_", "_Long_", "")),
+        ("knowledge/b.md", &doc("b", "_Short_", "_Tall_", "")),
+        (
+            "knowledge/c.md",
+            &doc(
+                "c",
+                "gamma",
+                "*Short*",
+                ", unlike [the fence key][sokf:#_Short_]",
+            ),
+        ),
+    ]);
+    t.validate_all(true, CacheMode::Off);
+    let c = t.read("knowledge/c.md");
+    assert!(c.contains("[the fence key][sokf:#_Short_]"), "{c}");
+    let again = t.validate_all(true, CacheMode::Off);
+    assert!(again.fixes.is_empty(), "{}", json(&again));
 }

@@ -1,6 +1,6 @@
 //! This module holds `TempDir`, a directory of its own under the system's
-//! temporary directory, which the formatter and the diff of `harness diff`
-//! write their texts into.
+//! temporary directory, which the diff of `harness diff` writes its texts
+//! into.
 
 use std::{
     fs,

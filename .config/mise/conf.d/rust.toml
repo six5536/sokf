@@ -1,3 +1,7 @@
+# The coverage tasks pass PACK_TESTS to the test tasks that their run names, which mise
+# 2026.11.4, the release that setup-tools and the dev container pin, was tried with.
+min_version = "2026.11.4"
+
 [settings]
 idiomatic_version_file_enable_tools = ["rust"]
 
@@ -69,11 +73,12 @@ run = "cargo nextest run --workspace"
 
 [tasks."test:fast:rust-scripts"]
 hide = true
-run = "node --test .config/mise/scripts/rust-lints-check.test.mts .config/mise/scripts/rust-coverage-check.test.mts"
+run = "node .config/mise/scripts/pack-tests.mts @six5536/rust .config/mise/scripts/rust-lints-check.test.mts .config/mise/scripts/rust-coverage-check.test.mts"
 
 [tasks."coverage:check:rust-scripts"]
 hide = true
-depends = ["test:fast:rust-scripts"]
+env = { PACK_TESTS = "all" }
+run = [{ task = "test:fast:rust-scripts" }]
 
 [tasks."test:long:rust"]
 hide = true

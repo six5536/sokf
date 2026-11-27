@@ -5,7 +5,6 @@ title: SOKF schema specification schema
 description: "This schema governs the one document that specifies SOKF schemas: its rules are criteria in the EARS (Easy Approach to Requirements Syntax) form, and some of its sections hold fixed sentences."
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 

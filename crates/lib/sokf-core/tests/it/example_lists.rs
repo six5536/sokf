@@ -119,15 +119,24 @@ fn errors(tree: &TempTree) -> Vec<String> {
         .collect()
 }
 
-/// `scaffold` writes `schema` and returns the document that `sokf new`
-/// writes from it.
+/// `scaffold` writes `schema` and returns the body of its scaffold, as the
+/// guide of a new document gives it: the example of each section, in order,
+/// each without its guidance, its markers, and its anchors.
 fn scaffold(tree: &TempTree, schema: &str) -> String {
     tree.write("knowledge/schemas/listed.md", schema);
     let options = NewOptions {
         slug: Some("thing".into()),
         ..new_options(tree.dir(), "Listed")
     };
-    new(&tree.root(), &options).unwrap().document
+    let made = new(&tree.root(), &options).unwrap();
+    let sections: Vec<String> = made
+        .guide
+        .unwrap()
+        .sections
+        .into_iter()
+        .filter_map(|s| s.example)
+        .collect();
+    sections.join("\n\n") + "\n"
 }
 
 // A schema that gives lists passes its own check: each derived scaffold,
@@ -231,7 +240,7 @@ fn further_occurrences_follow_the_derived_one() {
     let doc = scaffold(&tree, LISTED_SCHEMA);
     assert!(
         doc.contains(
-            "Part Parser\n\nThe parser reads a document into blocks.\n\n## <a id=\"checker\"></a>Part Checker\n\nThe checker matches each block against its rule.\n\n## <a id=\"writer\"></a>Part Writer\n\nThe writer applies each repair.\n"
+            "Part Parser\n\nThe parser reads a document into blocks.\n\n## Part Checker\n\nThe checker matches each block against its rule.\n\n## Part Writer\n\nThe writer applies each repair.\n"
         ),
         "{doc}"
     );
@@ -475,7 +484,7 @@ fn a_paired_occurrence_with_the_wrong_key_fails_the_scaffold() {
     let messages = errors(&tree);
     assert!(
         messages.iter().any(|m| m.starts_with("the scaffold fails")
-            && m.contains("names key `Lock`, which rule `parts` did not capture")),
+            && m.contains("names key `Lock`, which is not a key of set `parts`")),
         "{messages:?}"
     );
 }
@@ -502,7 +511,8 @@ fn examples_on_a_paired_section_that_does_not_repeat_are_refused() {
 }
 
 // The further occurrences of an optional section lie in the same optional
-// region as the occurrence that the scaffold derives.
+// region as the occurrence that the scaffold derives, so the scaffold passes
+// its schema, and the guide gives them in the one example of the section.
 #[test]
 fn further_occurrences_of_an_optional_section_share_its_region() {
     let tree = TempTree::fixture("clean");
@@ -520,9 +530,25 @@ fn further_occurrences_of_an_optional_section_share_its_region() {
         "{}",
         json(&report)
     );
-    let doc = scaffold(&tree, &schema);
-    let open = doc.find("<!-- sokf:optional -->").expect(&doc);
-    let close = doc.find("<!-- /sokf:optional -->").expect(&doc);
-    let writer = doc.find("Part Writer").expect(&doc);
-    assert!(open < writer && writer < close, "{doc}");
+    // The guide gives the section, optional, with every occurrence that the
+    // scaffold writes in its one example.
+    tree.write("knowledge/schemas/listed.md", &schema);
+    let options = NewOptions {
+        slug: Some("thing".into()),
+        ..new_options(tree.dir(), "Listed")
+    };
+    let made = new(&tree.root(), &options).unwrap();
+    let part = made
+        .guide
+        .unwrap()
+        .sections
+        .into_iter()
+        .find(|s| s.rule_id.as_deref() == Some("part"))
+        .unwrap();
+    assert!(part.optional);
+    let example = part.example.unwrap();
+    assert!(
+        example.contains("Part Parser") && example.contains("Part Writer"),
+        "{example}"
+    );
 }

@@ -22,7 +22,7 @@ use crate::{
     config::{self, RepoFormats},
     fix,
     grammar::Grammar,
-    include, index, markdown,
+    include, index,
     model::{KeyIndex, Query},
 };
 
@@ -208,7 +208,7 @@ fn check_once(
     Ok((loaded, findings))
 }
 
-/// `settle` asks the formatter to compare each block of the files in
+/// `settle` asks same-same to compare each block of the files in
 /// `units`, or of every file, and each index of `indexes`, that differs
 /// from its expected text, and adds the result to `expected`, so that the
 /// check and the fix read the same answer (CLI-4_AC-45).
@@ -221,7 +221,11 @@ fn settle(
     units: Option<&BTreeSet<RepoPath>>,
 ) {
     let pairs = include::pairs(model, expected, indexes, units);
-    let layout = cache.formatter().settle(&config.format, &pairs);
+    let pairs: Vec<_> = pairs
+        .into_iter()
+        .filter(|p| !expected.layout.holds(p))
+        .collect();
+    let layout = cache.comparison().settle(&config.format, &pairs);
     expected.layout.extend(layout);
 }
 
@@ -277,6 +281,7 @@ fn check_readers(
     let more = include::expected_for(&loaded.model, &loaded.keys, Some(&round2));
     loaded.expected.includes.extend(more.includes);
     loaded.expected.fences.extend(more.fences);
+    loaded.expected.bodies.extend(more.bodies);
     loaded.expected.definitions.extend(more.definitions);
     settle(
         cache,
@@ -378,7 +383,7 @@ fn extend_keys(
             if !loaded
                 .keys
                 .document
-                .contains_key(&(e.path.clone(), markdown::slug(&e.key)))
+                .contains_key(&(e.path.clone(), e.id.clone()))
             {
                 loaded.keys.add(e);
             }

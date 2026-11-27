@@ -2,7 +2,7 @@
 //! keys under a heading derive from the heading key. The schema declares each
 //! derivation beside the key it constrains.
 
-use common::{TempTree, json, lined, new_options};
+use common::{TempTree, examples, json, lined, new_options, not_missing};
 use sokf_core::{CacheMode, NewOptions, new};
 
 use crate::common;
@@ -125,14 +125,15 @@ fn a_key_under_a_heading_derives_from_a_heading_key() {
     let got = errors(&tree(&doc));
     assert_eq!(got.len(), 1, "{got:?}");
     assert!(
-        got[0].contains(
-            "key `LINK-9_AC-1` derives from `LINK-9`, which rule `parts` did not capture"
-        ),
+        got[0]
+            .contains("key `LINK-9_AC-1` derives from `LINK-9`, which is not a key of set `parts`"),
         "{got:?}"
     );
 }
 
-// The template writes every key with the code of the frontmatter example.
+// The scaffold writes every key with the code of the frontmatter example,
+// as the guide of a new document shows it while the document's `code` is
+// empty.
 #[test]
 fn the_template_writes_every_key_with_the_code() {
     let t = tree(GOOD);
@@ -146,18 +147,23 @@ fn the_template_writes_every_key_with_the_code() {
         },
     )
     .unwrap();
+    let all = examples(&made).join("\n");
     for line in [
-        "### <a id=\"link-1\"></a>1.1 LINK-1 Follow a link",
+        "### 1.1 LINK-1 Follow a link",
         "LINK-1_AC-1: THE API SHALL",
         "LINK_P-1: FOR ANY",
     ] {
-        assert!(made.document.contains(line), "{}", made.document);
+        assert!(all.contains(line), "{all}");
     }
-    t.drop_guidance(made.path.to_string().trim_start_matches('/'));
-    // The new document repeats the keys of `links.md`. A key must be unique
-    // only within its own document, so validation reports no error.
+    // The new document captures no key, so it reports only what its writer
+    // has still to write.
     let report = t.validate(true, CacheMode::Off);
-    assert!(report.errors.is_empty(), "{}", json(&report));
+    assert_eq!(
+        not_missing(&report, made.path.as_str()),
+        Vec::<String>::new(),
+        "{}",
+        json(&report)
+    );
 }
 
 // An example whose key starts with a code other than the frontmatter
@@ -250,8 +256,9 @@ fn a_key_derives_from_a_code_that_contains_the_separator() {
     );
 }
 
-// The scaffold writes the code once in the key of each heading, and the
-// new document validates.
+// The scaffold writes the code once in the key of each heading, as the
+// guide of a new document shows it, and the new document lacks only what its
+// writer writes.
 #[test]
 fn the_template_keeps_a_code_that_contains_the_separator_once() {
     let t = bug_tree(BUGS);
@@ -265,16 +272,16 @@ fn the_template_keeps_a_code_that_contains_the_separator_once() {
         },
     )
     .unwrap();
-    assert!(
-        made.document
-            .contains("## <a id=\"ce-bug-1\"></a>CE-BUG-1 First part"),
-        "{}",
-        made.document
-    );
-    assert!(!made.document.contains("CE-BUG-BUG"), "{}", made.document);
-    t.drop_guidance(made.path.to_string().trim_start_matches('/'));
+    let all = examples(&made).join("\n");
+    assert!(all.contains("## CE-BUG-1 First part"), "{all}");
+    assert!(!all.contains("CE-BUG-BUG"), "{all}");
     let report = t.validate(true, CacheMode::Off);
-    assert!(report.errors.is_empty(), "{}", json(&report));
+    assert_eq!(
+        not_missing(&report, made.path.as_str()),
+        Vec::<String>::new(),
+        "{}",
+        json(&report)
+    );
 }
 
 /// `PREFIX_SCHEMA` lists codes, and keys each part `CODE-n` from one of the

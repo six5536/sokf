@@ -92,7 +92,7 @@ fn a_key_with_no_unit_is_named_even_where_the_section_is_absent() {
     let doc = with("\n### 2.1 Index\n\n- index essays\n", "");
     assert_eq!(
         errors(SHELF_SCHEMA, &doc),
-        vec!["no item names key `essays` of rule `books` under `## 2 Shelf: Prose`"]
+        vec!["no item names key `essays` of set `books` under `## 2 Shelf: Prose`"]
     );
 }
 
@@ -101,7 +101,7 @@ fn a_unit_under_the_wrong_parent_is_an_orphan_there() {
     let doc = with("- index essays\n", "- index essays\n- index odes\n");
     assert_eq!(
         errors(SHELF_SCHEMA, &doc),
-        vec!["key `odes` is not one rule `books` captured under `## 2 Shelf: Prose`"]
+        vec!["key `odes` is not a key of set `books` under `## 2 Shelf: Prose`"]
     );
 }
 
@@ -198,7 +198,7 @@ fn two_rules_of_one_section_pair_each_on_its_own() {
     // `sonnets` in the list does not count for the table.
     assert_eq!(
         errors(&schema, &doc),
-        vec!["no row names key `sonnets` of rule `books` under `## 1 Shelf: Poetry`"]
+        vec!["no row names key `sonnets` of set `books` under `## 1 Shelf: Poetry`"]
     );
 }
 
@@ -336,7 +336,7 @@ fn a_pairing_rule_captures_a_key_of_a_rule_that_exists() {
             list(
                 "          pattern: '^(?P<k>[a-z]+)$'\n          key: k\n          example: odes\n          for-each-key-of: nothing\n",
             ),
-            "`for-each-key-of` names no rule `nothing`",
+            "`for-each-key-of` names no set `nothing`",
         ),
         (
             list(
@@ -366,8 +366,18 @@ fn a_derived_template_writes_the_subsection_inside_its_parent() {
         id: Some("library".to_string()),
         ..new_options(tree.dir(), "Shelf")
     };
-    let document = new(&tree.root(), &opts).unwrap().document;
-    let body = document.split("\n---\n").nth(1).unwrap();
+    let made = new(&tree.root(), &opts).unwrap();
+    // The guide gives the subsection inside the example of its parent.
+    let body: Vec<String> = made
+        .guide
+        .unwrap()
+        .sections
+        .into_iter()
+        .filter(|s| s.parent.is_none())
+        .filter_map(|s| s.example)
+        .collect();
+    let body = body.join("\n\n");
+    let document = made.document;
     let headings_and_items: Vec<&str> = body
         .lines()
         .filter(|l| l.starts_with('#') || l.starts_with("- "))
@@ -377,13 +387,13 @@ fn a_derived_template_writes_the_subsection_inside_its_parent() {
         vec![
             "# Library",
             "- Poetry",
-            "## <a id=\"poetry\"></a>1 Shelf: Poetry",
-            "- <a id=\"odes\"></a>book odes",
+            "## 1 Shelf: Poetry",
+            "- book odes",
             "### 1.1 Index",
             "- index odes",
         ]
     );
-    assert!(!document.contains("sokf:optional"), "{document}");
+    assert!(!document.contains("sokf:"), "{document}");
     // The schema raises no error, because the template derived from it
     // validates against it.
     let schema_findings: Vec<String> = on(&tree.validate(false, CacheMode::Off).errors, "shelf.md")
@@ -475,8 +485,8 @@ proptest! {
     #![proptest_config(crate::common::proptest_cases::cases(48))]
 
     /// The templates that sokf derives from a schema with a subsection
-    /// validate against that schema, and `sokf new` writes a valid document
-    /// in each state.
+    /// validate against that schema, and `sokf new` writes a document in each
+    /// state that lacks only what its writer writes.
     #[test]
     fn a_derivation_with_a_parent_passes_its_own_schema(n in arb_nested()) {
         let tree = TempTree::fixture("clean");
@@ -495,11 +505,11 @@ proptest! {
                 ..new_options(tree.dir(), "Shelf")
             });
             prop_assert!(made.is_ok(), "{:?}", made.as_ref().err());
+            let after = tree.validate(true, CacheMode::Off);
             if let Ok(made) = made {
-                tree.drop_guidance(made.path.as_str().trim_start_matches('/'));
+                let left = common::not_missing(&after, made.path.as_str());
+                prop_assert!(left.is_empty(), "{left:?}\n{}", common::json(&after));
             }
         }
-        let after = tree.validate(true, CacheMode::Off);
-        prop_assert!(after.errors.is_empty(), "{}", common::json(&after));
     }
 }

@@ -1,6 +1,6 @@
 //! This module implements `sokf new` (CLI-6).
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -62,8 +62,15 @@ pub struct NewResult {
     /// either in the directory that the schema gives the document's lifecycle
     /// states or in the directory set by `--dir`.
     pub path: RepoPath,
-    /// `document` is the whole text of the document.
+    /// `document` is the whole text of the document: its skeleton, which
+    /// holds only what is true of it, and no example and no guidance.
     pub document: String,
+    /// `guide` is the guide of the new document, as `sokf guide --json`
+    /// gives it for the document: the guidance and the example of each part
+    /// at the document's states (CLI-6_AC-130).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "super::guide::DocumentGuide")]
+    pub guide: Option<super::guide::DocumentGuide>,
     /// `created` is true when `--write` wrote the file. The JSON report leaves this field
     /// out.
     #[serde(skip)]
@@ -97,8 +104,8 @@ fn refused(
     Error::New(scaffold::no_template(type_name, schema.as_ref(), refusals))
 }
 
-/// `new` builds a document of a type from the scaffold of the type's schema,
-/// and writes it when `write` is set. When it refuses, it has written
+/// `new` builds a document of a type from the skeleton of the type's schema,
+/// with the document's guide, and writes it when `write` is set. When it refuses, it has written
 /// nothing.
 // sokf-implements: CLI-6_AC-1
 // sokf-implements: CLI-6_AC-24
@@ -171,6 +178,7 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
             id,
             path: RepoPath::root(),
             document: String::new(),
+            guide: None,
             created: false,
             indexes: Vec::new(),
             index_error: None,
@@ -188,9 +196,6 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
     let at = model.knowledge_of(&path);
     let language = scaffold::language(&model, &compiled, schema, type_name, knowledge, at);
     let words = scaffold::Words::new(&compiled.texts, language);
-    let seed = scaffold::seed(schema, &states, &words)
-        .map_err(|r| refused(&model, &compiled, knowledge, type_name, &r))?;
-    let gated = scaffold::gate(&seed.document, &states);
     let identity = scaffold::identity(
         &id,
         slug.as_deref(),
@@ -198,9 +203,8 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         states.clone(),
         asset.as_ref().map(|(a, _)| a.clone()),
     );
-    let filled = scaffold::fill(&gated, schema, &identity);
-    let document = scaffold::bind(
-        &filled, &path, schema, &states, &model, &compiled, knowledge,
+    let (document, guide) = build(
+        &site, &compiled, knowledge, type_name, &path, &identity, &words,
     )?;
 
     let mut created = false;
@@ -224,10 +228,74 @@ pub fn new(root: &RepoRoot, opts: &NewOptions) -> Result<NewResult> {
         id,
         path,
         document,
+        guide: Some(guide),
         created,
         indexes,
         index_error,
     })
+}
+
+/// `build` returns the new document at `path` and its guide: the skeleton of
+/// the schema of `site` at its states, with the id, the title, and the
+/// `resource` of `identity`, from which each heading, unit, and key that
+/// derives from them derives, filled with the rest of `identity`, and with the anchor of each
+/// key that it captures.
+// sokf-implements: CLI-6_AC-130
+fn build(
+    site: &scaffold::Site,
+    compiled: &grammar::Compiled,
+    knowledge: Option<usize>,
+    type_name: &str,
+    path: &RepoPath,
+    identity: &scaffold::Identity,
+    words: &scaffold::Words<'_>,
+) -> Result<(String, super::guide::DocumentGuide)> {
+    let (model, schema, states) = (site.model, site.schema, site.states);
+    // A heading or a unit bound to `resource` takes the asset's path, as one
+    // bound to the id or the title takes theirs.
+    let mut values = BTreeMap::from([
+        ("id".to_string(), identity.id.clone()),
+        ("title".to_string(), identity.title.clone()),
+    ]);
+    if let Some(r) = &identity.resource {
+        values.insert("resource".to_string(), r.to_string());
+    }
+    let skeleton = scaffold::skeleton(schema, states, words, &values).map_err(|r| match r {
+        scaffold::Refused::Schema(r) => refused(model, compiled, knowledge, type_name, &r),
+        scaffold::Refused::Values(r) => fails(model, compiled, knowledge, type_name, &r),
+    })?;
+    let filled = scaffold::fill(&skeleton, schema, identity);
+    let document = scaffold::bind(&filled, path, schema, states, model, compiled, knowledge)?;
+    let guide = super::guide::new_guide(
+        path, &document, type_name, schema, model, compiled, knowledge, states, words,
+    );
+    Ok((document, guide))
+}
+
+/// `fails` says that no document with the id and the title that the command
+/// gives passes the schema, with the first of `refusals`, which the scaffold
+/// for those values gives, and the line of its rule in the schema of
+/// `type_name`, such as a title that a paragraph bound to it can't hold.
+// sokf-implements: CLI-6_AC-131
+fn fails(
+    model: &Model,
+    compiled: &grammar::Compiled,
+    knowledge: Option<usize>,
+    type_name: &str,
+    refusals: &[scaffold::Refusal],
+) -> Error {
+    let schema = knowledge
+        .and_then(|k| compiled.for_type(model, k, type_name))
+        .map_or_else(
+            || "line ".to_string(),
+            |(r, _)| format!("{}:", model.schema(r).doc.path),
+        );
+    let why = refusals
+        .first()
+        .map_or_else(String::new, |r| format!(": {schema}{}: {}", r.line, r.what));
+    Error::New(format!(
+        "the new document fails the schema of `{type_name}`{why}"
+    ))
 }
 
 /// `sidecar_asset` returns the asset that `--for` names and the path of its

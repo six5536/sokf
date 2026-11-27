@@ -16,7 +16,7 @@
       }
     },
     "warnings": {
-      "description": "The content that an agent may load twice.",
+      "description": "What the user should know of the parts, such as content that an agent may load twice, or a part that may not be an edit.",
       "type": "array",
       "items": {
         "type": "string"
@@ -123,17 +123,17 @@
           "const": "absent"
         },
         {
-          "description": "Equal to the tool's content.",
+          "description": "The same as the tool's content, by its meaning.",
           "type": "string",
           "const": "current"
         },
         {
-          "description": "Differs from the tool's content and equals the recorded hash: the tool wrote it and has changed since.",
+          "description": "Differs from the tool's content and is what the record holds: the tool wrote it and has changed since.",
           "type": "string",
           "const": "stale"
         },
         {
-          "description": "Differs from both, or present with no recorded hash.",
+          "description": "Differs from both, or present with no record that can vouch for it.",
           "type": "string",
           "const": "edited"
         }

@@ -128,7 +128,7 @@ impl Cache {
         let mut index = KeyIndex::default();
         let removed = self.removed_set();
         let Ok(mut stmt) = self.conn().prepare(
-            "SELECT path, key, line, heading_slug, scope, knowledge, rule_id FROM keys \
+            "SELECT path, key, line, heading_slug, holds_anchor, scope, knowledge, rule_id FROM keys \
              WHERE slug = ?1 ORDER BY path, line, key",
         ) else {
             return index;
@@ -140,14 +140,17 @@ impl Cache {
                     r.get::<_, String>(1)?,
                     r.get::<_, usize>(2)?,
                     r.get::<_, Option<String>>(3)?,
-                    r.get::<_, String>(4)?,
-                    r.get::<_, usize>(5)?,
-                    r.get::<_, Option<String>>(6)?,
+                    r.get::<_, bool>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, usize>(6)?,
+                    r.get::<_, Option<String>>(7)?,
                 ))
             }) else {
                 continue;
             };
-            for (path, key, line, heading_slug, scope, knowledge, rule_id) in rows.flatten() {
+            for (path, key, line, heading_slug, holds_anchor, scope, knowledge, rule_id) in
+                rows.flatten()
+            {
                 let Some(path) = RepoPath::parse(&path) else {
                     continue;
                 };
@@ -155,10 +158,12 @@ impl Cache {
                     continue;
                 }
                 index.add(KeyEntry {
+                    id: slug.clone(),
                     key,
                     path,
                     line,
                     heading_slug,
+                    holds_anchor,
                     scope: match scope.as_str() {
                         "document" => KeyScope::Document,
                         host => KeyScope::Host(host.to_string()),
@@ -192,12 +197,12 @@ impl Cache {
     pub fn old_keys_of(&self, path: &RepoPath) -> BTreeSet<(String, String, usize)> {
         self.conn()
             .rows(
-                "SELECT scope, key, knowledge FROM keys WHERE path = ?1",
+                "SELECT scope, slug, knowledge FROM keys WHERE path = ?1",
                 [path.as_str()],
                 |r| {
                     Ok((
                         r.get::<_, String>(0)?,
-                        crate::markdown::slug(&r.get::<_, String>(1)?),
+                        r.get::<_, String>(1)?,
                         r.get::<_, usize>(2)?,
                     ))
                 },
@@ -224,8 +229,8 @@ impl Cache {
     pub(super) fn commit_keys(conn: &Conn, state: &SyncState) -> rusqlite::Result<()> {
         let mut del_keys = conn.prepare("DELETE FROM keys WHERE path = ?1")?;
         let mut put_key = conn.prepare(
-            "INSERT INTO keys (path, key, slug, line, heading_slug, scope, knowledge, rule_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO keys (path, key, slug, line, heading_slug, holds_anchor, scope, knowledge, \
+             rule_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?;
         for (path, entries) in &state.keys_of {
             del_keys.execute([path.as_str()])?;
@@ -237,9 +242,10 @@ impl Cache {
                 put_key.execute(params![
                     path.as_str(),
                     e.key,
-                    crate::markdown::slug(&e.key),
+                    e.id,
                     e.line,
                     e.heading_slug,
+                    e.holds_anchor,
                     scope,
                     e.knowledge,
                     e.rule_id

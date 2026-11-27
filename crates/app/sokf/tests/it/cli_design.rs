@@ -21,27 +21,42 @@ fn with_design() -> Fixture {
     f
 }
 
-/// `scaffold` returns the scaffold of a new design.
+/// `scaffold` returns the scaffold of a new design, as the guide of the new
+/// document gives it.
 fn scaffold(f: &Fixture) -> String {
-    let (stdout, stderr, code) = f.run(&["new", "Design", "--slug", "example"]);
-    assert_eq!(code, 0, "{stderr}");
-    stdout
+    f.scaffold(&["Design", "--slug", "example"])
 }
 
-// Each optional section of a design's scaffold is a region of its own, so a
-// writer keeps one and deletes the next.
+// Each optional section of a design is a part of its own in the guide of a
+// new design: the guide marks it optional and gives it an example of its own
+// that holds its heading alone, so a writer writes one and leaves out the
+// next. The new design holds none of them.
 // sokf-tests: CLI-6_AC-1
 #[test]
 fn each_optional_section_of_a_design_is_a_region_of_its_own() {
-    let text = scaffold(&with_design());
-    let regions: Vec<&str> = text
-        .split("<!-- sokf:optional -->")
-        .skip(1)
-        .map(|r| r.split("<!-- /sokf:optional -->").next().unwrap())
+    let f = with_design();
+    let (out, err, code) = f.run(&["new", "Design", "--slug", "example", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let optional: Vec<&serde_json::Value> = value["guide"]["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["optional"] == true && s["level"] == 2)
         .collect();
-    assert!(regions.len() > 1, "{text}");
-    for region in regions {
-        assert!(region.matches("\n## ").count() <= 1, "{region}");
+    assert!(optional.len() > 1, "{out}");
+    let document = value["document"].as_str().unwrap();
+    for section in optional {
+        let example = section["example"].as_str().unwrap_or_default();
+        assert!(
+            format!("\n{example}").matches("\n## ").count() <= 1,
+            "{example}"
+        );
+        let heading = example.lines().next().unwrap_or_default();
+        assert!(
+            heading.is_empty() || !document.contains(heading),
+            "{document}"
+        );
     }
 }
 
@@ -53,7 +68,6 @@ fn a_worked_example_after_a_concept_s_prose_reads_as_an_example() {
     let f = with_design();
     let text: String = scaffold(&f)
         .lines()
-        .filter(|l| !l.contains("sokf:guidance"))
         .filter(|l| {
             !matches!(
                 *l,

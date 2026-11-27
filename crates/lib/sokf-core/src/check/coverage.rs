@@ -4,13 +4,12 @@
 //! (`SOKF_SCHEMA_17`, `SOKF_SCHEMA_49`). The pass of a deprecated document reads
 //! them too.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::states_of;
 use crate::{
     Compiled, Finding, Locator, MarkerCheck, Model, RepoPath,
     grammar::{CitationRule, CitedFrom},
-    markdown::slug,
     model::{KeyEntry, KeyIndex, Query},
 };
 
@@ -153,6 +152,8 @@ impl Citations {
 // sokf-implements: EXT-9_AC-8
 // sokf-implements: EXT-9_AC-9
 // sokf-implements: EXT-9_AC-10
+// sokf-implements: EXT-9_AC-12
+// sokf-implements: EXT-9_AC-13
 pub fn check_document(
     model: &Model,
     compiled: &Compiled,
@@ -214,24 +215,51 @@ pub fn check_document(
                 }
             }
             Some(id) => {
-                // The pass reports each key once: a rule can capture one key in
-                // two places, such as a diagram line and a table row, but
-                // the key is either cited or not.
+                // The pass reports each key once, at the capture that holds
+                // the key's anchor, where the key is defined: a rule can
+                // capture one key in two places, such as a diagram line and a
+                // table row, with other keys between them, but the key is
+                // either cited or not. The first capture of each key's id is
+                // taken in the order of lines, where a dedup of neighbours
+                // would keep a key whose captures another key separates.
                 let mut owned: Vec<&KeyEntry> = keys
                     .of_document(&doc.path)
                     .filter(|e| e.rule_id.as_deref() == Some(id.as_str()))
                     .collect();
-                owned.sort_by_key(|e| (e.line, e.key.clone()));
-                owned.dedup_by_key(|e| slug(&e.key));
+                owned.sort_by(|a, b| (a.line, &a.key).cmp(&(b.line, &b.key)));
+                let mut seen: HashSet<&str> = HashSet::new();
+                owned.retain(|e| seen.insert(e.id.as_str()));
                 for e in owned {
+                    // Every capture of the key in the document, by any rule,
+                    // such as a heading that pairs with it.
+                    let all = keys
+                        .document
+                        .get(&(doc.path.clone(), e.id.clone()))
+                        .map_or(&[][..], Vec::as_slice);
                     // A heading key is cited by its own slug or by its
                     // heading's slug, because both point to the same
-                    // anchor line.
-                    let by_heading = e.heading_slug.as_deref().is_some_and(|h| cited(Some(h)));
-                    if !cited(Some(&slug(&e.key))) && !by_heading {
+                    // anchor line, and a key that a heading captures
+                    // anywhere is cited by that heading's slug.
+                    let by_heading = all
+                        .iter()
+                        .filter_map(|a| a.heading_slug.as_deref())
+                        .any(|h| cited(Some(h)));
+                    if !cited(Some(&e.id)) && !by_heading {
+                        // The anchor can stand at a capture of another rule,
+                        // or at a later one, such as the heading after an
+                        // item that declares `key-repeats`; without one, the
+                        // first capture of the rule stands for the key. The
+                        // finding names the key as that capture reads it,
+                        // and of two that hold it, the first by line and key,
+                        // in the order of the store.
+                        let at = all
+                            .iter()
+                            .filter(|a| a.holds_anchor)
+                            .min_by_key(|a| (a.line, &a.key))
+                            .unwrap_or(e);
                         findings.push(uncited(
-                            Some(e.line),
-                            format!("no {from} cites key `{}`", e.key),
+                            Some(at.line),
+                            format!("no {from} cites key `{}`", at.key),
                         ));
                     }
                 }

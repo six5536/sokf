@@ -83,10 +83,8 @@ a document: it has no `id`, no `links`, and no lifecycle.
 
 ## <a id="3"></a>3. Writing a Schema document
 
-A schema is the body of a document of type `Schema`: a single YAML fence
-opened with four backticks.
+A schema is the body of a document of type `Schema`: a single YAML fence.
 
-<!-- prettier-ignore -->
 `````markdown
 ---
 type: Schema
@@ -401,7 +399,6 @@ the type of the schema whose glob matches the asset. Under the following schema,
 `/knowledge/media/flowers.png` has `type: Image`, and every document of type
 `Image` is a sidecar.
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 40
 frontmatter:

@@ -2,8 +2,8 @@
 # /.sokf/texts.yaml, holds texts in the same shape, of another language or in
 # place of an entry of this file.
 en:
-  # The rule for writing a description, which `sokf new` writes before the
-  # `description` key of a scaffold: the format specification's definition
+  # The rule for writing a description, which a guide prints before the
+  # guidance of the `description` key: the format specification's definition
   # of `description`.
   description: >-
     The text that the index shows beside the title, for a reader deciding

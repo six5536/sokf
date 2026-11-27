@@ -319,7 +319,7 @@ fn a_directory_of_documents_gets_a_manifest_and_keeps_every_file() {
         .map(|f| format!("{}: {}", f.path, sokf_core::report_message(f)))
         .collect();
     assert!(
-        errors.contains(&"/analysis/chuckie-egg/index.md: the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix` (SOKF_FORMAT_97)".to_string()),
+        errors.contains(&"/analysis/chuckie-egg/index.md: the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document (SOKF_FORMAT_97)".to_string()),
         "{errors:?}"
     );
     let hand_written = tree.read("analysis/chuckie-egg/index.md");

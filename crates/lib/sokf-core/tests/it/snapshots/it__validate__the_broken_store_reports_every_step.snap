@@ -1,6 +1,5 @@
 ---
 source: crates/lib/sokf-core/tests/it/validate.rs
-assertion_line: 26
 expression: json(&report)
 ---
 {
@@ -140,12 +139,12 @@ expression: json(&report)
     {
       "path": "/knowledge/req-other.md",
       "line": 17,
-      "message": "`OTHER-1_AC-1 [ubiquitous]: the system should reject this li…` does not match the `ubiquitous` form: it fails at column 32: expected a `text` (`.+`) then ` SHALL `, found `system should reject th…`; an item of this kind reads PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`. (schema schema-requirement, section \"Acceptance Criteria\" block 1) (TL_74)"
+      "message": "`OTHER-1_AC-1 [ubiquitous]: the system should reject this li…` does not match the `ubiquitous` form: it fails at column 32: expected a `text` (`.+`) then ` SHALL `, found `system should reject th…`; an item of this kind reads ``PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`.`` (schema schema-requirement, section \"Acceptance Criteria\" block 1) (TL_74)"
     },
     {
       "path": "/knowledge/req-other.md",
       "line": 18,
-      "message": "`CLI-1_AC-9 [bogus]: WHEN this THEN that` matches none of the forms `ubiquitous`, `event`, `state`, `unwanted`, `optional`, `complex-event`, `complex-unwanted`: each fails at column 13; an item of this kind reads PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`. or PLUMB-1_AC-1 [event]: WHEN a program writes a message to `/mnt/plumb/send`, the plumber SHALL deliver the message to the port that the first matching rule set names. or PLUMB-2_AC-2 [state]: WHILE a program's queue for the port is empty, the plumber SHALL delay its reply to the program's read until a message arrives. or PLUMB-1_AC-2 [unwanted]: IF no rule set matches and the message names no port, THEN the plumber SHALL fail the write with the error `no matching plumb rule`. or PLUMB-1_AC-4 [optional]: WHERE the message has a `click` attribute, the plumber SHALL replace the data with the text that the matching rule set's patterns match around the click position. or PLUMB-1_AC-3 [complex]: WHILE no program has the destination port open, WHEN a message for that port arrives, the plumber SHALL start the program that the rule set's `plumb client` action names. or PLUMB-3_AC-4 [complex]: WHILE a program has `/mnt/plumb/rules` open for writing, IF a second program opens it for writing, THEN the plumber SHALL fail the open with the error `file already open`. (schema schema-requirement, section \"Acceptance Criteria\" block 1) (TL_74)"
+      "message": "`CLI-1_AC-9 [bogus]: WHEN this THEN that` matches none of the forms `ubiquitous`, `event`, `state`, `unwanted`, `optional`, `complex-event`, `complex-unwanted`: each fails at column 13; an item of this kind reads ``PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`.`` or ``PLUMB-1_AC-1 [event]: WHEN a program writes a message to `/mnt/plumb/send`, the plumber SHALL deliver the message to the port that the first matching rule set names.`` or `PLUMB-2_AC-2 [state]: WHILE a program's queue for the port is empty, the plumber SHALL delay its reply to the program's read until a message arrives.` or ``PLUMB-1_AC-2 [unwanted]: IF no rule set matches and the message names no port, THEN the plumber SHALL fail the write with the error `no matching plumb rule`.`` or ``PLUMB-1_AC-4 [optional]: WHERE the message has a `click` attribute, the plumber SHALL replace the data with the text that the matching rule set's patterns match around the click position.`` or ``PLUMB-1_AC-3 [complex]: WHILE no program has the destination port open, WHEN a message for that port arrives, the plumber SHALL start the program that the rule set's `plumb client` action names.`` or ``PLUMB-3_AC-4 [complex]: WHILE a program has `/mnt/plumb/rules` open for writing, IF a second program opens it for writing, THEN the plumber SHALL fail the open with the error `file already open`.`` (schema schema-requirement, section \"Acceptance Criteria\" block 1) (TL_74)"
     },
     {
       "path": "/knowledge/schemas/anchored.md",
@@ -290,7 +289,7 @@ expression: json(&report)
     {
       "path": "/knowledge/shapes.md",
       "line": 24,
-      "message": "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:req-cli]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+      "message": "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:req-cli]` (SOKF_FORMAT_60)"
     },
     {
       "path": "/knowledge/shapes.md",
@@ -325,7 +324,7 @@ expression: json(&report)
     {
       "path": "/knowledge/stale.md",
       "line": 16,
-      "message": "`sokf:include req-cli` is stale. Run `sokf validate --fix` (SOKF_FORMAT_85)"
+      "message": "`sokf:include req-cli` is stale (SOKF_FORMAT_85)"
     },
     {
       "path": "/knowledge/stale.md",
@@ -350,7 +349,7 @@ expression: json(&report)
     {
       "path": "/knowledge/stale.md",
       "line": 38,
-      "message": "the definition block is stale. Run `sokf validate --fix` (SOKF_FORMAT_80)"
+      "message": "the definition block is stale (SOKF_FORMAT_80)"
     },
     {
       "path": "/knowledge/unclosed.md",

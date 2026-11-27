@@ -7,6 +7,7 @@ mod declined;
 mod hook;
 mod integration;
 mod tool;
+mod unvouched;
 
 /// `DEFAULT_HOOK_PROGRAM` is the program that the hook line runs. A
 /// repository replaces it with `harness.<name>.command` (CONF-4_AC-2,
@@ -19,3 +20,4 @@ pub use integration::{
     ALLOWED_COMMAND, HOOK_COMMAND_MARK, HOOK_EVENTS, hook_command, instructions, integration, skill,
 };
 pub use tool::{HEADER, SokfTool, record_path};
+pub(crate) use unvouched::unvouched;

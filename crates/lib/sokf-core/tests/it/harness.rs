@@ -123,9 +123,14 @@ fn an_empty_repository_gets_every_part_and_the_record() {
         record.starts_with("# Written by sokf harness install. Do not edit it: sokf compares the parts with these hashes to tell a part you edited from a stale one.\n\n[claude]\n"),
         "{record}"
     );
-    for part in ["hooks", "instructions", "permissions", "skills"] {
-        assert!(record.contains(&format!("{part} = \"fnv1a64:")), "{record}");
+    // Each part has its fingerprint, and the skills part a table of its file's.
+    let table: toml::Table = record.parse().unwrap();
+    let claude = table["claude"].as_table().unwrap();
+    for part in ["hooks", "instructions", "permissions"] {
+        assert!(claude[part].is_str(), "{record}");
     }
+    assert!(claude["skills"]["sokf/SKILL.md"].is_str(), "{record}");
+    assert!(!record.contains("fnv1a64:"), "{record}");
     assert_eq!(tree.read(".sokf/config.toml"), with_hooks());
     // Install is idempotent: the second run writes nothing and reports every
     // part current.
@@ -242,7 +247,7 @@ fn a_skill_the_tool_never_wrote_is_edited_until_forced() {
     );
     assert!(
         tree.read(".sokf/harness.toml")
-            .contains("skills = \"fnv1a64:")
+            .contains("\n[claude.skills]\n")
     );
 }
 
@@ -304,10 +309,8 @@ fn a_declined_part_stays_declined_until_the_config_line_goes() {
     assert_eq!(tree.read(".sokf/config.toml"), declined);
     // The user changes the list, so the hooks come back and the skill is declined.
     let skill_hash = |tree: &TempTree| {
-        tree.read(".sokf/harness.toml")
-            .lines()
-            .find(|l| l.starts_with("skills = "))
-            .map(str::to_string)
+        let record: toml::Table = tree.read(".sokf/harness.toml").parse().unwrap();
+        record["claude"].get("skills").map(ToString::to_string)
     };
     let before = skill_hash(&tree);
     assert!(before.is_some());
@@ -323,7 +326,7 @@ fn a_declined_part_stays_declined_until_the_config_line_goes() {
     );
     let out = install(&tree, None, false).unwrap();
     assert!(verbs(&out).iter().all(|v| *v == "current"), "{out:?}");
-    assert!(tree.read(".sokf/harness.toml").contains("skills = "));
+    assert!(tree.read(".sokf/harness.toml").contains("[claude.skills]"));
 }
 
 // sokf-tests: CLI-3_AC-20
@@ -499,49 +502,165 @@ fn a_hook_line_edited_to_another_binary_is_edited_not_absent() {
     assert!(after.contains("./other/sokf harness hook"), "{after}");
 }
 
+/// `state_of` returns the state of the part `part` of Claude Code.
+fn state_of<'a>(report: &'a HarnessReport, part: &str) -> Option<&'a str> {
+    states(report)
+        .into_iter()
+        .find(|(p, _, _)| *p == part)
+        .map(|(_, s, _)| s)
+}
+
 // sokf-tests: CLI-3_AC-16
 #[test]
 fn a_formatter_may_relay_out_the_block_without_making_it_edited() {
     let tree = TempTree::empty("harness-formatted");
     install(&tree, None, false).unwrap();
     let before = tree.read("CLAUDE.md");
-    // Change the block as a Markdown formatter can: rewrap its words and put
-    // blank lines around the markers, without changing a word.
+    // Lay the block out again as a Markdown formatter can: put blank lines
+    // around the markers and before the list, and wrap each line, the items'
+    // lines under their text, without changing a word or the Markdown.
     let block_start = before.find("<!-- sokf:harness -->").unwrap();
     let block_end = before.find("<!-- /sokf:harness -->").unwrap();
     let block = &before[block_start + "<!-- sokf:harness -->".len()..block_end];
-    let rewrapped: String = block
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .chunks(8)
-        .map(|c| c.join(" "))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let wrap = |line: &str, indent: &str| {
+        line.split_whitespace()
+            .collect::<Vec<_>>()
+            .chunks(8)
+            .map(|c| c.join(" "))
+            .collect::<Vec<_>>()
+            .join(&format!("\n{indent}"))
+    };
+    let relaid: Vec<String> = block
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| match l.strip_prefix("- ") {
+            Some(item) => format!("- {}", wrap(item, "  ")),
+            None => format!("{}\n", wrap(l, "")),
+        })
+        .collect();
     tree.write(
         "CLAUDE.md",
-        &format!("<!-- sokf:harness -->\n\n{rewrapped}\n\n<!-- /sokf:harness -->\n"),
+        &format!(
+            "<!-- sokf:harness -->\n\n{}\n\n<!-- /sokf:harness -->\n",
+            relaid.join("\n")
+        ),
     );
     let st = status(&tree).unwrap();
     assert_eq!(
-        states(&st)
-            .iter()
-            .find(|(p, _, _)| *p == "instructions")
-            .map(|(_, s, _)| *s),
+        state_of(&st, "instructions"),
         Some("current"),
-        "a block laid out again is the same block"
+        "a block laid out again is the same block: {}",
+        tree.read("CLAUDE.md")
+    );
+    // The same words in one paragraph are another block, and an edit.
+    let words = block.split_whitespace().collect::<Vec<_>>().join(" ");
+    tree.write(
+        "CLAUDE.md",
+        &format!("<!-- sokf:harness -->\n\n{words}\n<!-- /sokf:harness -->\n"),
+    );
+    assert_eq!(
+        state_of(&status(&tree).unwrap(), "instructions"),
+        Some("edited")
     );
     // A change to the words of the block is still an edit.
     tree.write(
         "CLAUDE.md",
         "<!-- sokf:harness -->\n\nSomething else entirely.\n<!-- /sokf:harness -->\n",
     );
-    let st = status(&tree).unwrap();
     assert_eq!(
-        states(&st)
-            .iter()
-            .find(|(p, _, _)| *p == "instructions")
-            .map(|(_, s, _)| *s),
+        state_of(&status(&tree).unwrap(), "instructions"),
         Some("edited")
+    );
+}
+
+// sokf-tests: CLI-3_AC-13
+// sokf-tests: CLI-3_AC-56
+#[test]
+fn a_part_that_oxfmt_re_laid_is_current() {
+    let tree = TempTree::empty("harness-oxfmt");
+    opt_in(&tree);
+    tree.write("AGENTS.md", "# Demo\n");
+    install(&tree, None, false).unwrap();
+    // The changes that oxfmt 0.77.0 makes to the files that sokf wrote: a
+    // blank line before a list and before the closing marker, a blank line
+    // before the item that follows an item with a second paragraph, in a list
+    // that is loose already, and a short array on one line.
+    let written = tree.read("AGENTS.md");
+    let agents = written
+        .replace("stores:\n- ", "stores:\n\n- ")
+        .replace(".\n<!-- /sokf:harness -->", ".\n\n<!-- /sokf:harness -->");
+    assert_eq!(agents.len(), written.len() + 2, "{written}");
+    tree.write("AGENTS.md", &agents);
+    let skill = tree.read(".claude/skills/sokf/SKILL.md");
+    let second = skill
+        .find("\n\n  ")
+        .expect("an item with a second paragraph");
+    let next = second + skill[second..].find("\n- ").expect("an item after it");
+    let relaid = format!("{}\n{}", &skill[..next], &skill[next..]);
+    tree.write(".claude/skills/sokf/SKILL.md", &relaid);
+    let settings = tree.read(".claude/settings.json");
+    let one_line = settings.replace("[\n      \"Bash(sokf *)\"\n    ]", "[\"Bash(sokf *)\"]");
+    assert_ne!(one_line, settings);
+    tree.write(".claude/settings.json", &one_line);
+    let st = status(&tree).unwrap();
+    assert!(verbs(&st).iter().all(|v| *v == "current"), "{st:?}");
+    assert!(st.warnings.is_empty(), "{st:?}");
+    // An install writes nothing, and the files keep their layout.
+    let before = tree.files();
+    let again = install(&tree, None, false).unwrap();
+    assert!(verbs(&again).iter().all(|v| *v == "current"), "{again:?}");
+    assert_eq!(tree.files(), before);
+    // A file of the skill that changes its meaning is an edit.
+    let other = format!("{relaid}\nA paragraph of the project's.\n");
+    tree.write(".claude/skills/sokf/SKILL.md", &other);
+    assert_eq!(state_of(&status(&tree).unwrap(), "skills"), Some("edited"));
+}
+
+// sokf-tests: CLI-3_AC-113
+// sokf-tests: CLI-4_AC-118
+#[test]
+fn a_record_of_a_later_sokf_names_no_forced_install() {
+    let tree = TempTree::fixture("clean");
+    install(&tree, None, false).unwrap();
+    // Another skill, with a record of it that holds a named thing of a later
+    // release of same-same, as a later sokf would write it.
+    let other = "---\nname: sokf\n---\nlater\n";
+    tree.write(".claude/skills/sokf/SKILL.md", other);
+    let value = common::adapter::recorded_value(agent_harness_adapter_core::Part::files(
+        "other-skills",
+        ".claude/skills",
+        vec![("sokf/SKILL.md".into(), other.into())],
+    ));
+    let later = format!(
+        "{}:zz-later=0011223344556677",
+        value["sokf/SKILL.md"].as_str().unwrap()
+    );
+    let mut record: toml::Table = tree.read(".sokf/harness.toml").parse().unwrap();
+    let mut skills = toml::Table::new();
+    skills.insert("sokf/SKILL.md".into(), later.into());
+    record["claude"]
+        .as_table_mut()
+        .unwrap()
+        .insert("skills".into(), skills.into());
+    tree.write(".sokf/harness.toml", &record.to_string());
+    let st = status(&tree).unwrap();
+    assert_eq!(state_of(&st, "skills"), Some("edited"));
+    assert_eq!(
+        st.warnings,
+        ["claude: skills in /.claude/skills may not be an edit, as a later sokf recorded it"]
+    );
+    let report = tree.validate_all(false, sokf_core::CacheMode::Off);
+    let messages: Vec<&str> = report
+        .warnings
+        .iter()
+        .filter(|f| f.criterion == "CLI-4_AC-118")
+        .map(|f| f.message.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "the skills part of the claude harness may not be an edit, as a later sokf recorded it; check `sokf harness diff claude`"
+        ]
     );
 }
 
@@ -555,24 +674,19 @@ fn a_stale_part_is_rewritten_and_recorded_again() {
     // record.
     let old = "---\nname: sokf\n---\nold\n";
     tree.write(".claude/skills/sokf/SKILL.md", old);
-    // The adapter's raw part can't be named `skills`, but the hash covers the content only.
-    let old_hash = common::adapter::recorded_hash(agent_harness_adapter_core::Part::files(
+    // The adapter's raw part can't be named `skills`, but its value covers the
+    // content only.
+    let old_value = common::adapter::recorded_value(agent_harness_adapter_core::Part::files(
         "old-skills",
         ".claude/skills",
         vec![("sokf/SKILL.md".into(), old.into())],
     ));
-    let record: String = tree
-        .read(".sokf/harness.toml")
-        .lines()
-        .map(|l| {
-            if l.starts_with("skills = ") {
-                format!("skills = \"{old_hash}\"\n")
-            } else {
-                format!("{l}\n")
-            }
-        })
-        .collect();
-    tree.write(".sokf/harness.toml", &record);
+    let mut record: toml::Table = tree.read(".sokf/harness.toml").parse().unwrap();
+    record["claude"]
+        .as_table_mut()
+        .unwrap()
+        .insert("skills".into(), old_value.clone());
+    tree.write(".sokf/harness.toml", &record.to_string());
     let st = status(&tree).unwrap();
     assert_eq!(parts(&st)[1].verb(), "stale");
     // Install rewrites a stale part with the embedded content without
@@ -583,7 +697,8 @@ fn a_stale_part_is_rewritten_and_recorded_again() {
         tree.read(".claude/skills/sokf/SKILL.md")
             .contains("# SOKF v0.7")
     );
-    assert!(!tree.read(".sokf/harness.toml").contains(&old_hash));
+    let record: toml::Table = tree.read(".sokf/harness.toml").parse().unwrap();
+    assert_ne!(record["claude"]["skills"], old_value);
     let st = status(&tree).unwrap();
     assert!(verbs(&st).iter().all(|v| *v == "current"), "{st:?}");
 }

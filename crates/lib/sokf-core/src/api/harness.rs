@@ -9,7 +9,10 @@ use agent_harness_adapter_core::{Action, InstallOptions, Item, Scope, State, har
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::{Error, RepoRoot, Result, config, harness::SokfTool};
+use crate::{
+    Error, RepoRoot, Result, config,
+    harness::{SokfTool, unvouched},
+};
 
 /// `ALL_HARNESSES` is the harness name that stands for every harness that sokf supports.
 pub const ALL_HARNESSES: &str = "all";
@@ -146,7 +149,8 @@ pub struct HarnessReport {
     pub scope: Scope,
     /// The harnesses, in sokf's order.
     pub harnesses: Vec<HarnessResult>,
-    /// The content that an agent may load twice.
+    /// What the user should know of the parts, such as content that an agent may load twice,
+    /// or a part that may not be an edit.
     pub warnings: Vec<String>,
 }
 
@@ -272,9 +276,15 @@ pub(super) fn refusal(scope: Scope) -> impl Fn(agent_harness_adapter_core::Error
     }
 }
 
-/// `report` turns the adapter's result into sokf's report.
+/// `report` turns the adapter's result into sokf's report, with the warning at each part
+/// that may not be an edit in sokf's words.
+// sokf-implements: CLI-3_AC-113
 pub(super) fn report(result: agent_harness_adapter_core::InstallResult) -> HarnessReport {
     let scope = result.scope;
+    let mut warnings = result.warnings.clone();
+    for u in unvouched(&result) {
+        warnings[u.warning] = u.words(&shown(scope, &u.path));
+    }
     HarnessReport {
         scope,
         harnesses: result
@@ -297,7 +307,7 @@ pub(super) fn report(result: agent_harness_adapter_core::InstallResult) -> Harne
                 notes: h.notes,
             })
             .collect(),
-        warnings: result.warnings,
+        warnings,
     }
 }
 
@@ -571,7 +581,7 @@ mod tests {
         assert_eq!(verbs(&second), ["current", "current", "skipped", "current"]);
         assert!(second.harnesses[0].parts.iter().all(|p| p.action.is_none()));
         let record = fs::read_to_string(dir.join(".sokf/harness.toml")).unwrap();
-        assert!(record.contains("skills = \"fnv1a64:"), "{record}");
+        assert!(record.contains("\n[claude.skills]\n"), "{record}");
         assert!(!record.contains("hooks"), "{record}");
         assert_eq!(
             fs::read_to_string(dir.join(".sokf/config.toml")).unwrap(),
@@ -630,7 +640,7 @@ mod tests {
         let fourth = install(&dirs, &opts(&[])).unwrap();
         assert_eq!(fourth.harnesses[0].parts[2].verb(), "updated");
         let record = fs::read_to_string(dir.join(".sokf/harness.toml")).unwrap();
-        assert!(record.contains("hooks = \"fnv1a64:"), "{record}");
+        assert!(record.contains("\nhooks = \""), "{record}");
         // Declining the hooks again skips them and keeps their hash.
         decline(&dir, "\"hooks\"");
         let fifth = install(&dirs, &opts(&[])).unwrap();

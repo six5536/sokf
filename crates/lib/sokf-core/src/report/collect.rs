@@ -61,15 +61,33 @@ impl Report {
         // A report holds one warning that the formatter failed, whatever
         // the runs whose outputs it gathers said, and the reason that the
         // formatter doesn't start comes first (CLI-4_AC-49).
-        let failed = |f: &Finding| f.criterion == crate::formatter::WARNING;
-        let kept = self
+        // A warning that the formatter failed on a file names every file
+        // that it failed on in the same way.
+        let failed = |f: &Finding| f.criterion == crate::compare::WARNING;
+        let mut kept = self
             .warnings
             .iter()
             .filter(|f| failed(f))
             .min_by_key(|f| !f.message.contains("doesn't start"))
             .cloned();
+        if let Some(one) = kept.as_mut()
+            && let Some((head, _)) = file_of(&one.message)
+        {
+            let mut files: Vec<String> = self
+                .warnings
+                .iter()
+                .filter(|f| failed(f))
+                .filter_map(|f| file_of(&f.message).filter(|(h, _)| *h == head))
+                .map(|(_, file)| file.to_string())
+                .collect();
+            files.sort();
+            files.dedup();
+            one.message = format!("{head} {}", super::and_list(&files));
+        }
+        self.warnings.retain(|f| !failed(f));
+        self.warnings.extend(kept);
         self.warnings
-            .retain(|f| !failed(f) || Some(f) == kept.as_ref());
+            .sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
         self.fixes.sort_by(|a, b| fix_key(a).cmp(&fix_key(b)));
         self.fixes.dedup();
         self
@@ -84,7 +102,7 @@ impl Report {
             list.iter()
                 // The warning that the formatter failed explains the stale
                 // blocks of any scope, so every run reports it.
-                .filter(|f| scope.contains(&f.path) || f.criterion == crate::formatter::WARNING)
+                .filter(|f| scope.contains(&f.path) || f.criterion == crate::compare::WARNING)
                 .cloned()
                 .collect()
         };
@@ -120,6 +138,16 @@ fn fix_key(op: &FixOp) -> (u8, &RepoPath) {
     }
 }
 
+/// `file_of` splits the message of a warning that the formatter failed on a
+/// file into the words before the file and the file in backticks, where the
+/// message ends with one.
+fn file_of(message: &str) -> Option<(&str, &str)> {
+    let at = message.rfind(" `")?;
+    message
+        .ends_with('`')
+        .then(|| (&message[..at], &message[at + 1..]))
+}
+
 /// `ValidateReport` is the report that `sokf validate --json` prints. It holds every error,
 /// every warning, and each repair by `--fix` (CLI-4_AC-12).
 // `Report` serialises itself as a `ValidateReport`, and the tool publishes the schema of
@@ -138,8 +166,8 @@ pub struct ValidateReport {
     summary: SummaryJson,
 }
 
-/// The summary holds the number of errors, warnings, and fixes in the report. The last line of
-/// the text output shows the same counts of errors and warnings (CLI-4_AC-31).
+/// The summary holds the number of errors, warnings, and fixes in the report. The line of counts
+/// of the text output shows the same counts of errors and warnings (CLI-4_AC-31).
 // sokf-implements: CLI-4_AC-31
 #[derive(Serialize, JsonSchema)]
 #[schemars(rename = "Summary")]
@@ -411,5 +439,47 @@ mod tests {
                 prop_assert_eq!(back, f);
             }
         }
+    }
+
+    // The warnings that the formatter failed on files make one warning that
+    // names every such file, and a warning that it doesn't start comes before
+    // them (CLI-4_AC-49).
+    // sokf-tests: CLI-4_AC-49
+    #[test]
+    fn the_warnings_of_a_formatter_name_every_file_once() {
+        let warning = |message: &str| {
+            super::Finding::warning(
+                crate::RepoPath::parse("/.sokf/config.toml").unwrap(),
+                None,
+                crate::compare::WARNING,
+                message,
+            )
+        };
+        let mut report = Report::default();
+        report
+            .warnings
+            .push(warning("the formatter fmt fails on `/src/b.css`"));
+        report
+            .warnings
+            .push(warning("the formatter fmt fails on `/src/a.css`"));
+        report
+            .warnings
+            .push(warning("the formatter fmt fails on `/src/a.css`"));
+        let report = report.finish();
+        assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+        assert_eq!(
+            report.warnings[0].message,
+            "the formatter fmt fails on `/src/a.css` and `/src/b.css`"
+        );
+        let mut report = Report::default();
+        report
+            .warnings
+            .push(warning("the formatter fmt fails on `/src/b.css`"));
+        report.warnings.push(warning(
+            "the formatter fmt doesn't start: `fmt` names no file",
+        ));
+        let report = report.finish();
+        assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+        assert!(report.warnings[0].message.contains("doesn't start"));
     }
 }

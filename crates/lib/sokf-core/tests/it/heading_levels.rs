@@ -40,15 +40,23 @@ sections:
 ````
 "#;
 
-/// `scaffold` writes the schema and returns the document that `sokf new`
-/// writes from it.
+/// `scaffold` writes the schema and returns the body of its scaffold, as the
+/// guide of a new document gives it: the example of each section that lies
+/// in no other, in order.
 fn scaffold(tree: &TempTree) -> String {
     tree.write("knowledge/schemas/open.md", OPEN_SCHEMA);
     let options = NewOptions {
         slug: Some("thing".into()),
         ..new_options(tree.dir(), "Open")
     };
-    new(&tree.root(), &options).unwrap().document
+    let guide = new(&tree.root(), &options).unwrap().guide.unwrap();
+    let sections: Vec<String> = guide
+        .sections
+        .into_iter()
+        .filter(|s| s.parent.is_none())
+        .filter_map(|s| s.example)
+        .collect();
+    format!("\n{}\n", sections.join("\n\n"))
 }
 
 // The title heading takes the document's title, although the template of the

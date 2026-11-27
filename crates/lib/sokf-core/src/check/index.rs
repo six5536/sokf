@@ -3,7 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::{Finding, Indexes, Located, Model, RepoPath, formatter::Layout, index};
+use crate::{
+    Finding, Indexes, Located, Model, RepoPath,
+    compare::Layout,
+    include::{index_labels_as_written, index_pair},
+    index,
+};
 
 /// `check_indexes` reports one finding, at the index's path and with no line,
 /// for each directory that has no index and for each index whose text differs
@@ -33,20 +38,23 @@ pub fn check_indexes_by_index(
         let findings: &mut Vec<Finding> = by_index.entry(path.clone()).or_default();
         match model.by_path(path) {
             // An index that the formatter re-laid, even with an entry over
-            // two lines, holds what sokf writes.
-            Some(Located::Index(_, file)) if layout.same("md", text, &file.source.text) => {}
+            // two lines, holds what sokf writes, with its labels as sokf
+            // writes them (CLI-4_AC-117).
+            Some(Located::Index(_, file))
+                if layout.same(&index_pair(path, text, &file.source.text))
+                    && index_labels_as_written(text, &file.source.text) => {}
             // sokf-implements: CLI-4_AC-35
             Some(Located::Index(_, file)) if !index::is_generated(&file.source.text) => {
-                findings.extend(layout.warning("md", text, &file.source.text));
+                findings.extend(layout.warning(&index_pair(path, text, &file.source.text)));
                 findings.push(Finding::error(
                     path.clone(),
                     None,
                     "SOKF_FORMAT_97",
-                    "the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix`",
+                    "the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document",
                 ));
             }
             Some(Located::Index(_, file)) => {
-                findings.extend(layout.warning("md", text, &file.source.text));
+                findings.extend(layout.warning(&index_pair(path, text, &file.source.text)));
                 findings.push(Finding::error(
                     path.clone(),
                     None,
@@ -153,7 +161,7 @@ mod tests {
         assert_eq!(
             on_schemas,
             vec![
-                "the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix` (SOKF_FORMAT_97)"
+                "the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document (SOKF_FORMAT_97)"
                     .to_string()
             ]
         );

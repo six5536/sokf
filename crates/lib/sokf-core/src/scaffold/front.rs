@@ -3,7 +3,9 @@
 //! writes `type`, `id`, and `title`, which are the core fields of the SOKF
 //! format specification. It writes the edges last: the edges are the
 //! entries of the frontmatter's `links` field. It words each limit and each
-//! label in the language of the schema, from sokf's texts.
+//! label in the language of the schema, from sokf's texts. For the skeleton
+//! of a new document, it writes no placeholder edge: only an empty `links`
+//! where a rule requires a link.
 
 use tramlines_core::frontmatter::Host as FrontmatterHost;
 use tramlines_md::{
@@ -26,6 +28,7 @@ use crate::{
 pub struct SokfScaffold<'a> {
     schema: &'a SokfSchema,
     words: Option<&'a Words<'a>>,
+    skeleton: bool,
 }
 
 impl<'a> SokfScaffold<'a> {
@@ -36,6 +39,7 @@ impl<'a> SokfScaffold<'a> {
         SokfScaffold {
             schema,
             words: None,
+            skeleton: false,
         }
     }
 
@@ -46,6 +50,19 @@ impl<'a> SokfScaffold<'a> {
         SokfScaffold {
             schema,
             words: Some(words),
+            skeleton: false,
+        }
+    }
+
+    /// `for_skeleton` returns the host for the skeleton of a new document of
+    /// `schema`, which words each limit with `words`, and whose trailing
+    /// lines hold no example edge: an empty `links` where a rule that the
+    /// states admit requires a link, and nothing otherwise.
+    pub fn for_skeleton(schema: &'a SokfSchema, words: &'a Words<'a>) -> Self {
+        SokfScaffold {
+            schema,
+            words: Some(words),
+            skeleton: true,
         }
     }
 }
@@ -108,6 +125,15 @@ pub fn link_text(rule: &LinkRule, words: Option<&Words<'_>>) -> Option<String> {
         .filter(|t| !t.is_empty())
         .collect();
     (!words.is_empty()).then(|| words.join(" "))
+}
+
+/// `link_example` returns the example of a `links` rule that `sokf guide`
+/// prints: the `links` key with one entry of the rule, which names its
+/// target by the placeholder `target-id`, as the scaffold of a schema writes
+/// it.
+// sokf-implements: CLI-17_AC-38
+pub fn link_example(rule: &LinkRule) -> String {
+    format!("links:\n  - rel: {}\n    to: target-id", rule.rel)
 }
 
 impl FrontmatterHost for SokfScaffold<'_> {
@@ -194,7 +220,15 @@ impl Host for SokfScaffold<'_> {
         // sokf-implements: EXT-8_AC-6
         let mut trailing = Vec::new();
         let edges: Vec<_> = self.schema.written_links(states).collect();
-        if !edges.is_empty() {
+        // A skeleton holds no example edge: the guide prints each rule's
+        // example. A rule that requires a link leaves `links` empty, as a
+        // required key is left, and the check reports the link as missing.
+        // sokf-implements: CLI-6_AC-128
+        if self.skeleton {
+            if edges.iter().any(|r| r.min > 0) {
+                trailing.push("links:".to_string());
+            }
+        } else if !edges.is_empty() {
             trailing.push("links:".to_string());
             for rule in edges {
                 for _ in 0..rule.min.max(1) {

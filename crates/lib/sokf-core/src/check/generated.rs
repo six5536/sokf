@@ -6,7 +6,7 @@
 use super::{Citations, Ctx, DocView, deprecated::Citer};
 use crate::{
     Finding, RepoPath,
-    include::{self, RegionError, extract, render_definitions},
+    include::{self, RegionError, definition_pair, extract, labels_as_written, render_definitions},
     markdown::{IncludeTarget, Region},
     source,
 };
@@ -126,9 +126,7 @@ impl Pass<'_> {
         {
             self.fail(
                 Some(block.open_line),
-                format!(
-                    "`sokf:include {written}`: from this store, write `sokf:include {canonical}`, the shortest form that identifies the target; `--fix` rewrites it"
-                ),
+                format!("`sokf:include {written}`: write `sokf:include {canonical}`"),
                 "SOKF_FORMAT_65",
             );
         }
@@ -188,16 +186,11 @@ impl Pass<'_> {
         match ctx.expected.include_current(path, block.open_line, &block.content) {
             Some(true) => {}
             Some(false) => {
-                self.findings.extend(ctx.expected.include_warning(
-                    path,
-                    block.open_line,
-                    &block.content,
-                ));
-                self.fail(
-                    Some(block.open_line),
-                    format!("`sokf:include {written}` is stale. Run `sokf validate --fix`"),
-                    "SOKF_FORMAT_85",
-                );
+                let (warning, message) =
+                    ctx.expected
+                        .include_stale(path, block.open_line, &block.content, written);
+                self.findings.extend(warning);
+                self.fail(Some(block.open_line), message, "SOKF_FORMAT_85");
             }
             None => self.fail(
                 Some(block.open_line),
@@ -264,7 +257,7 @@ impl Pass<'_> {
             self.fail(
                 Some(block.open_line),
                 format!(
-                    "`sokf:include {written}` refers to an asset by path; include it by its sidecar's id as `sokf:include {canonical}`, which `--fix` writes"
+                    "`sokf:include {written}` refers to an asset by path; include it by its sidecar's id as `sokf:include {canonical}`"
                 ),
                 "SOKF_FORMAT_88",
             );
@@ -307,15 +300,27 @@ impl Pass<'_> {
         };
         match &doc.segments.definition {
             None if expected.is_empty() => {}
-            None => self.fail(None, "the definition block is missing; run `sokf validate --fix`".into(), missing),
-            Some(def) if expected.is_empty() => self.fail(Some(def.line), "the definition block is stale: the body cites no `sokf:` label; run `sokf validate --fix`".into(), "SOKF_FORMAT_80"),
+            None => self.fail(None, "the definition block is missing".into(), missing),
+            Some(def) if expected.is_empty() => self.fail(
+                Some(def.line),
+                "the definition block is stale: the body cites no `sokf:` label".into(),
+                "SOKF_FORMAT_80",
+            ),
             Some(def) => {
                 let (rendered, written) = (rendered.trim_end(), def.text.trim_end());
                 if def.trailing {
                     self.fail(Some(def.line), "content follows the definition block, which must come last in the document".into(), "SOKF_FORMAT_79");
-                } else if !self.ctx.expected.layout.same("md", rendered, written) {
-                    self.findings.extend(self.ctx.expected.layout.warning("md", rendered, written));
-                    self.fail(Some(def.line), "the definition block is stale. Run `sokf validate --fix`".into(), "SOKF_FORMAT_80");
+                } else {
+                    let pair = definition_pair(doc.path, rendered, written);
+                    if !labels_as_written(expected, def) || !self.ctx.expected.layout.same(&pair) {
+                        self.findings
+                            .extend(self.ctx.expected.layout.warning(&pair));
+                        self.fail(
+                            Some(def.line),
+                            "the definition block is stale".into(),
+                            "SOKF_FORMAT_80",
+                        );
+                    }
                 }
             }
         }
@@ -414,16 +419,11 @@ fn check_file_include(
                 .include_current(doc.path, block.open_line, &block.content)
                 != Some(true)
             {
-                findings.extend(ctx.expected.include_warning(
-                    doc.path,
-                    block.open_line,
-                    &block.content,
-                ));
-                fail(
-                    findings,
-                    format!("`sokf:include {written}` is stale. Run `sokf validate --fix`"),
-                    "SOKF_FORMAT_85",
-                );
+                let (warning, message) =
+                    ctx.expected
+                        .include_stale(doc.path, block.open_line, &block.content, written);
+                findings.extend(warning);
+                fail(findings, message, "SOKF_FORMAT_85");
             }
         }
     }

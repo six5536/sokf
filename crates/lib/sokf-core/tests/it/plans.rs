@@ -243,3 +243,200 @@ fn a_planned_directory_plans_every_path_under_it() {
         assert_eq!(keys(&tree, false, mode).len(), 4, "{mode:?}");
     }
 }
+
+// A planning section whose heading a formatter spells another way still
+// plans its links, and a heading that the check gives to another section
+// plans nothing, as the check reads the headings.
+// sokf-tests: SOKF_SCHEMA_53
+// sokf-tests: SOKF_SCHEMA_109
+#[test]
+fn a_respelt_planning_section_still_plans() {
+    let tree = TempTree::fixture("new");
+    tree.write(
+        "knowledge/schemas/plan.md",
+        &PLAN_SCHEMA
+            .replace("  - heading: Files\n", "  - heading: '*Files*'\n")
+            .replace(
+                "          example: '[`/src/parse.rs`](/src/parse.rs): the parser.'\n",
+                "          example: '[`/src/parse.rs`](/src/parse.rs): the parser.'\n  - heading: Notes\n    level: 2\n    optional: true\n    blocks: []\n",
+            ),
+    );
+    tree.write("knowledge/schemas/page.md", PAGE_SCHEMA);
+    tree.write("knowledge/page-parser.md", PAGE);
+    tree.write(
+        "knowledge/plan-parser.md",
+        &plan("open").replace("## Files", "## _Files_"),
+    );
+    for mode in [CacheMode::Off, CacheMode::On] {
+        let report = tree.validate(true, mode);
+        let ours: Vec<_> = report
+            .errors
+            .iter()
+            .filter(|f| f.path.as_str().ends_with("-parser.md"))
+            .collect();
+        assert!(ours.is_empty(), "{mode:?}: {}", json(&report));
+        let again = tree.validate(true, mode);
+        assert!(again.fixes.is_empty(), "{mode:?}: {}", json(&again));
+    }
+    // A template of the planning section takes no heading that another
+    // section gives exactly.
+    tree.write(
+        "knowledge/schemas/plan.md",
+        &tree.read("knowledge/schemas/plan.md").replace(
+            "  - heading: '*Files*'\n",
+            "  - heading: { template: '${}', example: Files }\n",
+        ),
+    );
+    tree.write(
+        "knowledge/plan-parser.md",
+        &plan("open").replace("## Files", "## Notes"),
+    );
+    for mode in [CacheMode::Off, CacheMode::On] {
+        let mut got = keys(&tree, false, mode);
+        got.sort();
+        assert_eq!(
+            got,
+            ["SOKF_FORMAT_30", "SOKF_FORMAT_76", "SOKF_FORMAT_87"],
+            "{mode:?}"
+        );
+    }
+}
+
+// A pattern of `current-links` reads a paragraph in tramlines' fixed
+// spelling, so a pattern for bold text matches a paragraph whose bold a
+// formatter spells either way.
+// sokf-tests: SOKF_SCHEMA_54
+// sokf-tests: SOKF_SCHEMA_109
+#[test]
+fn a_promise_reads_in_the_fixed_spelling() {
+    let tree = TempTree::fixture("new");
+    tree.write(
+        "knowledge/schemas/plan.md",
+        &PLAN_SCHEMA.replace(
+            "  - { key: state, states: [open, closed] }\n",
+            "  - { key: state, states: [open, closed], archived: [closed] }\n",
+        ),
+    );
+    tree.write(
+        "knowledge/schemas/page.md",
+        &PAGE_SCHEMA.replace(
+            "line-limit: 0\n",
+            "line-limit: 0\ncurrent-links: ['^\\*\\*Planned:\\*\\* ']\n",
+        ),
+    );
+    tree.write("knowledge/plan-parser.md", &plan("closed"));
+    for bold in ["__Planned:__", "**Planned:**"] {
+        tree.write(
+            "knowledge/page-parser.md",
+            &format!("---\ntype: Page\nid: page-parser\ntitle: Parser\n---\n\n# Parser\n\n{bold}  The parser reads the rules,\nas [the plan][sokf:plan-parser] describes.\n"),
+        );
+        for mode in [CacheMode::Off, CacheMode::On] {
+            assert_eq!(
+                keys(&tree, true, mode),
+                ["SOKF_SCHEMA_54"],
+                "{bold} {mode:?}"
+            );
+            let again = tree.validate(true, mode);
+            assert!(again.fixes.is_empty(), "{bold} {mode:?}: {}", json(&again));
+        }
+    }
+}
+
+// A heading that stands in place of a planning section bound to the
+// frontmatter, and reads otherwise than the value, plans nothing, as it
+// holds no section in `sokf guide`.
+// sokf-tests: SOKF_SCHEMA_109
+#[test]
+fn a_heading_that_reads_otherwise_than_its_bound_value_plans_nothing() {
+    let tree = TempTree::fixture("new");
+    tree.write(
+        "knowledge/schemas/plan.md",
+        &PLAN_SCHEMA
+            .replace(
+                "  - heading: { from: title }\n    level: 1\n",
+                "  - heading: { from: title }\n    level: 1\n    rule-id: files\n",
+            )
+            .replace(
+                "    rule-id: files\n    blocks:\n      - kind: bullet-list",
+                "    blocks:\n      - kind: bullet-list",
+            ),
+    );
+    tree.write("knowledge/schemas/page.md", PAGE_SCHEMA);
+    tree.write("knowledge/page-parser.md", PAGE);
+    tree.write(
+        "knowledge/plan-parser.md",
+        &plan("open")
+            .replace("title: Parser", "title: The *parser*")
+            .replace("# Parser", "# The _parser_"),
+    );
+    for mode in [CacheMode::Off, CacheMode::On] {
+        let got = keys(&tree, true, mode);
+        assert!(got.is_empty(), "{mode:?}: {got:?}");
+        let again = tree.validate(true, mode);
+        assert!(again.fixes.is_empty(), "{mode:?}: {}", json(&again));
+    }
+    tree.write(
+        "knowledge/plan-parser.md",
+        &plan("open")
+            .replace("title: Parser", "title: The *parser*")
+            .replace("# Parser", "# A parser"),
+    );
+    for mode in [CacheMode::Off, CacheMode::On] {
+        let mut got = keys(&tree, false, mode);
+        got.sort();
+        assert_eq!(
+            got,
+            ["SOKF_FORMAT_30", "SOKF_FORMAT_76", "SOKF_FORMAT_87"],
+            "{mode:?}"
+        );
+    }
+}
+
+// A pattern of `current-links` that names a spelling which the reading of
+// a paragraph never holds draws one warning for each such run, on the line
+// of the pattern, as the engine warns about a pattern of its own.
+// sokf-tests: SOKF_SCHEMA_110
+// sokf-tests: EXT-2_AC-5
+#[test]
+fn a_promise_pattern_in_another_spelling_is_warned_about() {
+    let tree = TempTree::fixture("new");
+    tree.write("knowledge/schemas/plan.md", PLAN_SCHEMA);
+    tree.write(
+        "knowledge/schemas/page.md",
+        &PAGE_SCHEMA.replace(
+            "line-limit: 0\n",
+            "line-limit: 0\ncurrent-links:\n  - '^\\*Planned:\\* '\n  - '^\\*\\*Planned:\\*\\* '\n  - '^__Due:__ |^Planned: '\n",
+        ),
+    );
+    let report = tree.validate(false, CacheMode::Off);
+    let warned: Vec<(Option<usize>, String)> = report
+        .warnings
+        .iter()
+        .filter(|f| f.path.as_str() == "/knowledge/schemas/page.md")
+        .inspect(|f| assert_eq!(f.criterion, "SOKF_SCHEMA_110"))
+        .map(|f| (f.line, f.message.clone()))
+        .collect();
+    assert_eq!(
+        warned,
+        [
+            (
+                Some(10),
+                "the pattern `^\\*Planned:\\* ` names `*Planned:* `, which reads `_Planned:_ `; a pattern reads the fixed spelling, so it never matches that text outside a code span".to_string()
+            ),
+            (
+                Some(12),
+                "the pattern `^__Due:__ |^Planned: ` names `__Due:__ `, which reads `**Due:** `; a pattern reads the fixed spelling, so it never matches that text outside a code span".to_string()
+            ),
+        ],
+        "{}",
+        json(&report)
+    );
+    assert!(
+        report
+            .errors
+            .iter()
+            .all(|f| f.path.as_str() != "/knowledge/schemas/page.md"),
+        "{}",
+        json(&report)
+    );
+}

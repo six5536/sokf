@@ -37,7 +37,7 @@ pub fn validate(
         output::json_line(&report)?
     } else {
         let mut buf = Vec::new();
-        render::text(&mut buf, &report, args.warnings).map_err(output::stdout_err)?;
+        render::text(&mut buf, &report, args.warnings, args.fix).map_err(output::stdout_err)?;
         buf
     };
     output::write_stdout(&buf)?;

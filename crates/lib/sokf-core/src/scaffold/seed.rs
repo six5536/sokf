@@ -1,11 +1,13 @@
 //! This module works out the state of each lifecycle dimension from the
 //! `--state` options given to `sokf new` and `sokf guide`, and derives the
-//! seed scaffold for those states.
+//! skeleton of a new document at those states.
 
-use super::{Refusal, SokfScaffold, Words, with_description};
+use std::collections::BTreeMap;
+
+use super::{Refusal, SokfScaffold, Words};
 use crate::{
     Error, Result,
-    grammar::{Scaffold, SokfSchema, States},
+    grammar::{SokfSchema, States},
 };
 
 /// `states` returns one state for each lifecycle dimension: the state
@@ -58,29 +60,43 @@ pub fn given_states(
     Ok(out)
 }
 
-/// `seed` returns the scaffold derived from the schema for the given
-/// states, with `words`, sokf's texts in the language of the schema: the
-/// words before each limit's `when-at-limit`, and the rule for writing a
-/// description before the `description` key. A schema has no separate
-/// template, so `sokf new` builds the new document from the schema's rules.
+/// `Refused` says why no skeleton derives for a new document: the schema
+/// derives no scaffold at the states, whatever the document's values, or the
+/// scaffold with the document's values, such as a title that a paragraph
+/// bound to it can't hold, refuses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refused {
+    /// The schema derives no scaffold at the states.
+    Schema(Vec<Refusal>),
+    /// The scaffold with the document's values refuses.
+    Values(Vec<Refusal>),
+}
+
+/// `skeleton` returns the skeleton of a new document of `schema` at
+/// `states`, whose frontmatter holds `values`, such as its id and its title,
+/// with `words`, sokf's texts in the language of the schema: what the schema
+/// prescribes, the values, each lifecycle key with its state, and each
+/// required key left empty, and no example, no guidance, no marker, and no
+/// optional part. A schema has no separate template, so `sokf new` builds
+/// the new document from the schema's rules. The scaffold of the schema
+/// comes first, so that a refusal there names a fault of the schema and not
+/// of the values.
 // sokf-implements: CLI-6_AC-1
+// sokf-implements: CLI-6_AC-2
+// sokf-implements: CLI-6_AC-7
 // sokf-implements: CLI-6_AC-16
-// sokf-implements: CLI-6_AC-123
-pub fn seed(
+// sokf-implements: CLI-6_AC-35
+// sokf-implements: CLI-6_AC-126
+pub fn skeleton(
     schema: &SokfSchema,
     states: &States,
     words: &Words<'_>,
-) -> std::result::Result<Scaffold, Vec<Refusal>> {
+    values: &BTreeMap<String, String>,
+) -> std::result::Result<String, Refused> {
     let host = SokfScaffold::with_words(schema, words);
-    let mut document = tramlines_md::derive::derive_one(&schema.core, states, &host)?;
-    if let Some(rule) = words.description() {
-        document = with_description(&document, &rule);
-    }
-    Ok(Scaffold {
-        document,
-        lifecycle: None,
-        line: schema.core.core.line,
-    })
+    tramlines_md::derive::derive_one(&schema.core, states, &host).map_err(Refused::Schema)?;
+    let host = SokfScaffold::for_skeleton(schema, words);
+    tramlines_md::derive::skeleton(&schema.core, states, &host, values).map_err(Refused::Values)
 }
 
 #[cfg(test)]
@@ -121,24 +137,33 @@ mod tests {
     }
 
     // sokf-tests: CLI-6_AC-1
+    // sokf-tests: CLI-6_AC-126
     #[test]
-    fn the_seed_is_the_derived_template_at_the_states_asked_for() {
+    fn the_skeleton_is_derived_at_the_states_asked_for_with_the_values() {
         let c = schema();
         let pick = |given: &[(&str, &str)]| {
             let texts = Texts::english();
-            seed(
+            let values = BTreeMap::from([
+                ("id".to_string(), "issue-004-retry".to_string()),
+                ("title".to_string(), "Retry".to_string()),
+            ]);
+            skeleton(
                 &c,
                 &states(&c, &pairs(given)).unwrap(),
                 &Words::new(&texts, "en"),
+                &values,
             )
             .unwrap()
-            .document
         };
         let open_bug = pick(&[]);
         assert!(
-            open_bug.contains("state: open") && open_bug.contains("kind: bug"),
+            open_bug.contains("state: open")
+                && open_bug.contains("kind: bug")
+                && open_bug.contains("id: issue-004-retry")
+                && open_bug.contains("title: Retry"),
             "{open_bug}"
         );
+        assert!(!open_bug.contains("sokf:"), "{open_bug}");
         let closed = pick(&[("state", "closed"), ("kind", "feature")]);
         assert!(
             closed.contains("state: closed") && closed.contains("kind: feature"),

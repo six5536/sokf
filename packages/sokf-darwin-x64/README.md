@@ -6,5 +6,9 @@ Intel). It is an internal artefact of
 an optional dependency on a matching machine. Don't depend on it directly.
 Install `@six5536/sokf` instead.
 
+## Status
+
+**Unstable.** `sokf` is at a 0.x version, and its commands, options and file formats can change in any release.
+
 The Elastic License 2.0 covers this package. For more, see
 [the sokf repository on GitHub](https://github.com/six5536/sokf).

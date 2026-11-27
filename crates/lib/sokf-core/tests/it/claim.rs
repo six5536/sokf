@@ -2,8 +2,8 @@
 //! two or more positions in one section take blocks of the same kind, and
 //! each position must claim the block that meets its own rules.
 
-use common::{TempTree, json, lined, new_options, on, reported};
-use sokf_core::{CacheMode, NewOptions, new};
+use common::{TempTree, json, lined, on, reported};
+use sokf_core::CacheMode;
 
 use crate::common;
 
@@ -347,7 +347,7 @@ fn a_refusal_says_why_and_a_warning_keeps_its_block() {
     assert_eq!(
         warnings,
         vec![
-            "`A note without a period` does not match `\\.$`; a paragraph of this kind reads One. (schema schema-refusal, section \"Warned\" block 1)"
+            "`A note without a period` does not match `\\.$`; a paragraph of this kind reads `One.` (schema schema-refusal, section \"Warned\" block 1)"
         ],
         "{}",
         json(&report)
@@ -489,9 +489,9 @@ fn a_position_that_must_claim_takes_the_rest_of_the_run() {
     assert_eq!(
         messages(&report, "no-claim"),
         vec![
-            "11: `NEITHER two.` does not match `^CLAIM `; a paragraph of this kind reads CLAIM one (schema schema-bounded, section \"<title>\" block 2)".to_string(),
+            "11: `NEITHER two.` does not match `^CLAIM `; a paragraph of this kind reads `CLAIM one` (schema schema-bounded, section \"<title>\" block 2)".to_string(),
             "11: the prose block allows at most 1 paragraph; it has 2. When at the limit: Write another claim in a document of its own. (schema schema-bounded, section \"<title>\" block 2)".to_string(),
-            "13: `NEITHER three.` does not match `^CLAIM `; a paragraph of this kind reads CLAIM one (schema schema-bounded, section \"<title>\" block 2)".to_string(),
+            "13: `NEITHER three.` does not match `^CLAIM `; a paragraph of this kind reads `CLAIM one` (schema schema-bounded, section \"<title>\" block 2)".to_string(),
         ],
         "{}",
         json(&report)
@@ -550,7 +550,7 @@ fn a_repetition_that_fails_puts_the_run_back_together() {
     assert_eq!(
         messages(&report, "grouprun-a"),
         vec![
-            "15: `C four.` does not match `^B `; a paragraph of this kind reads B one (schema schema-grouprun, section \"<title>\" block 1.2)".to_string()
+            "15: `C four.` does not match `^B `; a paragraph of this kind reads `B one` (schema schema-grouprun, section \"<title>\" block 1.2)".to_string()
         ],
         "{}",
         json(&report)
@@ -563,6 +563,50 @@ fn a_repetition_that_fails_puts_the_run_back_together() {
 /// and an optional blockquote between two required kinds of paragraph.
 const STORIES_SCHEMA: &str = include_str!("../fixtures/schemas/stories.md");
 
+/// `STORIES_DOCUMENT` is a document of `STORIES_SCHEMA` with every optional
+/// part written.
+const STORIES_DOCUMENT: &str = r#"---
+type: Stories
+id: stories-assets
+title: Assets
+description: "Users click the name of a file or an image in any window, and the editor or the image viewer shows it."
+---
+
+# Assets
+
+This document holds the stories of a user who follows references. The user clicks the name of a file or an image in any window, and the editor or the image viewer shows it. Each story links the contracts that deliver it.
+
+- [ST-1 A user can open a file from its name in any window](#st-1)
+- [ST-2 A user can see an image from its file name](#st-2)
+- [ST-3 A user can change what a click opens while working](#st-3)
+
+## <a id="st-1"></a>ST-1 A user can open a file from its name in any window
+
+AS A [user][sokf:glossary#user], I WANT to click a file name and line number and see that line in the editor, SO THAT I reach the code in one click.
+
+Planned: When a click matches no rule set, the user sees which pattern failed, as [the issue on failed patterns][sokf:issue-001-feature-report-failed-pattern] describes.
+
+> A compiler error names the file and the line, and typing them into the editor again is slow and leads to mistakes.
+
+Contracts: [PLUMB][sokf:contract-plumbing].
+
+Flows: [Show an image][sokf:architecture#show-an-image].
+
+## <a id="st-2"></a>ST-2 A user can see an image from its file name
+
+AS A [user][sokf:glossary#user], I WANT to click the name of an image file and see the image, SO THAT I look at a picture in one click.
+
+> An image named in a mail message or a directory listing is only text in the window that shows it.
+
+Contracts: [PLUMB][sokf:contract-plumbing].
+
+## <a id="st-3"></a>ST-3 A user can change what a click opens while working
+
+AS A [user][sokf:glossary#user], I WANT to change the rules and have the new rules apply to my next click, SO THAT I fix a rule and keep my windows open.
+
+Contracts: [PLUMB][sokf:contract-plumbing].
+"#;
+
 // A story that puts its blockquote before its `Planned:` paragraph draws
 // one error, which names the paragraph as out of place, and the
 // `Contracts:` and `Flows:` paragraphs after it still reach their own
@@ -572,21 +616,10 @@ fn an_optional_block_before_an_earlier_one_is_reported_out_of_place() {
     let tree = TempTree::fixture("clean");
     tree.take_requirement_formats();
     tree.write("knowledge/schemas/stories.md", STORIES_SCHEMA);
-    let made = new(
-        &tree.root(),
-        &NewOptions {
-            slug: Some("assets".into()),
-            write: true,
-            ..new_options(tree.dir(), "Stories")
-        },
-    )
-    .unwrap();
-    let rel = made.path.to_string().trim_start_matches('/').to_string();
-    tree.drop_guidance(&rel);
-    let text = tree
-        .read(&rel)
-        .replace("<!-- sokf:optional -->\n\n", "")
-        .replace("<!-- /sokf:optional -->\n\n", "");
+    // The document is the scaffold of the schema that `sokf new` wrote
+    // before 0.9, with its guidance and its markers gone.
+    let rel = "knowledge/stories/stories-assets.md".to_string();
+    let text = STORIES_DOCUMENT.to_string();
     let planned = text.find("Planned: ").unwrap();
     let quote = text[planned..].find("> ").unwrap() + planned;
     let end = text[quote..].find("\n\n").unwrap() + quote + 2;

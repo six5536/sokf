@@ -16,6 +16,9 @@
 //! re-exports the engine's modules under their old `sokf-core` paths. SOKF
 //! adds its own schema extension, dialect, and model.
 //!
+//! **This crate is unstable.** It is at a 0.x version, and its interface can
+//! change in any release.
+//!
 //! # Example
 //!
 //! ```
@@ -33,10 +36,10 @@
 mod api;
 mod cache;
 pub mod check;
+pub mod compare;
 mod config;
 mod error;
 pub mod fix;
-pub mod formatter;
 mod git;
 pub mod grammar;
 pub mod graph;
@@ -93,8 +96,8 @@ pub use model::{Document, FsLoader, Knowledge, Loader, Located, Model, build};
 pub use output_schema::{Output, output_schemas};
 pub use query::Expr;
 pub use report::{
-    Finding, FixOp, Locator, Report, Severity, ValidateReport, message as report_message,
-    text as report_text,
+    Finding, FixOp, Locator, Report, Severity, ValidateReport, fixable_line as report_fixable_line,
+    message as report_message, text as report_text,
 };
 pub use scaffold::IdTemplate;
 pub use source::{FileKey, LineEnding, Source, Stat, load};

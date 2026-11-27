@@ -9,13 +9,18 @@ ships as prebuilt binaries for Linux, macOS, and Windows. The
 release from one git tag, and publishes the packages to npm and the crates to
 crates.io.
 
-This README helps you install and run `sokf`. It covers installation, usage,
-the documentation, and the license:
+This README helps you install and run `sokf`. It covers its status,
+installation, usage, the documentation, and the license:
 
+- [Status](#status)
 - [Install](#install)
 - [Usage](#usage)
 - [Documentation](#documentation)
 - [License](#license)
+
+## Status
+
+**Unstable.** `sokf` is at a 0.x version, and its commands, options and file formats can change in any release.
 
 ## Install
 

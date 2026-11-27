@@ -5,7 +5,6 @@ title: SOKF format specification schema
 description: This schema shapes the one document that specifies the SOKF format. It requires each rule to be a criterion in the EARS (Easy Approach to Requirements Syntax) form, and it sets the title, the opening sentence, the sentence about how rules are stated, and the conformance sentence word for word.
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 

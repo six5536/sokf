@@ -87,9 +87,10 @@ mod tests {
         assert!(!file.exists());
         let on = Guard::new(&root, CacheMode::On, name.clone());
         assert!(on.should_note("report"));
+        // The file holds the loop guard's hash of the text, and a newline.
         let kept = fs::read_to_string(&file).unwrap();
         assert!(
-            kept.starts_with("fnv1a64:") && kept.len() == "fnv1a64:".len() + 17,
+            kept.ends_with('\n') && kept.trim().len() > "report".len() && !kept.contains("report"),
             "{kept:?}"
         );
         assert_eq!(

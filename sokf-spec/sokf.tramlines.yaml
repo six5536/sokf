@@ -25,7 +25,7 @@ schema-document:
     description:
       example: A one-section note.
   preamble:
-    guidance: The document holds only the schema, in one fence of four backticks, and has no heading.
+    guidance: The document holds only the schema, in one fence, and has no heading.
     blocks:
       - kind: code
         lang: yaml
@@ -118,7 +118,9 @@ schema:
         `current-links` lists regular expressions for paragraphs that make a promise, such
         as a paragraph that begins with `Planned:`. A paragraph that matches one of them
         links no archived document, because the work that an archived document records is
-        done or dropped, and the promise has lapsed.
+        done or dropped, and the promise has lapsed. A pattern reads the paragraph in the
+        fixed spelling of its markup, as a pattern of a unit rule does, and the validator
+        warns about a run of literal text of a pattern that reads otherwise.
     plans-paths:
       type: list
       of: path-plan
@@ -251,7 +253,7 @@ schema:
         doc: "`only` works as a section's `only` does."
       guidance:
         type: string
-        doc: "`guidance` says why the edge exists. When `sokf new` creates a document, it writes the guidance as a YAML comment line before the edge."
+        doc: "`guidance` says why the edge exists. A scaffold writes it as a YAML comment line before the edge, and the guide of a document prints it for the rule."
   # sokf:end link
   # sokf:begin path-plan
   path-plan:

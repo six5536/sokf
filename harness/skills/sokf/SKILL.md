@@ -18,7 +18,8 @@ This reference uses these terms throughout:
 - A _key_ is an identifier, such as the criterion id `CLI-1_AC-2`, that a schema rule extracts from a document's text.
 - An _asset_ is a file that isn't Markdown, such as an image. The _sidecar_ of an asset is the document that sits next to the asset and describes it.
 - A _marker_ is a comment in a source file that cites a key or a document.
-- A _scaffold_ is the example text that `sokf new` takes from a schema to create a new document. You then replace the scaffold with your own text.
+- A _skeleton_ is the new document that `sokf new` writes from a schema. It holds only what is true of the document: its id, title, type, and states, the headings and the fixed texts that the schema prescribes, and each required frontmatter key with no value. It holds no example and no guidance, so you write every other part yourself.
+- A _guide_ lists each part of a document in the schema's order, with its guidance and its example. `sokf new` prints the guide of the new document, and `sokf guide` prints the guide of any document.
 
 This reference has these sections:
 
@@ -97,14 +98,14 @@ sokf has these commands:
 
   `-l`, `--to`, and `--edge` filter with a JMESPath predicate, such as `-l "type=='Decision'"`, over the fields that `--json` shows. Read `sokf graph --json-schema` before you write one.
 - `sokf locate <ID>` prints a document's path on disk, so read a document with `cat "$(sokf locate <ID>)"`.
-- `sokf guide <ID|PATH>` prints the guidance that the document's schema gives for each of its parts at its states, and `--state <KEY>=<STATE>` prints it at a state that the document is moving to. Read it before you write or change a document.
-- `sokf new <TYPE> --slug <SLUG> [--state <KEY>=<STATE>]... --write` creates a document from its schema, with the id, title, and states filled in, at the path that its states require. `sokf new --help` gives the options for an id without a template, a title, a sidecar, and a type that two stores declare. [New documents](#new-documents) says what to do next.
+- `sokf guide <ID|PATH>` prints the guidance and the example that the document's schema gives for each of its parts at its states, and `--state <KEY>=<STATE>` prints them at a state that the document is moving to. Read it before you write or change a document.
+- `sokf new <TYPE> --slug <SLUG> [--state <KEY>=<STATE>]... --write` creates the skeleton of a document from its schema, with the id, title, and states filled in, at the path that its states require, and prints the guide of the new document. `sokf new --help` gives the options for an id without a template, a title, a sidecar, and a type that two stores declare. [New documents](#new-documents) says what to do next.
 - `sokf validate [PATHS]` checks the knowledge, and `--fix` repairs what it can: generated blocks, indexes, links written in a longer form, and the directory of a document whose state changed. `--fix` changes no file whose schema breaks the grammar, so repair the schema first.
 - `sokf init [DIR]` creates a store, in `/knowledge` by default, and makes it a knowledge root. Use it instead of writing a manifest by hand. `DIR` can already hold documents.
 - `sokf harness install <HARNESS>...`, such as `claude`, `codex`, or `all`, writes this skill, the agent's instructions, and the permission to run sokf into the harness's files. `--scope` chooses where: the repository's files (the default), your home directory, or the repository's files that stay out of git. Run the command again after you upgrade sokf. It keeps a part that someone edited: `sokf harness diff` shows the edit, and `--force <PART>` overwrites it. In `/.sokf/config.toml`, `with = ["hooks"]` under `[harness.<HARNESS>]` turns on a hook that runs `sokf validate` at each prompt, and `without` lists the parts to skip. No command writes either.
 - `sokf info grammar` prints the schema language. Read it before you write or change a schema. `sokf info formats [--schema <ID>]` prints the line formats and placeholder types that a schema can use.
 
-`sokf validate` lists only the warnings at a stale or absent harness part and at files that an older sokf wrote, and counts the rest. Run `sokf validate --warnings` after you write a document, because a `sokf:optional` region left in it, a link to a deprecated document, and a custom rel are only warnings.
+`sokf validate` lists only the warnings at a harness part that is stale, is absent, or may not be an edit, and at files that an older sokf wrote, and counts the rest. Run `sokf validate --warnings` after you write a document, because a `sokf:optional` region left in it, a link to a deprecated document, and a custom rel are only warnings.
 
 ## Agent rules
 
@@ -121,11 +122,11 @@ Follow these rules when you write a document:
 
 ## New documents
 
-Never copy a scaffold by hand: `sokf new` adapts it to the document's states.
+`sokf new` writes the skeleton of a new document and prints its guide on stderr: each part of the document at its states, with the part's guidance and its example. With `--write`, stdout holds the `created` line and an `updated` line for each index that `new` rewrites. Without it, stdout holds the skeleton. With `--json`, the object holds the guide as `guide`.
 
-After `sokf new` writes a document, replace every example text and reference of the scaffold with your own. `validate` doesn't report an example text that you leave, only a reference that resolves to nothing, such as `to: target-id`. Write the part that each `sokf:guidance` line guides, then delete the line.
+Read the guide before you write the document, then write each part in your own words, as its guidance says. An example shows the form of its part and describes another subject, so never copy its text. Write a part that the guide marks optional only where the document has something to say in it. The example of a link names its target `target-id`: give the id of a real document. `validate` reports each part that the document still lacks as missing, such as a required key with no value or a required section, and `sokf guide <ID>` prints the guide again.
 
-Keep the content of a `sokf:optional` region and delete both markers, or delete the whole region. `validate` lists a region left in a document only with `--warnings`.
+A document that an older `sokf` wrote can still hold a `sokf:guidance` line, which is an error, or a `sokf:optional` region. Write the part that the line guides, then delete the line. Keep the content of a region and delete both markers, or delete the whole region. `validate` lists a region left in a document only with `--warnings`.
 
 ## Links
 
@@ -173,6 +174,6 @@ Put what an example can't show in `guidance`. Write guidance in the voice of the
 - It never begins a sentence with a verb.
 - It never includes a counter-example.
 
-Give `guidance` for `description` only where the type needs something that the rule on descriptions in [Agent rules](#agent-rules) doesn't say. Never put the count in a `when-at-limit`, because `sokf new` and `sokf guide` write the count before it, as in "At most 3 items. Never leave out or merge content to stay within the count. When at the limit: Split the list." Write a `when-at-limit`'s own "Never … to stay within the count." only against another kind of squeeze, such as folding several systems into one node, because the words before it already forbid leaving out or merging content.
+Give `guidance` for `description` only where the type needs something that the rule on descriptions in [Agent rules](#agent-rules) doesn't say. Never put the count in a `when-at-limit`, because the guides of `sokf new` and `sokf guide` print the count before it, as in "At most 3 items. Never leave out or merge content to stay within the count. When at the limit: Split the list." Write a `when-at-limit`'s own "Never … to stay within the count." only against another kind of squeeze, such as folding several systems into one node, because the words before it already forbid leaving out or merging content.
 
-sokf writes its own words into a scaffold and into `sokf guide`, such as the words before each `when-at-limit`. To give those words in a language other than English, write them in `/.sokf/texts.yaml` or a file below `/.sokf/texts.d/`, as a map from the language tag to the entries `attribution`, `description`, `labels`, `limit`, `rule-unit`, and `units`. A schema's `language`, or else the manifest's `primary-language`, picks the language.
+sokf writes its own words into a scaffold and into a guide, such as the words before each `when-at-limit`. To give those words in a language other than English, write them in `/.sokf/texts.yaml` or a file below `/.sokf/texts.d/`, as a map from the language tag to the entries `attribution`, `description`, `labels`, `limit`, `rule-unit`, and `units`. A schema's `language`, or else the manifest's `primary-language`, picks the language.

@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use crate::{
     Model,
-    markdown::{is_slug, slug},
+    markdown::{self, is_slug},
     model::{
         Query,
         keys::{self, KeyIndex, Label, Resolved, Unresolved},
@@ -111,16 +111,23 @@ pub fn names_broken_store(model: &Model, target: &str) -> bool {
 }
 
 /// `bare_key` resolves a bare key to the only key in the repository with
-/// the same slug.
+/// the same slug: the first id that the key can name, in the order of
+/// `markdown::key_ids`, that some key has, else the first id.
 fn bare_key(model: &Model, keys: &KeyIndex, key: &str) -> Result<Resolved, Unresolvable> {
-    let s = slug(key);
-    model.note(Query::KeyRepository(s.clone()));
-    match keys
-        .repository
-        .get(&s)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-    {
+    let ids = markdown::key_ids(key);
+    let entries = |s: &String| {
+        model.note(Query::KeyRepository(s.clone()));
+        keys.repository
+            .get(s)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    };
+    let s = ids
+        .iter()
+        .find(|s| !entries(s).is_empty())
+        .unwrap_or(&ids[0])
+        .clone();
+    match entries(&s) {
         [one] => Ok(Resolved {
             knowledge: one.knowledge,
             path: one.path.clone(),

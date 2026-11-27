@@ -87,7 +87,7 @@ pub fn check_document(doc: DocView<'_>, ctx: &Ctx<'_>, citations: &mut Citations
                 &mut findings,
                 Some(entry.line),
                 format!(
-                    "write the `links` entry `to: {}` as `to: {canonical}`, the shortest form that identifies the document in this store. `--fix` makes this change",
+                    "write the `links` entry `to: {}` as `to: {canonical}`",
                     entry.to
                 ),
                 "SOKF_FORMAT_65",
@@ -309,7 +309,7 @@ fn check_link(
             if let Err(u) = keys::resolve_in(ctx.keys, path, doc.body, fragment) {
                 let message = match u {
                     Unresolved::KeyForm(slug) => format!(
-                        "`#{fragment}` uses the heading text. Use the slug `#{slug}` instead (`--fix` makes this change)"
+                        "`#{fragment}` uses the heading text. Use the slug `#{slug}` instead"
                     ),
                     _ => format!("`#{fragment}` matches no heading or key in this document"),
                 };
@@ -371,9 +371,7 @@ fn check_label(
                     findings,
                     doc.path,
                     link.line,
-                    format!(
-                        "write `[{label}]` as `[{canonical}]`, the shortest form that identifies the document in this store. `--fix` makes this change"
-                    ),
+                    format!("write `[{label}]` as `[{canonical}]`"),
                     "SOKF_FORMAT_65",
                 );
             }
@@ -416,7 +414,7 @@ fn suffix_clashes(doc: DocView<'_>, ctx: &Ctx<'_>, findings: &mut Vec<Finding>) 
         return;
     }
     for entry in ctx.keys.of_document(doc.path) {
-        let key_slug = crate::markdown::slug(&entry.key);
+        let key_slug = entry.id.clone();
         for (line, slug) in &suffixed {
             if *line != entry.line && *slug == key_slug {
                 findings.push(Finding::error(
@@ -479,7 +477,7 @@ fn check_path(
     let named = ctx
         .knowledge
         .and_then(|k| crate::include::path_link_label(ctx.model, ctx.keys, k, doc.path, link));
-    if let Some((label, fixable)) = named {
+    if let Some((label, _)) = named {
         let kind = if ctx.model.asset_at(target).is_some() {
             "the asset"
         } else {
@@ -490,12 +488,7 @@ fn check_path(
             Some(link.line),
             "SOKF_FORMAT_60",
             format!(
-                "{what} refers to {kind} `{target}` by path. Refer to it by id as `[text][{label}]`{}",
-                if fixable {
-                    " (`--fix` makes this change)"
-                } else {
-                    ""
-                }
+                "{what} refers to {kind} `{target}` by path. Refer to it by id as `[text][{label}]`"
             ),
         ));
         return;

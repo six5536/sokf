@@ -188,11 +188,12 @@ fn a_soft_limit_bounds_no_links() {
     }
 }
 
-// The guidance line before the rule's entries holds the rule's guidance,
-// then sokf's words for the limit, which name the `rel`, and its text. A
-// rule without guidance has a line with the limit alone, and a rule that a
-// hard limit of 0 bans has no entry. A store in a language that sokf has
-// no words for gets the limit in the syntax of the schema.
+// The guide of a new document gives the words of the guidance line before
+// the rule's entries in the scaffold: the rule's guidance, then sokf's words
+// for the limit, which name the `rel`, and its text. A rule without guidance
+// has the limit alone, and a rule that a hard limit of 0 bans is left out. A
+// store in a language that sokf has no words for gets the limit in the
+// syntax of the schema.
 // sokf-tests: EXT-8_AC-5
 // sokf-tests: EXT-8_AC-6
 // sokf-tests: CLI-6_AC-120
@@ -203,13 +204,12 @@ fn the_scaffold_writes_the_limit_after_the_rules_guidance() {
     let mut o = new_options(tree.dir(), "Note");
     o.slug = Some("milk".into());
     let line = |tree: &TempTree| {
-        let doc = new(&tree.root(), &o).unwrap().document;
-        let at = doc.find("links:\n").expect(&doc);
-        doc[at..].lines().nth(1).unwrap().to_string()
+        let guide = new(&tree.root(), &o).unwrap().guide.unwrap();
+        guide.links[0].text.clone().unwrap()
     };
     assert_eq!(
         line(&tree),
-        "  # sokf:guidance A relates-to link points to a note on the same subject. At most 2 `relates-to` links. Never leave out or merge content to stay within the count. When at the limit: Split the note by subject."
+        "A relates-to link points to a note on the same subject. At most 2 `relates-to` links. Never leave out or merge content to stay within the count. When at the limit: Split the note by subject."
     );
     let unguided = |max: &str| {
         schema(max).replace(
@@ -223,15 +223,16 @@ fn the_scaffold_writes_the_limit_after_the_rules_guidance() {
     );
     assert_eq!(
         line(&tree),
-        "  # sokf:guidance Usually up to 1 `relates-to` link. Never leave out or merge content to stay within the count. When at the limit: Split the note by subject."
+        "Usually up to 1 `relates-to` link. Never leave out or merge content to stay within the count. When at the limit: Split the note by subject."
     );
     // A ban leaves the rule out, so the schema's own scaffold passes it.
     tree.write(
         "knowledge/schemas/note.md",
         &schema("{ hard: 0, when-at-limit: 'Name the other notes in the text.' }"),
     );
-    let doc = new(&tree.root(), &o).unwrap().document;
-    assert!(!doc.contains("links:"), "{doc}");
+    let made = new(&tree.root(), &o).unwrap();
+    assert!(!made.document.contains("links:"), "{}", made.document);
+    assert_eq!(made.guide.unwrap().links.len(), 0);
     let on_schema: Vec<String> = errors(&tree, CacheMode::Off)
         .into_iter()
         .filter(|e| e.starts_with("/knowledge/schemas/"))
@@ -247,6 +248,6 @@ fn the_scaffold_writes_the_limit_after_the_rules_guidance() {
     );
     assert_eq!(
         line(&tree),
-        "  # sokf:guidance `hard: 2`, `when-at-limit`: Split the note by subject."
+        "`hard: 2`, `when-at-limit`: Split the note by subject."
     );
 }

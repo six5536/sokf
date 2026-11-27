@@ -282,7 +282,7 @@ fn a_ban_shows_the_example_of_the_variant_the_line_took() {
     assert_eq!(
         r.get("v").unwrap().check("b never"),
         FormatMatch::Refused(
-            "`never` is refused: The line contains no never. A line of this kind reads b two"
+            "`never` is refused: The line contains no never. A line of this kind reads `b two`"
                 .into()
         )
     );
@@ -425,14 +425,14 @@ proptest! {
         };
         prop_assert_eq!(
             &said,
-            "does not match the `b` form: it fails at column 5: expected an `int` (`\\d+`), found `NOPE`; a line of this kind reads [b] 1"
+            "does not match the `b` form: it fails at column 5: expected an `int` (`\\d+`), found `NOPE`; a line of this kind reads `[b] 1`"
         );
         let FormatMatch::Fail(said) = r.get("p").unwrap().check("NOPE") else {
             return Err(TestCaseError::fail("the plain shape accepted a bad line"));
         };
         prop_assert_eq!(
             &said,
-            &format!("does not match `^{word}$`; a line of this kind reads {word}")
+            &format!("does not match `^{word}$`; a line of this kind reads `{word}`")
         );
     }
 }
@@ -463,7 +463,7 @@ proptest! {
                 prop_assert!(said.starts_with(&quoted), "{said}");
                 prop_assert!(line.contains(m.as_str()) && pattern.is_match(m.as_str()));
                 if let Some(e) = &example {
-                    let tail = format!(" A line of this kind reads {e}");
+                    let tail = format!(" A line of this kind reads `{e}`");
                     prop_assert!(said.ends_with(&tail), "{}", said);
                 } else { prop_assert_eq!(&said, &quoted) }
             }

@@ -9,11 +9,17 @@ use tramlines_md::{
 };
 
 use super::Ctx;
-use crate::{Finding, grammar::SokfSchema, model::keys::Label};
+use crate::{
+    Finding,
+    grammar::{SokfSchema, squash},
+    model::keys::Label,
+};
 
 /// `check` reports each `sokf:` link to an archived document inside a
-/// paragraph that one of the schema's `current-links` patterns matches.
+/// paragraph that one of the schema's `current-links` patterns matches, in
+/// the paragraph's reading.
 // sokf-implements: SOKF_SCHEMA_54
+// sokf-implements: SOKF_SCHEMA_109
 pub fn check(doc: &DocView<'_>, schema: &SokfSchema, ctx: &Ctx<'_>, out: &mut CheckOutput) {
     if ctx.scaffold || schema.current_links.is_empty() {
         return;
@@ -29,7 +35,10 @@ pub fn check(doc: &DocView<'_>, schema: &SokfSchema, ctx: &Ctx<'_>, out: &mut Ch
         .filter(|b| b.kind == BlockKind::Prose)
     {
         for unit in &block.units {
-            let Some(pattern) = schema.current_links.iter().find(|p| p.is_match(&unit.text)) else {
+            // A pattern reads the unit in tramlines' fixed spelling of its
+            // markup, squashed, as a pattern of the schema reads it.
+            let read = squash(&unit.reading.or_written(&unit.text).text);
+            let Some(pattern) = schema.current_links.iter().find(|p| p.is_match(&read)) else {
                 continue;
             };
             let end = unit.end_line.max(unit.line);

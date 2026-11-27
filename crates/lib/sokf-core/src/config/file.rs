@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use super::excludes_d::AddedExclude;
+use super::{
+    excludes_d::AddedExclude,
+    format::{FormatConfig, FormatSection},
+};
 use crate::{Error, RepoPath, RepoRoot, Result, Severity, source::read_optional};
 
 // sokf-implements: CONF-1_AC-2
@@ -29,81 +32,6 @@ struct ConfigFile {
 /// (CONF-1_AC-6).
 const PACKS_GONE: &str = "`[[pack]]` declares a pack, and packs are no longer part of sokf: \
                           remove each `[[pack]]` entry";
-
-// sokf:begin config-format
-/// `FormatSection` holds the `[format]` table (CONF-10): the formatter's
-/// command, with `{files}` for the files to format and `{settings}` for the
-/// path of the settings, the settings that sokf passes in place of its
-/// own, and the seconds that one run of the formatter lasts at most. Without
-/// `command`, sokf detects the formatter.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-struct FormatSection {
-    command: Option<Vec<String>>,
-    settings: Option<toml::Table>,
-    timeout: Option<i64>,
-}
-// sokf:end config-format
-
-/// `FORMAT_TIMEOUT` is the longest that one run of the formatter lasts
-/// when `format.timeout` is absent (CONF-10_AC-20).
-pub const FORMAT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// `FormatConfig` is the resolved `[format]` table: the command and the
-/// settings, as JSON text, that the configuration names, and the limit of
-/// one run of the formatter.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FormatConfig {
-    /// The formatter's program and arguments, or `None` to detect it.
-    pub command: Option<Vec<String>>,
-    /// The settings as JSON, or `None` for sokf's own.
-    pub settings: Option<String>,
-    /// The longest that one run of the formatter lasts.
-    pub timeout: std::time::Duration,
-}
-
-impl Default for FormatConfig {
-    // sokf-implements: CONF-10_AC-20
-    fn default() -> FormatConfig {
-        FormatConfig {
-            command: None,
-            settings: None,
-            timeout: FORMAT_TIMEOUT,
-        }
-    }
-}
-
-impl FormatSection {
-    /// `resolve` checks the table and returns it as a `FormatConfig`. It
-    /// refuses a command that is empty or has no element `{files}`, and a
-    /// timeout that isn't a whole number of seconds above 0.
-    // sokf-implements: CONF-10_AC-4
-    // sokf-implements: CONF-10_AC-21
-    fn resolve(self) -> std::result::Result<FormatConfig, String> {
-        if let Some(command) = &self.command
-            && (command.is_empty() || !command.iter().any(|a| a == "{files}"))
-        {
-            return Err("format.command must name a program and have an element `{files}`".into());
-        }
-        let settings = self
-            .settings
-            .map(|t| serde_json::to_string(&t).map_err(|e| format!("format.settings: {e}")))
-            .transpose()?;
-        let timeout = match self.timeout {
-            None => FORMAT_TIMEOUT,
-            Some(secs) => u64::try_from(secs)
-                .ok()
-                .filter(|s| *s > 0)
-                .map(std::time::Duration::from_secs)
-                .ok_or("format.timeout must be a whole number of seconds above 0")?,
-        };
-        Ok(FormatConfig {
-            command: self.command,
-            settings,
-            timeout,
-        })
-    }
-}
 
 // sokf:begin config-harness
 /// `HarnessSection` holds one `[harness.NAME]` table (CONF-4). `without`
@@ -244,7 +172,9 @@ pub struct Config {
     pub declined: BTreeMap<String, Vec<String>>,
     /// How a run reports markers.
     pub markers: MarkerCheck,
-    /// The formatter that a run compares generated blocks with.
+    /// The `[format]` table: the formatter or the command through which a
+    /// run compares the generated blocks of a format that same-same doesn't
+    /// compare by meaning.
     pub format: FormatConfig,
 }
 
@@ -354,6 +284,7 @@ pub fn load_config(root: &RepoRoot) -> Result<Config> {
     let format = file
         .format
         .resolve()
+        .and_then(|format| format.check_files(root))
         .map_err(|m| Error::config(path.clone(), m))?;
     Ok(Config {
         roots,
@@ -679,46 +610,6 @@ mod tests {
         let e = with(&dir, "foo = 1\n").unwrap_err().to_string();
         assert!(e.contains("unknown field `foo`"), "{e}");
         assert!(!e.contains("pack"), "{e}");
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    // `[format]` names a command with an element `{files}`, settings, which
-    // the configuration holds as JSON, and a timeout of whole seconds.
-    // sokf-tests: CONF-10_AC-4
-    // sokf-tests: CONF-10_AC-20
-    // sokf-tests: CONF-10_AC-21
-    #[test]
-    fn reads_the_format_table() {
-        let dir = temp("format");
-        for text in [
-            "[format]\ncommand = []\n",
-            "[format]\ncommand = [\"prettier\", \"--write\"]\n",
-            "[format]\ncommand = \"prettier {files}\"\n",
-            "[format]\nwidth = 3\n",
-            "[format]\ntimeout = 0\n",
-            "[format]\ntimeout = -1\n",
-            "[format]\ntimeout = 1.5\n",
-        ] {
-            let e = with(&dir, text).unwrap_err();
-            assert!(matches!(e, Error::Config { .. }), "{text:?} -> {e}");
-        }
-        let config = with(
-            &dir,
-            "[format]\ncommand = [\"fmt\", \"{files}\"]\nsettings = { printWidth = 80, proseWrap = \"never\" }\n",
-        )
-        .unwrap();
-        assert_eq!(
-            config.format.command,
-            Some(vec!["fmt".into(), "{files}".into()])
-        );
-        assert_eq!(
-            config.format.settings.as_deref(),
-            Some(r#"{"printWidth":80,"proseWrap":"never"}"#)
-        );
-        assert_eq!(config.format.timeout, std::time::Duration::from_secs(10));
-        let config = with(&dir, "[format]\ntimeout = 3\n").unwrap();
-        assert_eq!(config.format.timeout, std::time::Duration::from_secs(3));
-        assert_eq!(with(&dir, "").unwrap().format, FormatConfig::default());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

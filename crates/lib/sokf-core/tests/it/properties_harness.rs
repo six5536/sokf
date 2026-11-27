@@ -194,8 +194,10 @@ fn arb_text() -> impl Strategy<Value = String> {
     prop::collection::vec("[a-z #@-]{0,12}", 0..6).prop_map(|lines| lines.join("\n"))
 }
 
+/// `arb_block` returns a block of one to three lines, each of which starts with a
+/// letter, so that the block is one paragraph of Markdown whose meaning is its words.
 fn arb_block() -> impl Strategy<Value = String> {
-    prop::collection::vec("[a-zA-Z .]{1,20}", 1..4)
+    prop::collection::vec("[a-zA-Z][a-zA-Z .]{0,19}", 1..4)
         .prop_map(|lines| format!("{}\n", lines.join("\n")))
 }
 
@@ -301,11 +303,13 @@ proptest! {
             Some(b) if recorded_of_found => {
                 install_parts(tree.dir(), part(b));
             }
+            // The record holds another block than the one found.
             other => {
-                if let Some(b) = other {
-                    tree.write("CLAUDE.md", &format!("<!-- sokf:harness -->\n\n{b}<!-- /sokf:harness -->\n"));
+                install_parts(tree.dir(), part("recorded elsewhere\n"));
+                match other {
+                    Some(b) => tree.write("CLAUDE.md", &format!("<!-- sokf:harness -->\n\n{b}<!-- /sokf:harness -->\n")),
+                    None => std::fs::remove_file(tree.dir().join("CLAUDE.md")).unwrap(),
                 }
-                tree.write(".sokf/harness.toml", "[claude]\nblock = \"fnv1a64:0000000000000000\"\n");
             }
         }
         if declined {
@@ -313,7 +317,8 @@ proptest! {
         }
         let embedded = "embedded\n";
         let state = status_parts(tree.dir(), part(embedded)).harnesses[0].parts[0].state;
-        // A block is compared word by word (CLI-3_AC-16).
+        // A block is compared as Markdown (CLI-3_AC-16), and the strategy's
+        // blocks are one paragraph each, whose meaning is its words.
         let expected = if declined {
             State::Skipped
         } else if found.is_none() {

@@ -6,7 +6,7 @@ expression: json(&fixed)
   "errors": [
     {
       "path": "/README.md",
-      "message": "the definition block is missing; run `sokf validate --fix` (SOKF_FORMAT_78)"
+      "message": "the definition block is missing (SOKF_FORMAT_78)"
     },
     {
       "path": "/README.md",
@@ -15,11 +15,11 @@ expression: json(&fixed)
     {
       "path": "/README.md",
       "line": 3,
-      "message": "the link refers to the document `/knowledge/a.md` by path. Refer to it by id as `[text][sokf:a]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+      "message": "the link refers to the document `/knowledge/a.md` by path. Refer to it by id as `[text][sokf:a]` (SOKF_FORMAT_60)"
     },
     {
       "path": "/knowledge/a.md",
-      "message": "the definition block is missing; run `sokf validate --fix` (SOKF_FORMAT_77)"
+      "message": "the definition block is missing (SOKF_FORMAT_77)"
     },
     {
       "path": "/knowledge/a.md",
@@ -34,7 +34,7 @@ expression: json(&fixed)
     {
       "path": "/knowledge/a.md",
       "line": 10,
-      "message": "the link refers to the document `/knowledge/b.md` by path. Refer to it by id as `[text][sokf:b]` (`--fix` makes this change) (SOKF_FORMAT_60)"
+      "message": "the link refers to the document `/knowledge/b.md` by path. Refer to it by id as `[text][sokf:b]` (SOKF_FORMAT_60)"
     },
     {
       "path": "/knowledge/b.md",

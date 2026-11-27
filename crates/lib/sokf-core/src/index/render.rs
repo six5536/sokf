@@ -95,8 +95,9 @@ pub fn render(heading: &str, entries: &[IndexEntry]) -> String {
 /// `is_generated` reports whether `text`, with LF line endings, is in the
 /// form that `render` writes, whatever its entries: a `# ` heading first,
 /// then only entry lines, then only the lines of a definition block after
-/// its marker. A stale index is in this form. A text with frontmatter or
-/// prose is not, and an empty text is, because it holds nothing to lose.
+/// its marker. A stale index is in this form, one whose `sokf:` label a
+/// person wrote in another case too. A text with frontmatter or prose is
+/// not, and an empty text is, because it holds nothing to lose.
 // sokf-implements: SOKF_FORMAT_97
 pub fn is_generated(text: &str) -> bool {
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
@@ -114,7 +115,8 @@ pub fn is_generated(text: &str) -> bool {
         let fits = if definitions {
             line.starts_with('[') && line.contains("]: ")
         } else {
-            line.starts_with("- [") && (line.contains("](") || line.contains("][sokf:"))
+            line.starts_with("- [")
+                && (line.contains("](") || line.to_ascii_lowercase().contains("][sokf:"))
         };
         if !fits {
             return false;

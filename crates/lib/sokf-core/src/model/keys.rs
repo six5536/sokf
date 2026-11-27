@@ -7,7 +7,7 @@ use super::{Model, Query};
 use crate::{
     RepoPath,
     grammar::KeyScope,
-    markdown::{Body, link_headings, slug},
+    markdown::{self, Body, link_headings},
 };
 
 /// A `KeyEntry` is one captured key.
@@ -15,12 +15,22 @@ use crate::{
 pub struct KeyEntry {
     /// The key.
     pub key: String,
+    /// The id of the key's anchor, which a fragment names the key by: the
+    /// engine's `Capture::anchor` of the capture, which every capture of the
+    /// key shares (`SOKF_FORMAT_72`).
+    pub id: String,
     /// The document that captures it.
     pub path: RepoPath,
     /// The line that captures the key.
     pub line: usize,
     /// The slug of the heading, when a heading captures the key.
     pub heading_slug: Option<String>,
+    /// Whether this capture holds the key's anchor: the capture at whose
+    /// spot the engine places the anchor, or a heading whose slug is the id.
+    /// Every capture of the key in one block, such as the lines of one
+    /// fence, shares the block's spot, so each of them holds the anchor,
+    /// until the engine exports which capture it chose.
+    pub holds_anchor: bool,
     /// The scope that the schema declares for the key.
     pub scope: KeyScope,
     /// The knowledge of the document that captures the key.
@@ -50,21 +60,27 @@ pub struct KeyIndex {
 }
 
 impl KeyIndex {
-    /// `add` records a captured key under its document and its scope.
+    /// `add` records a captured key under its document and its scope. The
+    /// scope keeps one entry of each document for a key, the first that it
+    /// is given, because a bare reference resolves to the one document that captures
+    /// the key, however many units of the document capture it.
     pub fn add(&mut self, entry: KeyEntry) {
-        let s = slug(&entry.key);
-        match &entry.scope {
-            KeyScope::Host(scope) if scope == "knowledge" => self
-                .knowledge
-                .entry((entry.knowledge, s.clone()))
-                .or_default()
-                .push(entry.clone()),
-            KeyScope::Host(scope) if scope == "repository" => self
-                .repository
-                .entry(s.clone())
-                .or_default()
-                .push(entry.clone()),
-            _ => {}
+        let s = entry.id.clone();
+        let scoped = match &entry.scope {
+            KeyScope::Host(scope) if scope == "knowledge" => Some(
+                self.knowledge
+                    .entry((entry.knowledge, s.clone()))
+                    .or_default(),
+            ),
+            KeyScope::Host(scope) if scope == "repository" => {
+                Some(self.repository.entry(s.clone()).or_default())
+            }
+            _ => None,
+        };
+        if let Some(entries) = scoped
+            && !entries.iter().any(|e| e.path == entry.path)
+        {
+            entries.push(entry.clone());
         }
         self.document
             .entry((entry.path.clone(), s))
@@ -205,9 +221,9 @@ impl Unresolved {
             Unresolved::BareDocumentScope => {
                 format!("`[{label}]` refers to a key of document scope only")
             }
-            Unresolved::KeyForm(slug) => format!(
-                "`[{label}]` gives the fragment as text, not as a slug. Use `#{slug}`, which `--fix` writes for you"
-            ),
+            Unresolved::KeyForm(slug) => {
+                format!("`[{label}]` gives the fragment as text, not as a slug. Use `#{slug}`")
+            }
         }
     }
 }
@@ -238,11 +254,12 @@ pub fn resolve_in(
     if found(fragment) {
         return Ok(fragment.to_string());
     }
-    let s = slug(fragment);
-    if s != fragment && found(&s) {
-        Err(Unresolved::KeyForm(s))
-    } else {
-        Err(Unresolved::NoFragment)
+    match markdown::key_ids(fragment)
+        .into_iter()
+        .find(|s| s != fragment && found(s))
+    {
+        Some(s) => Err(Unresolved::KeyForm(s)),
+        None => Err(Unresolved::NoFragment),
     }
 }
 
@@ -305,11 +322,20 @@ pub fn resolve(
             let elsewhere = label.store.is_none();
             match bare(model, keys, target, fragment, elsewhere) {
                 Err(Unresolved::BareNotFound) => {
-                    let s = slug(fragment);
-                    if s != fragment && bare(model, keys, target, &s, elsewhere).is_ok() {
-                        Err(Unresolved::KeyForm(s))
-                    } else {
-                        Err(Unresolved::BareNotFound)
+                    // The first id that names a key decides, as it does for
+                    // a marker: a key form where it resolves, and no key
+                    // where it names several or one of document scope.
+                    let first = markdown::key_ids(fragment)
+                        .into_iter()
+                        .filter(|s| s != fragment)
+                        .map(|s| {
+                            let found = bare(model, keys, target, &s, elsewhere);
+                            (s, found)
+                        })
+                        .find(|(_, found)| !matches!(found, Err(Unresolved::BareNotFound)));
+                    match first {
+                        Some((s, Ok(_))) => Err(Unresolved::KeyForm(s)),
+                        _ => Err(Unresolved::BareNotFound),
                     }
                 }
                 other => other,
@@ -412,10 +438,12 @@ mod tests {
 
     fn entry(key: &str, path: &str, scope: KeyScope, slug: Option<&str>) -> KeyEntry {
         KeyEntry {
+            id: crate::markdown::slug(key),
             key: key.into(),
             path: p(path),
             line: 1,
             heading_slug: slug.map(str::to_string),
+            holds_anchor: true,
             scope,
             knowledge: 0,
             rule_id: None,

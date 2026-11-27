@@ -56,12 +56,12 @@ fn every_spelling_but_the_shortest_is_respelled() {
     );
     let before = errors_on(&tree, false, "/other/note.md");
     for expected in [
-        "write `[sokf:#cli-1]` as `[sokf:fixture:#cli-1]`, the shortest form that identifies the document in this store. `--fix` makes this change",
-        "write `[sokf:test/fixture:overview]` as `[sokf:fixture:overview]`, the shortest form that identifies the document in this store. `--fix` makes this change",
-        "write `[sokf:other:note]` as `[sokf:note]`, the shortest form that identifies the document in this store. `--fix` makes this change",
-        "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:fixture:req-cli#cli-1]` (`--fix` makes this change)",
-        "the link refers to the document `/other/note.md` by path. Refer to it by id as `[text][sokf:note]` (`--fix` makes this change)",
-        "write the `links` entry `to: /knowledge/overview.md` as `to: fixture:overview`, the shortest form that identifies the document in this store. `--fix` makes this change",
+        "write `[sokf:#cli-1]` as `[sokf:fixture:#cli-1]`",
+        "write `[sokf:test/fixture:overview]` as `[sokf:fixture:overview]`",
+        "write `[sokf:other:note]` as `[sokf:note]`",
+        "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:fixture:req-cli#cli-1]`",
+        "the link refers to the document `/other/note.md` by path. Refer to it by id as `[text][sokf:note]`",
+        "write the `links` entry `to: /knowledge/overview.md` as `to: fixture:overview`",
     ] {
         assert!(
             before.iter().any(|m| m == expected),
@@ -102,9 +102,8 @@ fn a_former_identity_resolves_and_is_respelled() {
         "sokf: \"0.7\"\nname: fixture\nscope: test\nrenamed-from: [test/legacy]\ndescription: A clean fixture store.\n",
     );
     assert!(
-        errors_on(&tree, false, "/other/note.md").contains(
-            &"write `[sokf:legacy:overview]` as `[sokf:fixture:overview]`, the shortest form that identifies the document in this store. `--fix` makes this change".to_string()
-        )
+        errors_on(&tree, false, "/other/note.md")
+            .contains(&"write `[sokf:legacy:overview]` as `[sokf:fixture:overview]`".to_string())
     );
     assert_eq!(
         errors_on(&tree, true, "/other/note.md"),
@@ -390,7 +389,7 @@ fn fix_respells_what_is_written_and_nothing_else() {
     let before = errors_on(&tree, false, "/other/note.md");
     assert!(
         before.iter().any(|m| m
-            == "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:fixture:req-cli#cli-1]` (`--fix` makes this change)"),
+            == "the link refers to the document `/knowledge/req-cli.md` by path. Refer to it by id as `[text][sokf:fixture:req-cli#cli-1]`"),
         "{before:#?}"
     );
     let after = errors_on(&tree, true, "/other/note.md");

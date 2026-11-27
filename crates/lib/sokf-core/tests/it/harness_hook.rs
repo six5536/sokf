@@ -69,17 +69,12 @@ fn a_broken_knowledge_gets_one_note_per_set_of_errors() {
         text,
         format!("sokf: {n} errors. Fix before finishing the work.")
     );
-    // The guard file holds the hash of the errors that the hook noted:
-    // `fnv1a64:`, 16 hex digits, and a newline.
+    // The guard file holds the loop guard's hash of the errors that the hook
+    // noted, and a newline.
     let guard = tree.dir().join(".sokf/cache/harness-prompt-claude.hash");
     let kept = std::fs::read_to_string(&guard).unwrap();
-    assert_eq!(kept.len(), "fnv1a64:".len() + 17, "{kept:?}");
     assert!(
-        kept.starts_with("fnv1a64:") && kept.ends_with('\n'),
-        "{kept:?}"
-    );
-    assert!(
-        kept[8..24].chars().all(|c| c.is_ascii_hexdigit()),
+        kept.ends_with('\n') && kept.lines().count() == 1 && !kept.contains("error"),
         "{kept:?}"
     );
     // While the errors stay the same, the hook adds nothing.
@@ -144,7 +139,7 @@ fn each_harness_and_session_has_its_own_guard() {
     let clean = TempTree::fixture("clean");
     let call = harness::hook_call("claude", "prompt-submit").unwrap();
     std::fs::create_dir_all(clean.dir().join(".sokf/cache")).unwrap();
-    clean.write(".sokf/cache/harness-prompt-claude-s1.hash", "fnv1a64:0\n");
+    clean.write(".sokf/cache/harness-prompt-claude-s1.hash", "0\n");
     assert_eq!(
         harness::hook(&clean.root(), &call, session, CacheMode::On).unwrap(),
         NOTHING

@@ -4,7 +4,7 @@
 use tramlines_md::grammar::{FormatRegistry, Grammar, RegexCache, lower, validate_schema};
 
 use super::SokfSchema;
-use crate::{Finding, RepoPath, Spanned, markdown::SOKF};
+use crate::{Finding, RepoPath, Severity, Spanned, markdown::SOKF};
 
 /// `SOKF_TYPES` holds the types that SOKF defines. No layer can redefine
 /// them (`TL_29`). The writer of a schema writes a reference as a placeholder
@@ -47,8 +47,13 @@ pub fn embedded_formats(grammar: &Grammar, regexes: &RegexCache) -> crate::Resul
 }
 
 /// `compile` validates a schema against the grammar, and then lowers it,
-/// together with the rules that SOKF's extension adds.
+/// together with the rules that SOKF's extension adds. It returns the
+/// schema with its warnings, or every finding where one of them is an
+/// error: only an error breaks the grammar, so a schema that draws only
+/// warnings, such as one on a pattern that never matches, still governs
+/// its documents (`EXT-1_AC-5`).
 // sokf-implements: SOKF_SCHEMA_43
+// sokf-implements: EXT-1_AC-5
 pub fn compile(
     yaml: &Spanned,
     grammar: &Grammar,
@@ -56,19 +61,26 @@ pub fn compile(
     regexes: &RegexCache,
     path: &RepoPath,
     id: &str,
-) -> std::result::Result<SokfSchema, Vec<Finding>> {
-    let problems = validate_schema(yaml, grammar, regexes, path);
-    if !problems.is_empty() {
-        return Err(problems);
+) -> std::result::Result<(SokfSchema, Vec<Finding>), Vec<Finding>> {
+    let mut findings = validate_schema(yaml, grammar, regexes, path);
+    if findings.iter().any(is_error) {
+        return Err(findings);
     }
-    let (core, mut findings) = lower(yaml, grammar, registry, regexes, path, id, &SOKF);
+    let (core, lowered) = lower(yaml, grammar, registry, regexes, path, id, &SOKF);
+    findings.extend(lowered);
     let (schema, more) = SokfSchema::lower(core, yaml, path);
     findings.extend(more);
-    if findings.is_empty() {
-        Ok(schema)
-    } else {
+    if findings.iter().any(is_error) {
         Err(findings)
+    } else {
+        Ok((schema, findings))
     }
+}
+
+/// `is_error` returns whether `finding` is an error, the only kind of
+/// finding that breaks the grammar.
+fn is_error(finding: &Finding) -> bool {
+    finding.severity == Severity::Error
 }
 
 /// `extension_text` returns the text of `sokf-spec/sokf.tramlines.yaml`,

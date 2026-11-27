@@ -41,7 +41,7 @@ sections:
 ";
 
 /// The schema of a story. A story is free prose that cites criteria.
-const STORIES_SCHEMA: &str = r"---
+pub(crate) const STORIES_SCHEMA: &str = r"---
 type: Schema
 id: schema-stories
 description: Stories that cite the criteria accepting them.
@@ -69,7 +69,7 @@ fn contract(id: &str, scope: &str, criteria: &[&str]) -> String {
     )
 }
 
-fn stories(id: &str, body: &str) -> String {
+pub(crate) fn stories(id: &str, body: &str) -> String {
     format!("---\ntype: Stories\nid: {id}\ntitle: {id}\n---\n\n# {id}\n\n{body}\n")
 }
 
@@ -270,33 +270,6 @@ fn a_citing_document_with_errors_still_cites() {
         json(&report)
     );
     assert_eq!(messages(&tree, "contract-a.md"), Vec::<String>::new());
-}
-
-// sokf-tests: EXT-9_AC-1
-#[test]
-fn a_key_captured_twice_by_one_rule_is_reported_once() {
-    let tree = TempTree::fixture("clean");
-    // The list and the fence both capture the key under the section's id.
-    tree.write(
-        "knowledge/schemas/twice.md",
-        "---\ntype: Schema\nid: schema-twice\ndescription: One key, two captures.\n---\n\n````yaml\nline-limit: 0\nfrontmatter:\n  type:\n    const: Twice\ncited-by:\n  - from-type: Stories\n    keys: parts\nsections:\n  - heading: { from: title }\n    level: 1\n    rule-id: parts\n    blocks:\n      - kind: bullet-list\n        each:\n          pattern: '^(?P<p>P-\\d+): .+$'\n          key: p\n          unique: knowledge\n          example: 'P-1: a part'\n      - kind: code\n        lang: text\n        example: 'P-1'\n        each:\n          lines:\n            - pattern: '^(?P<p>P-\\d+)$'\n              key: p\n              unique: knowledge\n              example: 'P-1'\n````\n",
-    );
-    tree.write("knowledge/schemas/stories.md", STORIES_SCHEMA);
-    tree.write(
-        "knowledge/twice-a.md",
-        "---\ntype: Twice\nid: twice-a\ntitle: A\n---\n\n# A\n\n- P-1: a part\n\n```text\nP-1\n```\n",
-    );
-    let report = tree.validate(false, CacheMode::Off);
-    let on_doc: Vec<(Option<usize>, String)> = on(&report.errors, "twice-a.md")
-        .map(|f| (f.line, said(&f.message)))
-        .filter(|(_, m)| m.contains(" document cites "))
-        .collect();
-    assert_eq!(
-        on_doc,
-        vec![(Some(9), "no `Stories` document cites key `P-1`".to_string())],
-        "{}",
-        json(&report)
-    );
 }
 
 // sokf-tests: EXT-9_AC-2

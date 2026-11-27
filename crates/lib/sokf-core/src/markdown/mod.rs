@@ -5,6 +5,7 @@
 mod dialect;
 mod fences;
 mod headings;
+mod key;
 mod refs;
 
 pub use dialect::{
@@ -13,5 +14,6 @@ pub use dialect::{
 };
 pub use fences::fenced_bytes;
 pub use headings::{link_headings, suffixed_headings};
+pub use key::key_ids;
 pub use refs::{IncludeTarget, label_parts, sokf_label, split_store};
 pub use tramlines_md::markdown::*;

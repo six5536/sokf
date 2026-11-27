@@ -5,7 +5,6 @@ title: Changelog Schema
 description: A changelog records the changes to one specification, with one section for each version and the newest version first, and it is part of the specification that it records.
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 

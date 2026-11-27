@@ -30,7 +30,7 @@ pub const STORE_FILE: &str = "sokf.sqlite";
 /// table changes. A change to what a check finds needs no raise, because the
 /// fingerprint of the build in the version changes with the code
 /// (CACHE-1_AC-7).
-pub const STORE_FORMAT: u32 = 23;
+pub const STORE_FORMAT: u32 = 24;
 
 // sokf:begin cache
 /// `CacheMode` sets whether a run reads and writes the cache.
@@ -65,9 +65,9 @@ pub struct Cache {
     /// `missed` records that this run, with a hint, read a file that it took
     /// from the store and found the file removed.
     pub(super) missed: Cell<bool>,
-    /// `formatter` holds what the runs on this cache share of the formatter:
-    /// the forms of the texts that they formatted.
-    formatter: crate::formatter::Session,
+    /// `comparison` holds what the runs on this cache share of the
+    /// comparison: same-same's comparer and its cache.
+    comparison: crate::compare::Session,
 }
 
 impl Cache {
@@ -83,7 +83,8 @@ impl Cache {
     // sokf-implements: CLI-1_AC-13
     pub fn open(root: &RepoRoot, mode: CacheMode) -> Cache {
         let now = now();
-        let version = version(root);
+        let comparison = crate::compare::Session::new(root, mode == CacheMode::On);
+        let version = version(root, &comparison.identity());
         let (conn, file) = match mode {
             CacheMode::On => match open_file(root) {
                 Some(conn) => (conn, Some(root.as_path().join(CACHE_DIR).join(STORE_FILE))),
@@ -107,13 +108,13 @@ impl Cache {
             state: RefCell::new(SyncState::default()),
             hint: RefCell::new(None),
             missed: Cell::new(false),
-            formatter: crate::formatter::Session::new(root, mode == CacheMode::On),
+            comparison,
         }
     }
 
-    /// `formatter` returns the formatter's session of this cache.
-    pub(crate) fn formatter(&self) -> &crate::formatter::Session {
-        &self.formatter
+    /// `comparison` returns the comparison's session of this cache.
+    pub(crate) fn comparison(&self) -> &crate::compare::Session {
+        &self.comparison
     }
 
     /// `is_on` returns whether the cache is on.
@@ -187,23 +188,21 @@ impl std::fmt::Debug for Cache {
 /// that a new glob prunes would otherwise stay in the run. The files of texts
 /// and the `primary-language` of each manifest are part of it, because the
 /// words of a label in the language of a schema decide the findings of a
-/// document that carries the label. The formatter that
-/// the repository reveals is part of it because the formatter decides which
-/// generated blocks are current. When any of them differs, the run rebuilds
+/// document that carries the label. The identity of the formatter through
+/// which same-same compares the formats that it doesn't know, `formatter`,
+/// is part of it because the formatter decides which generated blocks of
+/// those formats are current. When any of them differs, the run rebuilds
 /// the store (CACHE-1_AC-7).
 // sokf-implements: CACHE-1_AC-6
-fn version(root: &RepoRoot) -> String {
+fn version(root: &RepoRoot, formatter: &str) -> String {
     let config = fs::read(root.as_path().join(".sokf/config.toml"))
         .map_or(0, |bytes| crate::source::fnv1a64(&bytes));
-    // The detected formatter decides which blocks are current, so a new
-    // formatter, or new plugins of dprint, rebuild the store.
-    let formatter = crate::formatter::fingerprint(root);
     let manifests = manifests(root);
     let stores = stores_fingerprint(root, &manifests);
     let excludes = excludes_fingerprint(root);
     let texts = texts_fingerprint(root, &manifests);
     format!(
-        "{}+store.{STORE_FORMAT}+build.{}+config.{config:016x}+stores.{stores:016x}+excludes.{excludes:016x}+texts.{texts:016x}+format.{formatter:016x}",
+        "{}+store.{STORE_FORMAT}+build.{}+config.{config:016x}+stores.{stores:016x}+excludes.{excludes:016x}+texts.{texts:016x}+format.{formatter}",
         env!("CARGO_PKG_VERSION"),
         env!("SOKF_BUILD_FINGERPRINT")
     )
@@ -446,8 +445,8 @@ const TABLES: &[(&str, &str)] = &[
     (
         "keys",
         "CREATE TABLE keys (path TEXT NOT NULL, key TEXT NOT NULL, slug TEXT NOT NULL, \
-         line INTEGER NOT NULL, heading_slug TEXT, scope TEXT NOT NULL, \
-         knowledge INTEGER NOT NULL, rule_id TEXT)",
+         line INTEGER NOT NULL, heading_slug TEXT, holds_anchor INTEGER NOT NULL, \
+         scope TEXT NOT NULL, knowledge INTEGER NOT NULL, rule_id TEXT)",
     ),
     (
         "anchors",
@@ -586,7 +585,7 @@ mod tests {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(version, super::version(&root));
+        assert_eq!(version, super::version(&root, "none"));
         // The version names the build, so another build reads another store.
         assert!(
             version.contains(&format!("+build.{}+", env!("SOKF_BUILD_FINGERPRINT"))),

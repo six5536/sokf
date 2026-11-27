@@ -15,7 +15,7 @@
   "required": ["documents"],
   "$defs": {
     "DocumentGuide": {
-      "description": "`DocumentGuide` holds the guidance that a document's schema gives for the parts that the document's lifecycle states admit, in the schema's order (CLI-17_AC-6). Each `text` holds the words of the guidance line that `sokf new` writes before the same part at the same states.",
+      "description": "`DocumentGuide` holds the guidance that a document's schema gives for the parts that the document's lifecycle states admit, in the schema's order (CLI-17_AC-6), with each part's example (CLI-17_AC-38). Each `text` holds the words of the guidance line that the scaffold of the schema writes before the same part at the same states, and each `example` the text that the scaffold writes for the part, with the document's own frontmatter values.",
       "type": "object",
       "properties": {
         "path": {
@@ -143,6 +143,10 @@
           "description": "`text` holds the words of the guidance line before the key: sokf's own text for the key, which is the rule for writing a `description`, then the key's guidance, then the words that state its limit and the limit's `when-at-limit`. It is absent when the key has none of them.",
           "type": "string"
         },
+        "example": {
+          "description": "`example` is the line that the scaffold of the schema writes for the key, with the document's own values, such as `priority: medium`. It is absent where the scaffold writes none.",
+          "type": "string"
+        },
         "line": {
           "description": "`line` is the line of the key's rule in the schema.",
           "type": "integer",
@@ -207,9 +211,13 @@
         "text": {
           "description": "`text` holds the words of the guidance line before the link: the rule's guidance, then the words that state its limit and the limit's `when-at-limit`. It is absent when the rule has neither.",
           "type": "string"
+        },
+        "example": {
+          "description": "`example` is the `links` key with one entry of the rule, which names its target by the placeholder `target-id`.",
+          "type": "string"
         }
       },
-      "required": ["rel", "optional"]
+      "required": ["rel", "optional", "example"]
     },
     "PreambleGuide": {
       "description": "`PreambleGuide` holds the guidance of the preamble.",
@@ -221,6 +229,10 @@
         },
         "text": {
           "description": "`text` holds the words of the guidance line before the preamble.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the text that the scaffold of the schema writes for the preamble. It is absent where the scaffold writes none.",
           "type": "string"
         },
         "blocks": {
@@ -288,6 +300,10 @@
         },
         "text": {
           "description": "`text` holds the words of the guidance line before the block: its guidance, then the words that state each limit and the limit's `when-at-limit`, then the message of each ban. It is absent when the block has none of them.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the text that the scaffold of the schema writes for the block, without the indent of an item that holds it. It is absent where the scaffold writes none. A block that the scaffold writes more than once gives its first occurrence.",
           "type": "string"
         },
         "blocks": {
@@ -440,7 +456,7 @@
           "type": "boolean"
         },
         "held": {
-          "description": "`held` is true when the document has a heading at the section's level whose text has the section's heading shape, or one of its `renamed-from` texts (CLI-17_AC-15).",
+          "description": "`held` is true when tramlines-md's match of a heading to its section gives the section a heading at its level whose reading, as tramlines-md normalises it, has the section's heading shape, or one of its `renamed-from` texts (CLI-17_AC-15).",
           "type": "boolean"
         },
         "guidance": {
@@ -449,6 +465,10 @@
         },
         "text": {
           "description": "`text` holds the words of the guidance line before the heading.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the text that the scaffold of the schema writes for the section: each occurrence, from its heading, with the sections inside it and the section's `examples`. It is absent where the scaffold writes none. A section inside a repeating one gives the text of its first occurrence.",
           "type": "string"
         },
         "blocks": {

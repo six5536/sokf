@@ -13,6 +13,7 @@ against its type's schema, resolves every link, keeps generated content
 current, allocates document ids, prints the store as a graph from any point,
 and locates a document by id.
 
+- [Status](#status)
 - [Install](#install)
 - [Usage](#usage)
 - [Configuration](#configuration)
@@ -23,6 +24,10 @@ and locates a document by id.
 - [Project layout](#project-layout)
 - [Development](#development)
 - [License](#license)
+
+## Status
+
+**Unstable.** sokf is at a 0.x version, and its commands, options and file formats can change in any release.
 
 ## Install
 
@@ -68,7 +73,7 @@ sokf graph --json --query "nodes[?kind=='document'].id"           # the JSON for
 sokf graph planner --mermaid        # a Mermaid flowchart
 sokf locate planner                 # the absolute path of a document: cat "$(sokf locate planner)"
 sokf locate --asset flowers         # the file a sidecar describes; --json gives both paths
-sokf guide planner                  # the schema's guidance for each part of the document, at the document's states
+sokf guide planner                  # the schema's guidance and example for each part of the document, at the document's states
 sokf guide issue-042-retry --state state=closed   # the guidance at the state that a document moves to
 
 sokf info grammar                   # the schema language, verbatim: the tramlines core grammar, the tramlines-md grammar, then SOKF's schema extension
@@ -76,11 +81,11 @@ sokf info formats --schema readme   # the line formats a schema sees
 sokf info formats --layer formats.d # only the formats of the files of /.sokf/formats.d/
 sokf info formats --json --query types.slug   # one placeholder type of the registry, as JSON
 sokf new Issue --slug retry --title "Add a retry" --write
-                                    # a document from its schema's template, at its derived path
+                                    # the skeleton of a document at its derived path, and its guide on stderr
 sokf new Issue --slug retry --title "Add a retry" --seq 42 --write
                                     # keep the sequence number 42 that the work already has
 sokf new Issue --slug retry --title "Add a retry" --write --json
-                                    # write the document, and print its id, path, and text as JSON
+                                    # write the document, and print its id, path, text, and guide as JSON
 
 sokf completions zsh                # a completion script for your shell
 sokf --help
@@ -100,10 +105,15 @@ unchanged. Both `--repo-root` and `--no-cache` are global options.
 These files and folders under `/.sokf/` configure the tool:
 
 - `/.sokf/config.toml` lists the knowledge roots (default `/knowledge`), the
-  paths that sokf skips in its walk of the repository, and the declined
-  harness parts. sokf skips a path only outside the knowledge roots, so
-  `sokf validate` warns at each glob of `repository.exclude` or of
-  `excludes.d` that lies under a root.
+  paths that sokf skips in its walk of the repository, the declined harness
+  parts, and, under `[format]`, the formatter through which sokf compares a
+  generated block of a format that it doesn't read by meaning. sokf skips a
+  path only outside the knowledge roots, so `sokf validate` warns at each
+  glob of `repository.exclude` or of `excludes.d` that lies under a root.
+- An include of a file that sokf doesn't read by meaning, such as CSS, is
+  compared by its bytes unless `[format]` names a formatter, such as
+  `formatter = "prettier"`, or a command, or sets `detect = true`, which
+  takes the formatter whose configuration file lies at the repository root.
 - `/.sokf/formats.yaml` adds line formats for the whole repository.
 - `/.sokf/roots.d/`, `/.sokf/excludes.d/`, and `/.sokf/formats.d/` hold, at
   any depth, the files that another tool, such as pakf, ships for sokf. Each
@@ -114,8 +124,8 @@ These files and folders under `/.sokf/` configure the tool:
   `/.sokf/formats.yaml` declares it in full.
 - `/.sokf/texts.yaml` and each file `*.yaml` at any depth below
   `/.sokf/texts.d/` hold sokf's own texts in another language, or in place of
-  its English, such as the rule for writing a description, which `sokf new`
-  writes into a scaffold. The manifest's `primary-language` names the language of a store,
+  its English, such as the rule for writing a description, which the guides
+  of `sokf new` and `sokf guide` print. The manifest's `primary-language` names the language of a store,
   and a schema's `language` overrides it.
 - `/.sokf/harness.toml` records the harness parts that the tool wrote.
 
@@ -133,7 +143,14 @@ runs `sokf validate` when the user submits a prompt, and tells the agent how
 many errors remain, without blocking it. The instructions block holds only
 sokf's own instructions. The command touches only the parts that it writes. It keeps a part that you edited unless
 you pass `--force`. To refresh the stale parts after an upgrade, run the
-command again.
+command again. A part that your formatter re-laid is not an edit.
+
+After an upgrade from sokf 0.8, each part that differs from what sokf writes
+reads as edited, with a warning that it may not be an edit. Read
+`sokf harness diff`, and run `sokf harness install <harness> --force <part>`
+once unless the part holds your own edit. To keep an edit and end the warning,
+force the part and make the edit again. sokf 0.8 can't read the record that
+the new sokf writes, so upgrade every clone and CI job together.
 
 sokf installs the same integration into every agent harness of
 [agent-harness-adapter](https://github.com/six5536/agent-harness-adapter). Name one or
@@ -187,9 +204,19 @@ rewrote /knowledge/architecture.md
 2 errors, 0 of 1 warnings listed
 ```
 
-The last line gives the number of warnings listed out of the total.
-Without `--warnings`, only the warnings at a stale or an absent part of an
-installed harness are listed; `--warnings` lists them all.
+The line of counts gives the number of warnings listed out of the total.
+Without `--warnings`, only the warnings at a part of an installed harness that
+is stale, is absent, or may not be an edit are listed; `--warnings` lists them all. In a run without
+`--fix`, where a listed finding is one that `--fix` repairs, one more line
+counts those findings:
+
+```
+/knowledge/overview.md:15: error: `sokf:include /src/site.css` is stale: `/src/site.css` differs from line 1 (SOKF_FORMAT_85)
+/knowledge/overview.md:21: error: the definition block is stale (SOKF_FORMAT_80)
+
+2 errors, 0 warnings
+2 potentially fixable with `sokf validate --fix`
+```
 
 Without a start argument, `sokf graph` prints the layout of each knowledge
 root in the way that `tree` does, with each store's description and each

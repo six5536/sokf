@@ -1,0 +1,26 @@
+---
+source: crates/app/sokf/tests/it/cli_new.rs
+expression: stderr
+---
+
+The guide of the new document: the guidance and the example of each part.
+
+/knowledge/issues/open/bug/issue-002-x.md (Issue, state=open, kind=bug)
+
+Frontmatter:
+  links (implements, optional): The decision the issue delivers.
+    Example:
+      links:
+        - rel: implements
+          to: target-id
+
+# <title>
+  prose
+    Example:
+      The index writer drops the entry of a moved file.
+
+## Reproduction
+  Steps that show the bug.
+  numbered-list
+    Example:
+      1. Move a document with `--fix`.

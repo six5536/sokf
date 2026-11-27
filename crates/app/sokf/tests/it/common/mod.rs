@@ -150,6 +150,49 @@ impl Fixture {
         fs::write(path, text).unwrap();
     }
 
+    /// `scaffold` runs `sokf new` with `args` and `--json`, and returns the
+    /// scaffold that the guide of the new document gives: the skeleton's
+    /// frontmatter with the example of each empty key, then the example of
+    /// each section that lies in no other, in order. It holds no guidance,
+    /// no marker, and no anchor.
+    pub fn scaffold(&self, args: &[&str]) -> String {
+        let mut all = vec!["new"];
+        all.extend(args);
+        all.push("--json");
+        let (out, err, code) = self.run(&all);
+        assert_eq!(code, 0, "{out}{err}");
+        let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let guide = &value["guide"];
+        let example = |key: &str| {
+            guide["frontmatter"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|k| k["key"] == key)
+                .and_then(|k| k["example"].as_str())
+                .map(str::to_string)
+        };
+        let document = value["document"].as_str().unwrap();
+        let mut lines: Vec<String> = Vec::new();
+        for (i, line) in document.lines().enumerate() {
+            lines.push(match line.strip_suffix(':').and_then(example) {
+                Some(e) => e,
+                None => line.to_string(),
+            });
+            if i > 0 && line == "---" {
+                break;
+            }
+        }
+        let sections: Vec<&str> = guide["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s.get("parent").is_none())
+            .filter_map(|s| s["example"].as_str())
+            .collect();
+        format!("{}\n\n{}\n", lines.join("\n"), sections.join("\n\n"))
+    }
+
     /// `files` returns the path and the bytes of every file under the copy,
     /// sorted by path. It skips the `.sokf` cache directory.
     pub fn files(&self) -> Vec<(String, Vec<u8>)> {

@@ -13,16 +13,488 @@
       "$ref": "#/$defs/RepoPath"
     },
     "document": {
-      "description": "`document` is the whole text of the document.",
+      "description": "`document` is the whole text of the document: its skeleton, which holds only what is true of it, and no example and no guidance.",
       "type": "string"
+    },
+    "guide": {
+      "description": "`guide` is the guide of the new document, as `sokf guide --json` gives it for the document: the guidance and the example of each part at the document's states (CLI-6_AC-130).",
+      "$ref": "#/$defs/DocumentGuide"
     }
   },
-  "required": ["id", "path", "document"],
+  "required": ["id", "path", "document", "guide"],
   "$defs": {
     "RepoPath": {
       "description": "A path relative to the repository root, which starts with `/` and uses forward slashes. The path `/` is the root itself.",
       "type": "string",
       "pattern": "^/"
+    },
+    "DocumentGuide": {
+      "description": "`DocumentGuide` holds the guidance that a document's schema gives for the parts that the document's lifecycle states admit, in the schema's order (CLI-17_AC-6), with each part's example (CLI-17_AC-38). Each `text` holds the words of the guidance line that the scaffold of the schema writes before the same part at the same states, and each `example` the text that the scaffold writes for the part, with the document's own frontmatter values.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "`path` is the path of the document.",
+          "$ref": "#/$defs/RepoPath"
+        },
+        "id": {
+          "description": "`id` is the `id` of the document. It is absent when the frontmatter has none.",
+          "type": "string"
+        },
+        "type": {
+          "description": "`type` is the `type` of the document.",
+          "type": "string"
+        },
+        "schema": {
+          "description": "`schema` is the path of the schema that governs the document. It is absent for a schema, which the grammar of the schema language governs. Each `line` of the guide is a line of this file.",
+          "$ref": "#/$defs/RepoPath"
+        },
+        "states": {
+          "description": "`states` maps each lifecycle key, in the order of the lifecycle, to the state at which the guide shows the document: the document's own state, or the state that `--state` gives.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "guidance": {
+          "description": "`guidance` is the schema's top-level `guidance`.",
+          "type": "string"
+        },
+        "bans": {
+          "description": "`bans` holds the message of each ban of the whole body, in order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "text": {
+          "description": "`text` holds the words of the guidance line that opens the body: the schema's guidance, then the message of each ban of the whole body. It is absent when the schema has neither.",
+          "type": "string"
+        },
+        "labels": {
+          "description": "`labels` holds each attribution label that the schema declares, in the schema's order, once for the whole document (CLI-17_AC-35). It is empty for a schema without labels.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LabelGuide"
+          }
+        },
+        "frontmatter": {
+          "description": "`frontmatter` holds each frontmatter key that the schema declares and the states admit, in the schema's order, then each lifecycle key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyGuide"
+          }
+        },
+        "links": {
+          "description": "`links` holds each `links` rule that the states admit, in the schema's order, except a rule whose hard limit of 0 bans its links.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LinkGuide"
+          }
+        },
+        "preamble": {
+          "description": "`preamble` is the part of the body before the first heading, where the schema declares one that the states admit.",
+          "$ref": "#/$defs/PreambleGuide"
+        },
+        "sections": {
+          "description": "`sections` holds each section that the states admit, in the schema's order, with each section that declares `parent` after its parent.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SectionGuide"
+          }
+        }
+      },
+      "required": ["path", "type", "states", "bans", "labels", "frontmatter", "links", "sections"]
+    },
+    "LabelGuide": {
+      "description": "`LabelGuide` holds one attribution label of the schema.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "`key` is the label's key, `human` or `agent`.",
+          "type": "string"
+        },
+        "words": {
+          "description": "`words` are the words that a document writes between the label's square brackets: sokf's words for the label in the language of the schema, or else the key.",
+          "type": "string"
+        },
+        "meaning": {
+          "description": "`meaning` is sokf's sentence that says what the label means, in the language of the schema. It is absent where sokf's texts hold none in that language.",
+          "type": "string"
+        }
+      },
+      "required": ["key", "words"]
+    },
+    "KeyGuide": {
+      "description": "`KeyGuide` holds the guidance of one frontmatter key.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "`key` is the key.",
+          "type": "string"
+        },
+        "lifecycle": {
+          "description": "`lifecycle` is true when the key is a lifecycle key rather than a declared one.",
+          "type": "boolean"
+        },
+        "optional": {
+          "description": "`optional` is true when the key can be absent.",
+          "type": "boolean"
+        },
+        "guidance": {
+          "description": "`guidance` is the key's own `guidance`.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "`limit` is the limit on the elements of the key's list. It is absent when the key has no `max`.",
+          "$ref": "#/$defs/GuideLimit"
+        },
+        "text": {
+          "description": "`text` holds the words of the guidance line before the key: sokf's own text for the key, which is the rule for writing a `description`, then the key's guidance, then the words that state its limit and the limit's `when-at-limit`. It is absent when the key has none of them.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the line that the scaffold of the schema writes for the key, with the document's own values, such as `priority: medium`. It is absent where the scaffold writes none.",
+          "type": "string"
+        },
+        "line": {
+          "description": "`line` is the line of the key's rule in the schema.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": ["key", "lifecycle", "optional", "line"]
+    },
+    "GuideLimit": {
+      "description": "`GuideLimit` is a limit on a part: its kind, the number of units, lines, or elements that it states, and what the writer does at the limit.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "`kind` is `soft` for the usual length, which nothing checks, or `hard` for the most that a part can hold.",
+          "$ref": "#/$defs/GuideLimitKind"
+        },
+        "count": {
+          "description": "`count` is the number that the limit states.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "when_at_limit": {
+          "description": "`when_at_limit` is the schema's text that says what the writer does at the limit.",
+          "type": "string"
+        }
+      },
+      "required": ["kind", "count", "when_at_limit"]
+    },
+    "GuideLimitKind": {
+      "description": "`GuideLimitKind` is the kind of a limit.",
+      "oneOf": [
+        {
+          "description": "The usual length, which nothing checks.",
+          "type": "string",
+          "const": "soft"
+        },
+        {
+          "description": "The most that a part can hold.",
+          "type": "string",
+          "const": "hard"
+        }
+      ]
+    },
+    "LinkGuide": {
+      "description": "`LinkGuide` holds the guidance of one `links` rule.",
+      "type": "object",
+      "properties": {
+        "rel": {
+          "description": "`rel` is the relationship of the links that the rule governs.",
+          "type": "string"
+        },
+        "optional": {
+          "description": "`optional` is true when the rule's `min` is 0.",
+          "type": "boolean"
+        },
+        "limit": {
+          "description": "`limit` is the limit on the links of the rule. It is absent when the rule has no `max`.",
+          "$ref": "#/$defs/GuideLimit"
+        },
+        "text": {
+          "description": "`text` holds the words of the guidance line before the link: the rule's guidance, then the words that state its limit and the limit's `when-at-limit`. It is absent when the rule has neither.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the `links` key with one entry of the rule, which names its target by the placeholder `target-id`.",
+          "type": "string"
+        }
+      },
+      "required": ["rel", "optional", "example"]
+    },
+    "PreambleGuide": {
+      "description": "`PreambleGuide` holds the guidance of the preamble.",
+      "type": "object",
+      "properties": {
+        "guidance": {
+          "description": "`guidance` is the preamble's own `guidance`.",
+          "type": "string"
+        },
+        "text": {
+          "description": "`text` holds the words of the guidance line before the preamble.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the text that the scaffold of the schema writes for the preamble. It is absent where the scaffold writes none.",
+          "type": "string"
+        },
+        "blocks": {
+          "description": "`blocks` holds each block that the states admit, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockGuide"
+          }
+        },
+        "line": {
+          "description": "`line` is the line of the preamble in the schema.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": ["blocks", "line"]
+    },
+    "BlockGuide": {
+      "description": "`BlockGuide` holds the guidance of one block.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "`kind` is the kind of the block, as the grammar names it, such as `prose` or `bullet-list`.",
+          "type": "string"
+        },
+        "rule_id": {
+          "description": "`rule_id` is the block's `rule-id`.",
+          "type": "string"
+        },
+        "pos": {
+          "description": "`pos` is the block's place in the list that declares it, from 1.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "optional": {
+          "description": "`optional` is true when the block can be absent at the states.",
+          "type": "boolean"
+        },
+        "guidance": {
+          "description": "`guidance` is the block's own `guidance`.",
+          "type": "string"
+        },
+        "limits": {
+          "description": "`limits` holds the block's own limit, then the limit of each of its unit rules and line rules, in the schema's order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuleLimit"
+          }
+        },
+        "labels": {
+          "description": "`labels` holds the block's own `label`, then the `label` of each of its unit rules that declares one, in the schema's order (CLI-17_AC-37).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuleLabel"
+          }
+        },
+        "bans": {
+          "description": "`bans` holds the message of each ban of the block's unit rules, of the formats that they bind, and of their line rules, each once, in order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "text": {
+          "description": "`text` holds the words of the guidance line before the block: its guidance, then the words that state each limit and the limit's `when-at-limit`, then the message of each ban. It is absent when the block has none of them.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the text that the scaffold of the schema writes for the block, without the indent of an item that holds it. It is absent where the scaffold writes none. A block that the scaffold writes more than once gives its first occurrence.",
+          "type": "string"
+        },
+        "blocks": {
+          "description": "`blocks` holds the blocks of a group, and the blocks inside the items of a list, that the states admit, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockGuide"
+          }
+        },
+        "line": {
+          "description": "`line` is the line of the block's rule in the schema.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": ["kind", "pos", "optional", "limits", "labels", "bans", "blocks", "line"]
+    },
+    "RuleLimit": {
+      "description": "`RuleLimit` is one limit of a block: its own, or one of a unit rule's or a line rule's.",
+      "type": "object",
+      "properties": {
+        "rule": {
+          "description": "`rule` is the place of the unit rule or the line rule whose limit this is, among the unit rules of the schema, counted from 0. It is absent for the block's own limit.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "format": {
+          "description": "`format` is the name of the format that the unit rule or the line rule binds. It is absent for the block's own limit and for a rule that binds no format.",
+          "type": "string"
+        },
+        "rule_id": {
+          "description": "`rule_id` is the `rule-id` of the unit rule or the line rule. It is absent for the block's own limit and for a rule without one.",
+          "type": "string"
+        },
+        "counts": {
+          "description": "`counts` is what the unit rule or the line rule counts: the units of the block, or the content lines of a code block or an HTML block. It is absent for the block's own limit.",
+          "$ref": "#/$defs/GuideCounts"
+        },
+        "line": {
+          "description": "`line` is the line of the rule in the schema.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "kind": {
+          "description": "`kind` is `soft` for the usual length, which nothing checks, or `hard` for the most that a part can hold.",
+          "$ref": "#/$defs/GuideLimitKind"
+        },
+        "count": {
+          "description": "`count` is the number that the limit states.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "when_at_limit": {
+          "description": "`when_at_limit` is the schema's text that says what the writer does at the limit.",
+          "type": "string"
+        }
+      },
+      "required": ["line", "kind", "count", "when_at_limit"]
+    },
+    "GuideCounts": {
+      "description": "`GuideCounts` is what the limit of a unit rule or a line rule counts.",
+      "oneOf": [
+        {
+          "description": "The units of the block: its paragraphs, items, rows, or repetitions.",
+          "type": "string",
+          "const": "units"
+        },
+        {
+          "description": "The content lines of a code block or an HTML block.",
+          "type": "string",
+          "const": "lines"
+        }
+      ]
+    },
+    "RuleLabel": {
+      "description": "`RuleLabel` says whether the units of a block, or the units of one of its unit rules, carry a label.",
+      "type": "object",
+      "properties": {
+        "rule": {
+          "description": "`rule` is the place of the unit rule whose `label` this is, among the unit rules of the schema, counted from 0. It is absent for the block's own `label`.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "rule_id": {
+          "description": "`rule_id` is the `rule-id` of the unit rule. It is absent for the block's own `label` and for a rule without one.",
+          "type": "string"
+        },
+        "line": {
+          "description": "`line` is the line of the rule in the schema.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "label": {
+          "description": "`label` is `required` where each unit carries a label, and `optional` where a unit carries one if its writer gives one.",
+          "$ref": "#/$defs/GuideLabel"
+        }
+      },
+      "required": ["line", "label"]
+    },
+    "GuideLabel": {
+      "description": "`GuideLabel` says whether a unit carries a label.",
+      "oneOf": [
+        {
+          "description": "Every unit carries a label.",
+          "type": "string",
+          "const": "required"
+        },
+        {
+          "description": "A unit carries a label where its writer gives one.",
+          "type": "string",
+          "const": "optional"
+        }
+      ]
+    },
+    "SectionGuide": {
+      "description": "`SectionGuide` holds the guidance of one section.",
+      "type": "object",
+      "properties": {
+        "heading": {
+          "description": "`heading` is the heading as a finding of `validate` names it: its text, its template or pattern, or `<key>` for a heading that takes the value of the frontmatter key `key`.",
+          "type": "string"
+        },
+        "level": {
+          "description": "`level` is the level of the heading.",
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "rule_id": {
+          "description": "`rule_id` is the section's `rule-id`.",
+          "type": "string"
+        },
+        "parent": {
+          "description": "`parent` is the `rule-id` of the section that this one lies inside.",
+          "type": "string"
+        },
+        "optional": {
+          "description": "`optional` is true when the section can be absent at the states.",
+          "type": "boolean"
+        },
+        "repeat": {
+          "description": "`repeat` is true when the heading can occur more than once.",
+          "type": "boolean"
+        },
+        "held": {
+          "description": "`held` is true when tramlines-md's match of a heading to its section gives the section a heading at its level whose reading, as tramlines-md normalises it, has the section's heading shape, or one of its `renamed-from` texts (CLI-17_AC-15).",
+          "type": "boolean"
+        },
+        "guidance": {
+          "description": "`guidance` is the section's own `guidance`.",
+          "type": "string"
+        },
+        "text": {
+          "description": "`text` holds the words of the guidance line before the heading.",
+          "type": "string"
+        },
+        "example": {
+          "description": "`example` is the text that the scaffold of the schema writes for the section: each occurrence, from its heading, with the sections inside it and the section's `examples`. It is absent where the scaffold writes none. A section inside a repeating one gives the text of its first occurrence.",
+          "type": "string"
+        },
+        "blocks": {
+          "description": "`blocks` holds each block of the section's body that the states admit, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockGuide"
+          }
+        },
+        "line": {
+          "description": "`line` is the line of the section's rule in the schema.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": ["heading", "level", "optional", "repeat", "held", "blocks", "line"]
     }
   }
 }

@@ -1,7 +1,7 @@
 //! A tool of agent-harness-adapter with the markers and the files of sokf but with
 //! the parts that a test chooses, as raw parts of Claude Code. A test uses it
 //! to write a content that sokf no longer embeds, as an older sokf would have
-//! written it, and to learn the hash that the adapter records for a content. A raw
+//! written it, and to learn the value that the adapter records for a content. A raw
 //! part's name must not be the name of an item, such as `skills`.
 
 use std::{
@@ -79,17 +79,17 @@ pub fn status_parts(root: &Path, parts: Vec<Part>) -> InstallResult {
     agent_harness_adapter_core::status(&tool, ["claude"], Scope::Project).unwrap()
 }
 
-/// `recorded_hash` returns the hash that the adapter records for `part` once it
-/// has written it.
-pub fn recorded_hash(part: Part) -> String {
+/// `recorded_value` returns the value that the adapter records for `part` once it
+/// has written it: a fingerprint, or for a part of files a table of each file's
+/// fingerprint by its path in the part.
+pub fn recorded_value(part: Part) -> toml::Value {
     let tree = TempTree::empty("adapter-hash");
     let name = part.name().to_string();
     install_parts(tree.dir(), vec![part]);
     let record = tree.read(".sokf/harness.toml");
-    let prefix = format!("{name} = \"");
-    record
-        .lines()
-        .find_map(|l| l.strip_prefix(&prefix)?.strip_suffix('"'))
-        .unwrap_or_else(|| panic!("no hash of `{name}` in {record}"))
-        .to_string()
+    let table: toml::Table = record.parse().unwrap();
+    table["claude"]
+        .get(&name)
+        .unwrap_or_else(|| panic!("no value of `{name}` in {record}"))
+        .clone()
 }

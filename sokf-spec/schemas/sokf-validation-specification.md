@@ -5,7 +5,6 @@ title: SOKF Validation Specification Schema
 description: "This schema defines the one document that specifies validation in the Superdev Open Knowledge Format (SOKF). The document contains the rules, written as criteria in the EARS (Easy Approach to Requirements Syntax) form, and the fixed text that each document of this type repeats word for word."
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 

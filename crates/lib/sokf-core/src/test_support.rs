@@ -10,10 +10,12 @@ use std::{
 use crate::{Config, FsLoader, Model, RepoPath, RepoRoot, build, collect};
 
 /// `fresh_dir` returns an empty directory under the temp directory, named
-/// by `tag` and the process id. Each test passes its own tag, because
-/// tests run in parallel.
+/// by `tag`, the process id, and a count of the calls, because tests run in
+/// parallel threads of one process, and two of them can pass one tag.
 pub(crate) fn fresh_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("sokf-{tag}-{}", std::process::id()));
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("sokf-{tag}-{}-{call}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir

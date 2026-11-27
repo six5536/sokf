@@ -11,6 +11,7 @@ mod current_links;
 mod deprecated;
 mod frontmatter;
 mod generated;
+pub(crate) mod headings;
 mod host;
 mod index;
 mod lifecycle;
@@ -40,7 +41,6 @@ pub use tramlines_md::check::{
 use crate::{
     Body, Compiled, Expected, Finding, Indexes, Locator, Model, RepoPath, Segments, Spanned,
     grammar::{KeyScope, SokfSchema, States},
-    markdown,
     model::{CoreFields, KeyEntry, KeyIndex, Query},
 };
 
@@ -158,25 +158,36 @@ pub fn capture_keys_of(
             Locator::schema(""),
         );
         model.unwatch();
-        // The engine lists the anchor of each key, then each anchor that a
-        // unit which breaks its rule holds, which names no key.
-        let captured: HashSet<String> = out
-            .captures
-            .iter()
-            .map(|c| markdown::slug(&c.key))
-            .collect();
-        for anchor in out.anchors {
-            if !captured.contains(&anchor.id) {
-                keys.add_anchor(doc.path.clone(), anchor.id);
+        // Each capture takes the id of the anchor that names its key, which
+        // the engine gives (`Capture::anchor`): a reference to a key, such as
+        // a line of a fence that pairs with an item, can spell the key
+        // otherwise, and its own id would file one key under two ids. The
+        // engine lists the anchor of each key, then each anchor that a unit
+        // which breaks its rule holds, which names no key.
+        let ids: Vec<String> = out.captures.iter().map(|c| c.anchor.clone()).collect();
+        let captured: HashSet<&str> = ids.iter().map(String::as_str).collect();
+        for anchor in &out.anchors {
+            if !captured.contains(anchor.id.as_str()) {
+                keys.add_anchor(doc.path.clone(), anchor.id.clone());
             }
         }
         let capped = model.knowledges[k].capped();
-        for c in out.captures {
+        for (c, id) in out.captures.iter().cloned().zip(ids) {
+            // The capture that holds the key's anchor is the one at whose
+            // spot the engine places the anchor that `Capture::anchor` names,
+            // or a heading whose own slug is that id, which is its anchor
+            // already. The captures of one block share the block's spot, so
+            // each of them holds the anchor, because the engine doesn't
+            // export which of them it chose.
+            let holds_anchor = c.heading_slug.as_deref() == Some(id.as_str())
+                || out.anchors.iter().any(|a| a.spot == c.spot && a.id == id);
             keys.add(KeyEntry {
+                id,
                 key: c.key,
                 path: doc.path.clone(),
                 line: c.line,
                 heading_slug: c.heading_slug,
+                holds_anchor,
                 scope: cap(c.scope, capped),
                 knowledge: k,
                 rule_id: c.rule_id,
@@ -471,7 +482,15 @@ fn check_schema_unit(k: usize, i: usize, ctx: &Ctx<'_>, citations: &mut Citation
         .cloned()
         .collect();
     findings.extend(conflicts::check(&schema.doc));
-    findings.extend(schema_document::check_schema(knowledge, i, ctx));
+    let structure = schema_document::check_schema(knowledge, i, ctx);
+    // A document without a fence draws a missing block from the check of its
+    // structure (TLMD_152), so the problem that it has no fence would report
+    // the one mistake twice, as a new Schema document shows before its
+    // writer writes the schema.
+    if structure.iter().any(|f| f.criterion == "TLMD_152") {
+        findings.retain(|f| f.criterion != "SOKF_SCHEMA_1");
+    }
+    findings.extend(structure);
     findings.extend(frontmatter::check_core(&schema.doc));
     findings.extend(frontmatter::check_ids(ctx.model, k, &schema.doc));
     findings.extend(links::check_document(doc_view(&schema.doc), ctx, citations));
@@ -551,7 +570,7 @@ fn uniqueness_of(model: &Model, keys: &KeyIndex, doc: &crate::Document) -> Vec<F
     let mut findings = Vec::new();
     let mut clashes: BTreeMap<(RepoPath, usize, String), Vec<RepoPath>> = BTreeMap::new();
     for e in keys.of_document(&doc.path) {
-        let s = markdown::slug(&e.key);
+        let s = e.id.clone();
         // Two captures in one document belong to the document's own check
         // (grammar `unique`, document scope). That check can tell a pairing
         // that `for-each-key-of` demands from a clash. A report here would list

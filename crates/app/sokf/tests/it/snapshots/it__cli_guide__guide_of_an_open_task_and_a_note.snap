@@ -7,10 +7,18 @@ expression: text
 A task records one piece of work for one person. The text holds no TODO, because the task itself records what remains.
 
 Frontmatter:
-  tags: Usually up to 3 values. Never leave out or merge content to stay within the count. When at the limit: Keep the tags that a reader searches for.
-  owner: The owner is the person who does the work.
+  tags (optional): Usually up to 3 values. Never leave out or merge content to stay within the count. When at the limit: Keep the tags that a reader searches for.
+    Example:
+      tags: [kitchen]
+  owner (optional): The owner is the person who does the work.
+    Example:
+      owner: ada
   state: A task is open while its work remains.
-  links (depends-on): A depends-on link points to a task that has to finish first. At most 2 `depends-on` links. Never leave out or merge content to stay within the count. When at the limit: Merge the tasks that this one waits for.
+  links (depends-on, optional): A depends-on link points to a task that has to finish first. At most 2 `depends-on` links. Never leave out or merge content to stay within the count. When at the limit: Merge the tasks that this one waits for.
+    Example:
+      links:
+        - rel: depends-on
+          to: target-id
 
 # <title>
   The opening says why the work matters.
@@ -22,6 +30,10 @@ Frontmatter:
 
 ### Notes (absent, optional)
   This section holds what a later step needs to know.
+  Example:
+    ### Notes
+
+    The vinegar is under the sink.
 
 /knowledge/notes/note-kettle.md (Note)
 
@@ -31,3 +43,5 @@ Preamble:
 
 ## Details
   bullet-list: Each item names one quirk, with its key before a colon.
+    Example:
+      - lid: The lid sticks.

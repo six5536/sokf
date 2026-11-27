@@ -17,8 +17,8 @@ use std::{
 };
 
 use sokf_core::{
-    Cache, CacheMode, Config, Finding, Model, NewOptions, RepoRoot, Report, ValidateOptions,
-    load_model, validate,
+    BlockGuide, Cache, CacheMode, Config, DocumentGuide, Finding, Model, NewOptions, NewResult,
+    RepoRoot, Report, ValidateOptions, load_model, validate,
 };
 
 /// `with_hooks` returns a configuration with a `[harness.NAME]` table for each harness of
@@ -399,4 +399,62 @@ pub fn said(message: &str) -> String {
     message
         .rfind(" (schema ")
         .map_or_else(|| message.to_string(), |i| message[..i].to_string())
+}
+
+/// `MISSING` lists the criteria of the findings that report a part of a
+/// document as missing: a frontmatter value, a block, a section, a unit of a
+/// rule, a block that another kind of block stands in place of, and a link.
+pub const MISSING: &[&str] = &[
+    "TL_143",
+    "TLMD_18",
+    "TLMD_69",
+    "TLMD_93",
+    "TLMD_146",
+    "TLMD_152",
+    "SOKF_SCHEMA_33",
+];
+
+/// `not_missing` returns each finding of `report` on the document at `path`
+/// that doesn't report a part as missing, as `lined` writes it: what the
+/// check of an untouched skeleton has to leave empty.
+pub fn not_missing(report: &Report, path: &str) -> Vec<String> {
+    report
+        .errors
+        .iter()
+        .chain(&report.warnings)
+        .filter(|f| f.path.as_str() == path && !MISSING.contains(&f.criterion.as_str()))
+        .map(lined)
+        .collect()
+}
+
+/// `examples` returns each example of the guide of `result`, in the order of
+/// the guide: the frontmatter keys, the `links` rules, the preamble, and each
+/// section, each followed by its blocks.
+pub fn examples(result: &NewResult) -> Vec<String> {
+    guide_examples(result.guide.as_ref().expect("a guide"))
+}
+
+/// `guide_examples` returns each example of `guide`, as `examples` does.
+pub fn guide_examples(guide: &DocumentGuide) -> Vec<String> {
+    fn blocks(list: &[BlockGuide], out: &mut Vec<String>) {
+        for b in list {
+            out.extend(b.example.clone());
+            blocks(&b.blocks, out);
+        }
+    }
+    let mut out: Vec<String> = guide
+        .frontmatter
+        .iter()
+        .filter_map(|k| k.example.clone())
+        .collect();
+    out.extend(guide.links.iter().map(|l| l.example.clone()));
+    if let Some(p) = &guide.preamble {
+        out.extend(p.example.clone());
+        blocks(&p.blocks, &mut out);
+    }
+    for s in &guide.sections {
+        out.extend(s.example.clone());
+        blocks(&s.blocks, &mut out);
+    }
+    out
 }

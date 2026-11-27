@@ -1,7 +1,7 @@
 {
   "name": "@six5536/sokf-darwin-x64",
-  "version": "0.8.0",
-  "description": "This package contains the prebuilt sokf binary for darwin-x64.",
+  "version": "0.9.0",
+  "description": "This package contains the prebuilt sokf binary for darwin-x64. Unstable: its commands, options and file formats can change in any release.",
   "keywords": [
     "cli",
     "command-line"

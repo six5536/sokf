@@ -454,12 +454,13 @@ fn marker_references(
 /// `needed_slugs` returns the slugs that the checks might resolve in the files
 /// that the model holds. It returns three kinds:
 ///
-/// - The key or the label fragment of each marker, as written and as a slug
+/// - The key or the label fragment of each marker, as written and as each
+///   id that it can name
 /// - The fragment of each label in the links of the documents, schemas, and
-///   additional files, as written and as a slug
-/// - The slug of each key that this run captured
+///   additional files, as written and as each id that it can name
+/// - The id of each key that this run captured
 pub(super) fn needed_slugs(model: &Model, captured: &KeyIndex) -> BTreeSet<String> {
-    use crate::markdown::{LinkTarget, slug};
+    use crate::markdown::{self, LinkTarget};
     let mut slugs = BTreeSet::new();
     for rows in model.markers.values() {
         for row in rows {
@@ -472,7 +473,7 @@ pub(super) fn needed_slugs(model: &Model, captured: &KeyIndex) -> BTreeSet<Strin
             };
             if let Some(key) = key.filter(|k| !k.is_empty()) {
                 slugs.insert(key.to_string());
-                slugs.insert(slug(key));
+                slugs.extend(markdown::key_ids(key));
             }
         }
     }
@@ -487,13 +488,13 @@ pub(super) fn needed_slugs(model: &Model, captured: &KeyIndex) -> BTreeSet<Strin
                 && let Some(f) = label.fragment.filter(|f| !f.is_empty())
             {
                 slugs.insert(f.to_string());
-                slugs.insert(slug(f));
+                slugs.extend(markdown::key_ids(f));
             }
         }
     }
     for entries in captured.document.values() {
         for e in entries {
-            slugs.insert(slug(&e.key));
+            slugs.insert(e.id.clone());
         }
     }
     slugs

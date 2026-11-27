@@ -9,7 +9,7 @@ use std::fs;
 use agent_harness_adapter_core::{Part, State, harness::Markers};
 use common::{
     TempTree,
-    adapter::{install_parts, recorded_hash, status_parts},
+    adapter::{install_parts, recorded_value, status_parts},
 };
 use sokf_core::{
     Error, HarnessDirs, HarnessOptions, HarnessReport, HarnessScope, PartResult, harness_install,
@@ -330,17 +330,14 @@ fn reads_and_renders_the_record() {
     let tree = TempTree::empty("parts-record");
     // Another harness's table stays, and the tables and keys are in name
     // order.
-    tree.write(
-        ".sokf/harness.toml",
-        "[aider]\nx = \"fnv1a64:0000000000000003\"\n",
-    );
+    tree.write(".sokf/harness.toml", "[aider]\nx = \"kept\"\n");
     tree.write(".sokf/config.toml", &common::with_hooks(&["claude"]));
     install(&tree, &[], false).unwrap();
     let record = tree.read(".sokf/harness.toml");
     let header = "# Written by sokf harness install. Do not edit it: sokf compares the parts with these hashes to tell a part you edited from a stale one.\n";
     assert!(
         record.starts_with(&format!(
-            "{header}\n[aider]\nx = \"fnv1a64:0000000000000003\"\n\n[claude]\nhooks = \"fnv1a64:"
+            "{header}\n[aider]\nx = \"kept\"\n\n[claude]\nhooks = \""
         )),
         "{record}"
     );
@@ -348,9 +345,19 @@ fn reads_and_renders_the_record() {
         .lines()
         .skip_while(|l| *l != "[claude]")
         .skip(1)
+        .filter(|l| !l.is_empty())
         .map(|l| l.split(" = ").next().unwrap())
         .collect();
-    assert_eq!(keys, ["hooks", "instructions", "permissions", "skills"]);
+    assert_eq!(
+        keys,
+        [
+            "hooks",
+            "instructions",
+            "permissions",
+            "[claude.skills]",
+            "\"sokf/SKILL.md\""
+        ]
+    );
     // The record reads back: a second install writes nothing.
     let before = tree.files();
     install(&tree, &[], false).unwrap();
@@ -443,31 +450,60 @@ fn no_install_changes_the_config() {
 // sokf-tests: CLI-3_AC-56
 // sokf-tests: CLI-3_AC-13
 #[test]
-fn the_hash_is_fnv1a_over_lf_text() {
-    let block = |b: &str| recorded_hash(Part::region("block", "CLAUDE.md", b));
-    // These are known test vectors of 64-bit FNV-1a.
-    assert_eq!(block(""), "fnv1a64:cbf29ce484222325");
-    assert_eq!(block("a\n"), "fnv1a64:af63dc4c8601ec8c");
-    // Line endings don't change the hash.
+fn the_record_holds_a_fingerprint_of_the_meaning() {
+    let block = |b: &str| recorded_value(Part::region("block", "CLAUDE.md", b));
+    // Line endings and a re-wrapped paragraph don't change a block's
+    // fingerprint; another word does.
     assert_eq!(block("x\r\ny\r\n"), block("x\ny\n"));
-    // The hash of files covers their paths too, so a rename changes it, and
-    // line endings don't change it.
+    assert_eq!(block("one two\nthree\n"), block("one\ntwo three\n"));
+    assert_ne!(block("x\n"), block("y\n"));
+    assert!(block("x\n").is_str());
+    // A part of files records each file's fingerprint by its path in the part,
+    // so a rename changes the record.
     let files = |name: &str, text: &str| {
-        recorded_hash(Part::files(
+        recorded_value(Part::files(
             "files",
             ".claude/skills/x",
             vec![(name.into(), text.into())],
         ))
     };
     assert_ne!(files("A.md", "t\n"), files("B.md", "t\n"));
-    assert_eq!(files("A.md", "t\r\n"), files("A.md", "t\n"));
-    let h = files("A.md", "t\n");
-    assert!(
-        h.len() == "fnv1a64:".len() + 16
-            && h[8..]
-                .chars()
-                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
-        "{h}"
+    assert!(files("A.md", "t\n")["A.md"].is_str());
+    // Each file is compared in the format that its name gives: a JSON file
+    // whose keys a formatter re-laid and reordered is current, and a text of
+    // no known format is compared by its text.
+    let part = |name: &str, text: &str| {
+        vec![Part::files(
+            "files",
+            ".claude/skills/x",
+            vec![(name.into(), text.into())],
+        )]
+    };
+    let state = |tree: &TempTree, name: &str, text: &str| {
+        status_parts(tree.dir(), part(name, text)).harnesses[0].parts[0].state
+    };
+    let tree = TempTree::empty("parts-meaning-of-files");
+    install_parts(tree.dir(), part("a.json", "{\"a\": 1, \"b\": 2}\n"));
+    tree.write(".claude/skills/x/a.json", "{\n  \"b\": 2,\n  \"a\": 1\n}\n");
+    assert_eq!(
+        state(&tree, "a.json", "{\"a\": 1, \"b\": 2}\n"),
+        State::Current
+    );
+    // Line endings are no difference.
+    tree.write(
+        ".claude/skills/x/a.json",
+        "{\r\n  \"a\": 1,\r\n  \"b\": 2\r\n}\r\n",
+    );
+    assert_eq!(
+        state(&tree, "a.json", "{\"a\": 1, \"b\": 2}\n"),
+        State::Current
+    );
+    let tree = TempTree::empty("parts-text-of-files");
+    install_parts(tree.dir(), part("a.txt", "{\"a\": 1, \"b\": 2}\n"));
+    tree.write(".claude/skills/x/a.txt", "{\n  \"b\": 2,\n  \"a\": 1\n}\n");
+    assert_eq!(
+        state(&tree, "a.txt", "{\"a\": 1, \"b\": 2}\n"),
+        State::Edited
     );
 }
 

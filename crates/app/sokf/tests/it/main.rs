@@ -5,11 +5,13 @@
 mod cli;
 mod cli_d_folders;
 mod cli_design;
+mod cli_detect;
 mod cli_graph;
 mod cli_graph_markers;
 mod cli_guide;
 mod cli_harness;
 mod cli_harness_multi;
+mod cli_harness_upgrade;
 mod cli_index;
 mod cli_info;
 mod cli_init;

@@ -195,7 +195,7 @@ pub fn compile_all(
     let written = grammar
         .section("schema-document")
         .expect("SOKF's schema extension has a `schema-document` section");
-    let schema_document = compile(
+    let (schema_document, findings) = compile(
         written,
         &grammar,
         &registry,
@@ -204,9 +204,12 @@ pub fn compile_all(
         "grammar",
     )
     .unwrap_or_else(|findings| {
-        problems.extend(findings);
-        SokfSchema::of_schema_document(super::Schema::demand_nothing())
+        (
+            SokfSchema::of_schema_document(super::Schema::demand_nothing()),
+            findings,
+        )
     });
+    problems.extend(findings);
 
     let mut compiled = Compiled {
         grammar,
@@ -259,7 +262,10 @@ fn compile_one(
         &schema.doc.path,
         &schema.id(),
     ) {
-        Ok(c) => {
+        Ok((c, warnings)) => {
+            // A warning leaves the schema in force, and the run reports it on
+            // the Schema document (`EXT-1_AC-5`).
+            problems.extend(warnings);
             if let Some(root) = &c.root {
                 let inside = RepoPath::parse(root).is_some_and(|r| r.starts_with(knowledge_root));
                 if !inside {

@@ -5,7 +5,6 @@ title: Grammar schema
 description: The usage guide that sits beside the grammar file of the schema extension of SOKF (Superdev Open Knowledge Format) and shows how to write text that the grammar accepts.
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 

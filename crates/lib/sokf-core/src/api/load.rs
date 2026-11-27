@@ -17,7 +17,7 @@ use crate::{
     check,
     config::{self, RepoFormats},
     grammar::{self, Grammar, RegexCache},
-    include, markdown,
+    include,
     model::{self, KeyIndex, Loader, ParseMode, PlanIndex, Query},
     source, walk,
 };
@@ -558,7 +558,7 @@ fn spread_dirty(
             let old = cache.old_keys_of(path);
             let new: BTreeSet<(String, String, usize)> = fresh
                 .of_document(path)
-                .map(|e| (scope_name(&e.scope), markdown::slug(&e.key), e.knowledge))
+                .map(|e| (scope_name(&e.scope), e.id.clone(), e.knowledge))
                 .collect();
             for (scope, slug, k) in old.symmetric_difference(&new) {
                 moved.insert(key_query(scope, slug, *k));

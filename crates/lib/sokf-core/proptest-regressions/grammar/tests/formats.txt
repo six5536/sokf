@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 95be8fa4a8fd6c5165bf5f4647b70b6888e1b0b46cb3f6ceab362216521b7404 # shrinks to line = "AA", ban = "[A-Z]{2,}", example = Some("a")

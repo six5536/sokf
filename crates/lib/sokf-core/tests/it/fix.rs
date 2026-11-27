@@ -416,7 +416,7 @@ fn fix_leaves_a_hand_written_index_and_reports_it_once() {
         .collect();
     assert_eq!(
         on_index,
-        vec!["the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix` (SOKF_FORMAT_97)".to_string()]
+        vec!["the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document (SOKF_FORMAT_97)".to_string()]
     );
 }
 

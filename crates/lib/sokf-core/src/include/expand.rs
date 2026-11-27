@@ -12,7 +12,7 @@ use std::{
 use super::{fence, graph, region};
 use crate::{
     Body, Model, RepoPath, Segments,
-    formatter::{Layout, Pair},
+    compare::{Layout, Pair, Source},
     markdown::{self, IncludeTarget, Link, sokf_label},
     model::{KeyIndex, Query, keys},
     source,
@@ -37,10 +37,14 @@ pub struct Expected {
     /// by the line of its open marker. The value is `None` when the interior
     /// can't be regenerated.
     pub includes: HashMap<(RepoPath, usize), Option<String>>,
-    /// This map holds the extension of the source of each include block
-    /// that holds a file in a fence, keyed as `includes` is. An include
-    /// block of a document's body has no entry.
-    pub fences: HashMap<(RepoPath, usize), String>,
+    /// This map holds the source of each include block that holds a file
+    /// in a fence, keyed as `includes` is. An include block of a document's
+    /// body has no entry.
+    pub fences: HashMap<(RepoPath, usize), Fenced>,
+    /// This map holds the path from the root, as same-same reads it, of the
+    /// document whose body each include block of a body holds, keyed as
+    /// `includes` is.
+    pub bodies: HashMap<(RepoPath, usize), String>,
     /// This map holds the definition entries of each file. The list is empty
     /// when the file needs no block, and the value is `None` when a label
     /// doesn't resolve.
@@ -50,8 +54,22 @@ pub struct Expected {
     /// `on_cycle` holds every file that lies on an include cycle.
     pub on_cycle: HashSet<RepoPath>,
     /// `layout` records which blocks that differ from their expected text
-    /// the formatter gives the same form (CLI-4_AC-45).
+    /// same-same finds the same (CLI-4_AC-45).
     pub layout: Layout,
+}
+
+/// A `Fenced` is the source of an include block that holds a file, whole or
+/// one region of it, in a fence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fenced {
+    /// The included file.
+    pub path: RepoPath,
+    /// Whether the block includes a region of the file.
+    pub region: bool,
+    /// The lines of the file that the code of the fence holds.
+    pub lines: Vec<u32>,
+    /// Those lines as one run of whole lines, where they are one.
+    pub range: Option<std::ops::Range<u32>>,
 }
 
 impl Expected {
@@ -63,27 +81,31 @@ impl Expected {
             .and_then(|i| i.as_deref())
     }
 
-    /// `include_pair` returns the pair of texts that the formatter compares
+    /// `include_pair` returns the pair of texts that same-same compares
     /// for the include block that opens at `line` in `path` and holds
     /// `content`, when the block differs from its expected interior. An
-    /// include of a file compares the code inside the fence, in the language
-    /// of the source's extension, and an include of a body compares the
-    /// whole interior as Markdown (CONF-10_AC-6). It returns `None` when the
+    /// include of a file compares the code inside the fence under the path
+    /// of its source, a region of it as a part of a file, and an
+    /// include of a body compares the whole interior under the path of the
+    /// included document (CLI-4_AC-113). It returns `None` when the
     /// block has no expected interior, holds it, or holds a fence of another
     /// form.
-    // sokf-implements: CONF-10_AC-6
     // sokf-implements: CLI-4_AC-47
+    // sokf-implements: CLI-4_AC-113
     pub fn include_pair(&self, path: &RepoPath, line: usize, content: &str) -> Option<Pair> {
         let expected = self.include(path, line)?;
         if expected == content {
             return None;
         }
-        let Some(ext) = self.fences.get(&(path.clone(), line)) else {
+        let key = (path.clone(), line);
+        let Some(fenced) = self.fences.get(&key) else {
             return Some(Pair {
                 path: path.clone(),
-                ext: "md".into(),
+                name: self.bodies.get(&key)?.clone(),
+                fragment: false,
                 expected: expected.into(),
                 actual: content.into(),
+                source: None,
             });
         };
         let (open, close) = fence_ends(expected)?;
@@ -93,16 +115,22 @@ impl Expected {
         };
         Some(Pair {
             path: path.clone(),
-            ext: ext.clone(),
+            name: crate::compare::name_of(&fenced.path),
+            fragment: fenced.region,
             expected: code(expected)?,
             actual: code(content)?,
+            source: Some(Source {
+                path: fenced.path.clone(),
+                range: fenced.range.clone().filter(|_| fenced.region),
+                lines: fenced.lines.clone(),
+            }),
         })
     }
 
     /// `include_current` returns whether the include block that opens at
     /// `line` in `path` and holds `content` is current: whether it holds its
-    /// expected interior, or the formatter gives the two the same form. It
-    /// returns `None` when the block has no expected interior.
+    /// expected interior, or same-same finds the two the same. It returns
+    /// `None` when the block has no expected interior.
     // sokf-implements: CLI-4_AC-44
     // sokf-implements: CLI-4_AC-45
     pub fn include_current(&self, path: &RepoPath, line: usize, content: &str) -> Option<bool> {
@@ -111,21 +139,32 @@ impl Expected {
             expected == content
                 || self
                     .include_pair(path, line, content)
-                    .is_some_and(|p| self.layout.same(&p.ext, &p.expected, &p.actual)),
+                    .is_some_and(|p| self.layout.same(&p)),
         )
     }
 
-    /// `include_warning` returns the warning that the formatter failed on
-    /// the texts of the include block that opens at `line` in `path` and
-    /// holds `content`, when it did.
-    pub fn include_warning(
+    /// `include_stale` returns the warning that the formatter failed on the
+    /// texts of the stale include block that opens at `line` in `path`,
+    /// holds `content`, and whose target is written as `written`, when it
+    /// did, and the message of its finding.
+    pub fn include_stale(
         &self,
         path: &RepoPath,
         line: usize,
         content: &str,
-    ) -> Option<crate::Finding> {
-        let p = self.include_pair(path, line, content)?;
-        self.layout.warning(&p.ext, &p.expected, &p.actual)
+        written: &str,
+    ) -> (Option<crate::Finding>, String) {
+        let Some(p) = self.include_pair(path, line, content) else {
+            return (None, crate::compare::stale_message(written, None, None));
+        };
+        (
+            self.layout.warning(&p),
+            crate::compare::stale_message(
+                written,
+                p.source.as_ref().map(|s| &s.path),
+                self.layout.line(&p),
+            ),
+        )
     }
 }
 
@@ -263,10 +302,11 @@ impl Expander<'_> {
                 all_computable = false;
             }
             let key = (path.clone(), block.open_line);
-            let expected = expected.map(|(interior, ext)| {
-                if let Some(ext) = ext {
-                    self.out.fences.insert(key.clone(), ext);
-                }
+            let expected = expected.map(|(interior, kind)| {
+                match kind {
+                    Kind::File(fenced) => self.out.fences.insert(key.clone(), fenced).map(drop),
+                    Kind::Body(name) => self.out.bodies.insert(key.clone(), name).map(drop),
+                };
                 interior
             });
             self.out.includes.insert(key, expected);
@@ -287,13 +327,9 @@ impl Expander<'_> {
     /// `block_interior` returns the expected interior of an include block
     /// whose target is `target`, in a file of the knowledge `knowledge`, or
     /// `None` when the interior can't be computed. With the interior, it
-    /// returns the extension of the file that a fence holds, or `None` for a
-    /// document's body.
-    fn block_interior(
-        &self,
-        knowledge: Option<usize>,
-        target: &str,
-    ) -> Option<(String, Option<String>)> {
+    /// returns the source of the file that a fence holds, or the file name
+    /// of the document whose body it holds.
+    fn block_interior(&self, knowledge: Option<usize>, target: &str) -> Option<(String, Kind)> {
         let model = self.model;
         match &IncludeTarget::parse(target) {
             IncludeTarget::Document {
@@ -307,6 +343,7 @@ impl Expander<'_> {
                     Some((target_k, target))
                         if graph::includes_body(model, &target.path, fragment.as_deref()) =>
                     {
+                        let name = crate::compare::name_of(&target.path);
                         Some(target)
                             .filter(|t| !self.out.on_cycle.contains(&t.path))
                             .and_then(|t| {
@@ -319,7 +356,7 @@ impl Expander<'_> {
                                 }
                                 _ => body,
                             })
-                            .map(|body| (interior(&body), None))
+                            .map(|body| (interior(&body), Kind::Body(name)))
                     }
                     // Otherwise the block holds the content of the
                     // sidecar's asset, whole or one region of it. An
@@ -405,7 +442,7 @@ fn file_interior(
     knowledge: Option<usize>,
     path: &str,
     region: Option<&str>,
-) -> Option<(String, Option<String>)> {
+) -> Option<(String, Kind)> {
     let rp = RepoPath::parse(path)?;
     if model.id_at(&rp).is_some() || model.is_materialized_in(knowledge, &rp) {
         return None;
@@ -414,20 +451,32 @@ fn file_interior(
 }
 
 /// `asset_interior` returns the interior for the file at `path`, whole or one
-/// region of it, in a fenced code block, with the file's extension.
-fn asset_interior(
-    model: &Model,
-    path: &RepoPath,
-    region: Option<&str>,
-) -> Option<(String, Option<String>)> {
+/// region of it, in a fenced code block, with where the code lies in the
+/// file.
+fn asset_interior(model: &Model, path: &RepoPath, region: Option<&str>) -> Option<(String, Kind)> {
     if !model.exists(path) {
         return None;
     }
     model.note(Query::Body(path.clone()));
     let text = source::load_text(&model.tree.root, path).ok()?;
-    let extraction = region::extract(&text, region).ok()??;
-    let ext = path.extension().unwrap_or_default().to_string();
-    Some((interior(&fence::fenced(&extraction, path)), Some(ext)))
+    let extraction = region::extract_lines(&text, region).ok()??;
+    let fenced = Fenced {
+        path: path.clone(),
+        region: region.is_some(),
+        range: extraction.range(),
+        lines: extraction.lines,
+    };
+    Some((
+        interior(&fence::fenced(&extraction.text, path)),
+        Kind::File(fenced),
+    ))
+}
+
+/// A `Kind` says what an include block holds: a file in a fence, or the
+/// body of the document of a path from the root.
+enum Kind {
+    File(Fenced),
+    Body(String),
 }
 
 /// `expand` returns the expanded body of a document. It leaves out the
@@ -649,117 +698,4 @@ fn requalify(model: &Model, keys: &KeyIndex, from: usize, to: usize, body: &str)
 }
 
 #[cfg(test)]
-mod tests {
-    use proptest::prelude::*;
-
-    use super::*;
-
-    #[test]
-    fn interiors_and_definition_blocks_render() {
-        assert_eq!(interior(""), "\n");
-        assert_eq!(interior("a\nb"), "\na\nb\n\n");
-        assert_eq!(render_definitions(&[]), "");
-        let entries = vec![
-            DefinitionEntry {
-                label: "sokf:#K".into(),
-                path: RepoPath::parse("/k/a.md").unwrap(),
-                slug: None,
-            },
-            DefinitionEntry {
-                label: "sokf:b#h".into(),
-                path: RepoPath::parse("/k/b.md").unwrap(),
-                slug: Some("h".into()),
-            },
-        ];
-        assert_eq!(
-            render_definitions(&entries),
-            "<!-- sokf:links -->\n\n[sokf:#K]: /k/a.md\n[sokf:b#h]: /k/b.md#h\n"
-        );
-    }
-
-    #[test]
-    fn expand_removes_markers_and_the_definition_block() {
-        let body = "\n# T\n\n<!-- sokf:include x -->\n\nold\n\n<!-- /sokf:include -->\n\ntail\n\n<!-- sokf:links -->\n\n[sokf:x]: /k/x.md\n";
-        let segments = markdown::segments(body, 5);
-        let path = RepoPath::parse("/k/a.md").unwrap();
-        let mut out = Expected::default();
-        out.includes
-            .insert((path.clone(), 8), Some("\nnew\n\n".into()));
-        assert_eq!(
-            expand(body, 5, &segments, &Body::default(), &path, &out),
-            "# T\n\n\nnew\n\n\ntail"
-        );
-        let none = Expected::default();
-        assert_eq!(
-            expand(body, 5, &segments, &Body::default(), &path, &none),
-            "# T\n\n\nold\n\n\ntail"
-        );
-        assert_eq!(
-            expand(
-                "\n\n",
-                1,
-                &Segments::default(),
-                &Body::default(),
-                &path,
-                &none
-            ),
-            ""
-        );
-    }
-
-    // sokf-tests: FORMAT_P-9
-    proptest! {
-        #![proptest_config(crate::proptest_cases::cases(256))]
-
-        #[test]
-        fn the_definition_block_lists_each_label_once_in_ascending_order(labels in prop::collection::vec("[a-z]{1,4}(#[a-z]{1,3})?", 0..6)) {
-            let entries: Vec<DefinitionEntry> = {
-                let mut v: Vec<DefinitionEntry> = labels.iter().map(|l| DefinitionEntry {
-                    label: format!("sokf:{l}"),
-                    path: RepoPath::parse("/k/t.md").unwrap(),
-                    slug: l.split_once('#').map(|(_, s)| s.to_string()),
-                }).collect();
-                v.sort();
-                v.dedup();
-                v
-            };
-            let text = render_definitions(&entries);
-            if entries.is_empty() {
-                prop_assert_eq!(text, "");
-            } else {
-                let segments = markdown::segments(&text, 1);
-                let def = segments.definition.unwrap();
-                prop_assert!(!def.trailing);
-                let got: Vec<String> = def.entries.iter().map(|(l, _)| l.clone()).collect();
-                let want: Vec<String> = entries.iter().map(|e| e.label.clone()).collect();
-                prop_assert_eq!(got.clone(), want);
-                let mut sorted = got.clone();
-                sorted.sort();
-                sorted.dedup();
-                prop_assert_eq!(got, sorted);
-                for ((_, dest), e) in def.entries.iter().zip(&entries) {
-                    let want = match &e.slug { Some(s) => format!("/k/t.md#{s}"), None => "/k/t.md".into() };
-                    prop_assert_eq!(dest, &want);
-                }
-            }
-        }
-    }
-
-    // sokf-tests: FORMAT_P-8
-    proptest! {
-        #![proptest_config(crate::proptest_cases::cases(256))]
-
-        #[test]
-        fn an_expanded_body_has_no_marker_and_is_a_fixed_point(inner in "[a-z ]{0,20}", outer in "[a-z ]{0,20}") {
-            let body = format!("{outer}\n\n<!-- sokf:include x -->\n\n{inner}\n\n<!-- /sokf:include -->\n\n<!-- sokf:links -->\n\n[sokf:x]: /k/x.md\n");
-            let segments = markdown::segments(&body, 1);
-            let path = RepoPath::parse("/k/a.md").unwrap();
-            let mut out = Expected::default();
-            out.includes.insert((path.clone(), 3), Some(interior(inner.trim())));
-            let once = expand(&body, 1, &segments, &Body::default(), &path, &out);
-            prop_assert!(!once.contains("sokf:include") && !once.contains("sokf:links"));
-            let again = expand(&once, 1, &markdown::segments(&once, 1), &Body::default(), &path, &Expected::default());
-            prop_assert_eq!(again, once);
-        }
-    }
-}
+mod tests;

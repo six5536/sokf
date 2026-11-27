@@ -30,6 +30,32 @@ fn bare_invocation_prints_help_and_exits_clean() {
     );
 }
 
+/// The crate's description ends with the mark of an unstable crate, which
+/// crates.io shows but the help and the man page leave out.
+const UNSTABLE_MARK: &str =
+    " Unstable: its commands, options and file formats can change in any release.";
+
+#[test]
+fn help_summary_says_what_sokf_does_without_the_unstable_mark() {
+    let summary = env!("CARGO_PKG_DESCRIPTION")
+        .strip_suffix(UNSTABLE_MARK)
+        .expect("the crate's description ends with the mark of an unstable crate");
+    assert!(summary.contains("validates knowledge stores"), "{summary}");
+    for args in [&[][..], &["--help"], &["-h"]] {
+        let (stdout, _, code) = run(args);
+        assert_eq!(code, 0);
+        assert_eq!(stdout.lines().next(), Some(summary), "summary of {args:?}");
+        assert!(!stdout.contains("Unstable"), "{args:?}: {stdout}");
+    }
+    let (stdout, _, code) = run(&["man"]);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains(&format!("sokf \\- {summary}\n")),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Unstable"), "{stdout}");
+}
+
 #[test]
 fn help_lists_the_visible_commands_and_hides_man() {
     let (stdout, _, code) = run(&["--help"]);
@@ -96,8 +122,13 @@ fn errors_exit_1_and_render_per_the_tool_spec() {
         ),
         "{stdout}"
     );
-    // The run reports these two errors and no others.
-    assert!(stdout.ends_with("2 errors, 0 warnings\n"), "{stdout}");
+    // The run reports these two errors and no others, and counts the one
+    // that `--fix` repairs once, after the line of counts (CLI-4_AC-30).
+    assert!(
+        stdout
+            .ends_with("2 errors, 0 warnings\n1 potentially fixable with `sokf validate --fix`\n"),
+        "{stdout}"
+    );
     assert_eq!(stderr, "");
 }
 
@@ -568,4 +599,29 @@ fn the_layout_names_each_store_and_ends_with_the_counts() {
         "{stdout}"
     );
     assert!(stdout.ends_with("\n4 / 4 docs\n"), "{stdout}");
+}
+
+// Every finding of the fixable fixture is one that `--fix` repairs, so the
+// report counts all of them once, after the line of counts, and `--fix`
+// leaves none of them, prints no such line, and a second `--fix` writes
+// nothing. The findings themselves name no command.
+// sokf-tests: CLI-4_AC-30
+#[test]
+fn the_report_counts_the_findings_that_fix_repairs() {
+    let f = Fixture::new("fixable");
+    let (stdout, _, code) = f.run(&["--no-cache", "validate"]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(
+        stdout.ends_with(
+            "\n8 errors, 0 warnings\n8 potentially fixable with `sokf validate --fix`\n"
+        ),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Run `sokf"), "{stdout}");
+    let (fixed, _, code) = f.run(&["--no-cache", "validate", "--fix"]);
+    assert_eq!(code, 0, "{fixed}");
+    assert!(fixed.ends_with("\n0 errors, 0 warnings\n"), "{fixed}");
+    let (again, _, code) = f.run(&["--no-cache", "validate", "--fix"]);
+    assert_eq!(code, 0, "{again}");
+    assert_eq!(again, "0 errors, 0 warnings\n");
 }

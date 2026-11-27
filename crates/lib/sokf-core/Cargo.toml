@@ -1,6 +1,6 @@
 [package]
 name = "sokf-core"
-description = "sokf-core holds the logic of the sokf command-line tool: it loads and validates Superdev Open Knowledge Format (SOKF) knowledge stores, and runs each sokf command."
+description = "sokf-core holds the logic of the sokf command-line tool: it loads and validates Superdev Open Knowledge Format (SOKF) knowledge stores, and runs each sokf command. Unstable: its interface can change in any release."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -34,6 +34,7 @@ ignore.workspace = true
 jmespath.workspace = true
 regex.workspace = true
 rusqlite.workspace = true
+same-same.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

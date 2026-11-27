@@ -238,7 +238,7 @@ fn init_over_documents_writes_the_manifest_and_warns_of_a_hand_written_index() {
          rewrote /analysis/old/index.md\n\
          /analysis/a.md: error: the document has no frontmatter (SOKF_FORMAT_17)\n\
          /analysis/chuckie-egg/b.md: error: the document has no frontmatter (SOKF_FORMAT_17)\n\
-         /analysis/chuckie-egg/index.md: error: the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document, then run `--fix` (SOKF_FORMAT_97)\n\
+         /analysis/chuckie-egg/index.md: error: the file is not a generated index, so `--fix` doesn't overwrite it: move its content into a document (SOKF_FORMAT_97)\n\
          /analysis/old/c.md: error: the document has no frontmatter (SOKF_FORMAT_17)\n\
          \n\
          4 errors, 0 warnings\n"

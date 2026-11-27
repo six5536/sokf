@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::{Cache, CacheMode, RepoRoot, Result, config, graph, graph::Location, markdown::slug};
+use crate::{Cache, CacheMode, RepoRoot, Result, config, graph, graph::Location, markdown};
 
 /// `locate` finds the file of each id in `ids`. Before it looks up the
 /// ids, it brings the cache up to date with the files that changed. It
@@ -34,7 +34,7 @@ pub fn locate(
 }
 
 /// `key_slugs` returns the fragment of each reference in `ids` that `wanted`
-/// selects, both as written and as its slug.
+/// selects, as written and as each id that it can name.
 pub fn key_slugs(ids: &[String], wanted: fn(&str) -> bool) -> BTreeSet<String> {
     let mut slugs = BTreeSet::new();
     for id in ids.iter().filter(|id| wanted(id)) {
@@ -42,7 +42,7 @@ pub fn key_slugs(ids: &[String], wanted: fn(&str) -> bool) -> BTreeSet<String> {
             && !key.is_empty()
         {
             slugs.insert(key.to_string());
-            slugs.insert(slug(key));
+            slugs.extend(markdown::key_ids(key));
         }
     }
     slugs

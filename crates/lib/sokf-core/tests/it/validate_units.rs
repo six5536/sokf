@@ -31,7 +31,7 @@ fn a_format_patch_states_only_its_difference() {
     assert_eq!(
         messages,
         vec![
-            "`SHALL` is refused: A user story states a need, so it holds no SHALL, SHOULD, or MUST. A paragraph of this kind reads AS A user, I WANT a thing, SO THAT a benefit."
+            "`SHALL` is refused: A user story states a need, so it holds no SHALL, SHOULD, or MUST. A paragraph of this kind reads `AS A user, I WANT a thing, SO THAT a benefit.`"
         ]
     );
     // Validation reports a patch of a format that no lower layer defines.
@@ -317,8 +317,8 @@ fn a_unit_ban_and_a_format_ban_read_what_their_rule_governs() {
     assert_eq!(
         messages,
         vec![
-            "9: `TODO` is refused: A finished document contains no TODO. A line of this kind reads cargo test --workspace",
-            "13: `SHALL` is refused: A user story states a need, so it holds no SHALL, SHOULD, or MUST. An item of this kind reads ST-1: AS A user, I WANT a click on a file name to open the file in the editor, SO THAT I go from a compiler error to the code in one click.",
+            "9: `TODO` is refused: A finished document contains no TODO. A line of this kind reads `cargo test --workspace`",
+            "13: `SHALL` is refused: A user story states a need, so it holds no SHALL, SHOULD, or MUST. An item of this kind reads `ST-1: AS A user, I WANT a click on a file name to open the file in the editor, SO THAT I go from a compiler error to the code in one click.`",
         ]
     );
 }

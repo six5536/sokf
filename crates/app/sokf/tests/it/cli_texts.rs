@@ -27,11 +27,12 @@ fn memo(language: &str) -> Fixture {
     f
 }
 
-/// `scaffold` returns what `sokf new Memo` prints on `f`.
+/// `scaffold` returns the guide of a new memo that `sokf new Memo` prints on
+/// `f`, on stderr.
 fn scaffold(f: &Fixture) -> String {
     let (out, err, code) = f.run(&["new", "Memo", "--slug", "kettle"]);
     assert_eq!(code, 0, "{out}{err}");
-    out
+    err
 }
 
 /// `with_manifest` adds `line` to the manifest of the fixture's store.
@@ -42,9 +43,9 @@ fn with_manifest(f: &Fixture, line: &str) {
     );
 }
 
-// A store without `primary-language` is in English, so the scaffold holds
-// sokf's English rule for a description before the schema's guidance, on
-// the line before the key, and English words before each limit's
+// A store without `primary-language` is in English, so the guide of a new
+// document holds sokf's English rule for a description before the schema's
+// guidance for the key, and English words before each limit's
 // `when-at-limit`: a ban for a hard limit of 0, and the `rule-id` of a
 // named rule.
 // sokf-tests: CLI-6_AC-118
@@ -59,43 +60,39 @@ fn a_store_without_a_language_takes_sokfs_english() {
     let out = scaffold(&f);
     assert!(
         out.contains(&format!(
-            "\n# sokf:guidance {RULE} It tells that reader what they need beyond the title, in terms they already know, usually in one sentence. The description names the decision.\ndescription: "
+            "\n  description: {RULE} It tells that reader what they need beyond the title, in terms they already know, usually in one sentence. The description names the decision.\n"
         )),
         "{out}"
     );
     for words in [
-        "# sokf:guidance Usually up to 2 values. Never leave out or merge content to stay within the count. When at the limit: Keep the tags that a reader searches for.\ntags:",
-        "<!-- sokf:guidance At most 3 items. Never leave out or merge content to stay within the count. When at the limit: Write a second memo. No `todo` items. Instead: File an issue. At most 1 `point` item. Never leave out or merge content to stay within the count. When at the limit: Join the points. -->",
+        "\n  tags (optional): Usually up to 2 values. Never leave out or merge content to stay within the count. When at the limit: Keep the tags that a reader searches for.\n",
+        "\n  bullet-list: At most 3 items. Never leave out or merge content to stay within the count. When at the limit: Write a second memo. No `todo` items. Instead: File an issue. At most 1 `point` item. Never leave out or merge content to stay within the count. When at the limit: Join the points.\n",
     ] {
         assert!(out.contains(words), "{words:?} is not in {out}");
     }
 }
 
-// The guide prints the rule for a description before the schema's
-// guidance for the key, and the same words for each limit as the
-// scaffold, and its JSON gives a rule's limit its `rule-id` and what it
-// counts.
-// sokf-tests: CLI-17_AC-7
+// The guide that `sokf new` prints for a new document is the guide that
+// `sokf guide` prints for it once written. It prints the rule for a
+// description before the schema's guidance for the key, and its JSON gives a
+// rule's limit its `rule-id` and what it counts.
+// sokf-tests: CLI-6_AC-127
+// sokf-tests: CLI-6_AC-129
 // sokf-tests: CLI-17_AC-31
 // sokf-tests: CLI-17_AC-32
 #[test]
 fn the_guide_says_what_the_scaffold_says() {
     let f = memo("");
-    let (out, err, code) = f.run(&["new", "Memo", "--slug", "kettle", "--write"]);
-    assert_eq!(code, 0, "{out}{err}");
+    let (out, printed, code) = f.run(&["new", "Memo", "--slug", "kettle", "--write"]);
+    assert_eq!(code, 0, "{out}{printed}");
     let (text, err, code) = f.run(&["guide", "memo-kettle"]);
     assert_eq!(code, 0, "{err}");
-    let doc = std::fs::read_to_string(f.path("knowledge/memo-kettle.md")).unwrap();
-    for line in doc.lines() {
-        let line = line.trim();
-        let words = line.strip_prefix("# sokf:guidance ").or_else(|| {
-            line.strip_prefix("<!-- sokf:guidance ")
-                .and_then(|l| l.strip_suffix(" -->"))
-        });
-        if let Some(words) = words {
-            assert!(text.contains(words), "{words:?} is not in {text}");
-        }
-    }
+    assert_eq!(
+        printed,
+        format!(
+            "\nThe guide of the new document: the guidance and the example of each part.\n\n{text}"
+        )
+    );
     assert!(text.contains(&format!("\n  description: {RULE}")), "{text}");
     let (json, err, code) = f.run(&["guide", "memo-kettle", "--json"]);
     assert_eq!(code, 0, "{err}");
@@ -124,7 +121,7 @@ fn a_language_without_texts_takes_the_syntax_of_the_schema() {
     let out = scaffold(&f);
     assert!(
         !out.contains(RULE)
-            && out.contains("# sokf:guidance The description names the decision.\ndescription: ")
+            && out.contains("\n  description: The description names the decision.\n")
             && out.contains("`hard: 3`, `when-at-limit`: Write a second memo.")
             && out.contains("`hard: 0`, `when-at-limit`: File an issue."),
         "{out}"
@@ -144,7 +141,7 @@ fn a_language_without_texts_takes_the_syntax_of_the_schema() {
     );
     let out = scaffold(&f);
     assert!(
-        out.contains("# sokf:guidance Der Text neben dem Titel im Index. The description names the decision.\n")
+        out.contains("\n  description: Der Text neben dem Titel im Index. The description names the decision.\n")
             && out.contains("Höchstens 3 Punkte. An der Grenze: Write a second memo.")
             // German has no ban, and no word for a value.
             && out.contains("`hard: 0`, `when-at-limit`: File an issue.")
@@ -172,7 +169,7 @@ fn an_inherited_schema_keeps_the_language_of_its_own_store() {
     let new_other = || {
         let (out, err, code) = f.run(&["new", "other:Memo", "--slug", "kettle"]);
         assert_eq!(code, 0, "{out}{err}");
-        out
+        err
     };
     other("de");
     assert!(new_other().contains(RULE));

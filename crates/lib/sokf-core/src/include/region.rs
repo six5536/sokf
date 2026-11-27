@@ -85,8 +85,42 @@ fn marker(line: &str) -> Option<Marker<'_>> {
 // sokf-implements: SOKF_FORMAT_137
 // sokf-implements: SOKF_FORMAT_112
 pub fn extract(text: &str, region: Option<&str>) -> Result<Option<String>, RegionError> {
+    Ok(extract_lines(text, region)?.map(|e| e.text))
+}
+
+/// An `Extraction` is the text that `extract` returns, with the line of the
+/// file, counted from 1, of each of its lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Extraction {
+    /// The text, each line with its newline.
+    pub text: String,
+    /// The line of the file of each line of `text`, in order.
+    pub lines: Vec<u32>,
+}
+
+impl Extraction {
+    /// `range` returns the lines of the file that the extraction holds as
+    /// one run of whole lines with no line left out, from its first line to
+    /// before its end, or `None` when the extraction is empty or leaves out
+    /// a line of that run, such as a marker or a line between two regions of
+    /// one name.
+    pub fn range(&self) -> Option<std::ops::Range<u32>> {
+        let first = *self.lines.first()?;
+        let contiguous = self
+            .lines
+            .iter()
+            .enumerate()
+            .all(|(i, &line)| u32::try_from(i).is_ok_and(|i| line == first + i));
+        contiguous.then(|| first..self.lines[self.lines.len() - 1] + 1)
+    }
+}
+
+/// `extract_lines` returns what `extract` returns, with the line of the
+/// file of each line of the text.
+pub fn extract_lines(text: &str, region: Option<&str>) -> Result<Option<Extraction>, RegionError> {
     let mut open: Vec<(String, usize)> = Vec::new();
     let mut out = String::new();
+    let mut lines: Vec<u32> = Vec::new();
     let mut found = region.is_none();
     for (i, line) in text.lines().enumerate() {
         let line_no = i + 1;
@@ -120,6 +154,7 @@ pub fn extract(text: &str, region: Option<&str>) -> Result<Option<String>, Regio
                 if inside {
                     out.push_str(line);
                     out.push('\n');
+                    lines.push(u32::try_from(line_no).unwrap_or(u32::MAX));
                 }
             }
         }
@@ -127,7 +162,7 @@ pub fn extract(text: &str, region: Option<&str>) -> Result<Option<String>, Regio
     if let Some((name, line)) = open.into_iter().next() {
         return Err(RegionError::NeverClosed { name, line });
     }
-    Ok(found.then_some(out))
+    Ok(found.then_some(Extraction { text: out, lines }))
 }
 
 #[cfg(test)]
@@ -164,6 +199,26 @@ mod tests {
                 .unwrap(),
             ""
         );
+    }
+
+    #[test]
+    fn an_extraction_gives_the_line_of_each_of_its_lines() {
+        let cli = extract_lines(FILE, Some("cli")).unwrap().unwrap();
+        assert_eq!(cli.lines, vec![3, 5, 10]);
+        assert_eq!(cli.range(), None);
+        let other = extract_lines(FILE, Some("other")).unwrap().unwrap();
+        assert_eq!(other.lines, vec![5, 7]);
+        assert_eq!(other.range(), None);
+        let one = extract_lines("a\n// sokf:begin r\nb\nc\n// sokf:end r\n", Some("r"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(one.range(), Some(3..5));
+        let whole = extract_lines("a\nb\n", None).unwrap().unwrap();
+        assert_eq!(whole.range(), Some(1..3));
+        let empty = extract_lines("// sokf:begin e\n// sokf:end e\n", Some("e"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(empty.range(), None);
     }
 
     #[test]

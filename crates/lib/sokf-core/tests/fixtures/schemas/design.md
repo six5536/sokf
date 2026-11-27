@@ -5,7 +5,6 @@ title: Design schema
 description: A design says how one building block is built, for the tests of a design's scaffold.
 ---
 
-<!-- prettier-ignore -->
 ````yaml
 line-limit: 0
 root: /knowledge/designs

@@ -7,6 +7,7 @@ use std::{collections::HashMap, sync::OnceLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use tramlines_core::frontmatter as engine;
 
 use crate::{Finding, RepoPath, Spanned, Yaml, YamlError, markdown::is_url};
 
@@ -238,6 +239,16 @@ pub fn core_fields(yaml: Option<Result<&Spanned, &YamlError>>, path: &RepoPath) 
 // sokf-implements: SOKF_FORMAT_51
 fn core_key(core: &mut CoreFields, key: &Spanned<String>, value: &Spanned, path: &RepoPath) {
     core.lines.insert(key.value.clone(), key.line);
+    // A core field other than `type`, `id`, and `generated` that holds no value, a null
+    // or a text of only whitespace, is absent, as the engine reads an empty
+    // value of a required key as missing (`TL_143`): the field's own check
+    // then reports nothing beside the engine's one finding.
+    // sokf-implements: SOKF_FORMAT_256
+    let optional =
+        CORE_KEYS.contains(&key.value.as_str()) && !matches!(key.value.as_str(), "type" | "id");
+    if optional && engine::holds_no_value(value) {
+        return;
+    }
     let line = Some(value.line);
     match key.value.as_str() {
         "type" => match value.as_str() {
@@ -541,6 +552,27 @@ mod tests {
     fn fields(text: &str) -> CoreFields {
         let parsed = yaml::parse(text, 2);
         core_fields(Some(parsed.as_ref()), &RepoPath::parse("/k/a.md").unwrap())
+    }
+
+    // A core field that holds no value is absent, and its own check reports
+    // nothing; an empty `type` still fails, and an empty field that isn't
+    // a core field is kept.
+    // sokf-tests: SOKF_FORMAT_256
+    #[test]
+    fn an_empty_core_field_is_absent() {
+        let c = fields(
+            "type: Note\nid: note-a\ntitle:\ndescription: '  '\nresource:\ntags:\nstatus: ~\nsources:\nlinks:\nverified:\nextra:\n",
+        );
+        assert!(c.problems.is_empty(), "{:?}", c.problems);
+        assert!(c.title.is_none() && c.description.is_none() && c.status.is_none());
+        assert!(c.resource.is_none() && c.tags.is_none());
+        assert!(c.sources.is_empty(), "{:?}", c.sources);
+        assert!(c.links.is_empty(), "{:?}", c.links);
+        assert!(c.verified.is_empty(), "{:?}", c.verified);
+        assert!(c.extra("extra").is_some());
+        assert_eq!(c.line_of("status"), Some(8));
+        let empty_type = fields("type:\nid: note-a\n");
+        assert_eq!(empty_type.problems.len(), 1, "{:?}", empty_type.problems);
     }
 
     #[test]

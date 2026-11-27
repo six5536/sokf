@@ -142,7 +142,6 @@ fn render(parts: &[Part], states: Option<&States>) -> String {
 }
 
 // sokf-tests: EXT_P-4
-// sokf-tests: CLI-6_AC-2
 proptest! {
     #![proptest_config(crate::common::proptest_cases::cases(256))]
 
@@ -300,7 +299,7 @@ fn issue_schema() -> sokf_core::grammar::SokfSchema {
     }
 }
 
-use common::{TempTree, new_options, on};
+use common::{TempTree, new_options, not_missing, on};
 use sokf_core::{CacheMode, NewOptions};
 
 use crate::common;
@@ -365,23 +364,18 @@ fn options_of(tree: &TempTree, spec: &NewOptionsSpec) -> NewOptions {
 proptest! {
     #![proptest_config(crate::common::proptest_cases::cases(32))]
 
+    /// The check of an untouched skeleton reports only the parts that its
+    /// writer has still to write.
+    // sokf-tests: CLI_P-24
     #[test]
     fn the_skeleton_passes_its_templates_checks(spec in arb_invocation()) {
         let tree = TempTree::fixture("new");
         let mut o = options_of(&tree, &spec);
         o.write = true;
         let r = sokf_core::new(&tree.root(), &o).unwrap();
-        tree.drop_guidance(r.path.as_str().trim_start_matches('/'));
         let report = tree.validate(true, CacheMode::Off);
-        let own: Vec<&str> = report
-            .errors
-            .iter()
-            .filter(|e| e.path == r.path)
-            .map(|e| e.message.as_str())
-            .collect();
-        // The one error allowed is the issue's placeholder link, which points
-        // at no document.
-        prop_assert!(own.iter().all(|m| m.contains("target-id")), "{own:?}");
+        let left = not_missing(&report, r.path.as_str());
+        prop_assert!(left.is_empty(), "{left:?}");
     }
 }
 
@@ -486,7 +480,8 @@ proptest! {
     /// Deriving a scaffold either succeeds or fails with a reason. When it
     /// fails, the schema's report gives that reason. When it succeeds, the
     /// scaffolds satisfy the schema, their markers agree with its gates, and
-    /// `sokf new` writes a document that validates at each state.
+    /// `sokf new` writes a document at each state that lacks only what its
+    /// writer writes.
     #[test]
     fn a_derivation_passes_its_own_schema_or_refuses_by_name(
         shapes in prop::collection::vec(arb_shape(), 1..4)
@@ -508,8 +503,8 @@ proptest! {
             return Ok(());
         }
         prop_assert!(mine.is_empty(), "{mine:?}");
-        // After `sokf new` gates and fills the derived template, the document
-        // it writes must pass validation, as the schema's own check requires.
+        // The skeleton that `sokf new` writes reports only the parts that
+        // its writer has still to write.
         for state in ["draft", "done"] {
             let mut o = new_options(tree.dir(), "Gen");
             o.id = Some(format!("gen-{state}"));
@@ -517,12 +512,12 @@ proptest! {
             o.write = true;
             let made = sokf_core::new(&tree.root(), &o);
             prop_assert!(made.is_ok(), "{:?}", made.as_ref().err());
+            let after = tree.validate(true, sokf_core::CacheMode::Off);
             if let Ok(made) = made {
-                tree.drop_guidance(made.path.as_str().trim_start_matches('/'));
+                let left = not_missing(&after, made.path.as_str());
+                prop_assert!(left.is_empty(), "{left:?}\n{}", common::json(&after));
             }
         }
-        let after = tree.validate(true, sokf_core::CacheMode::Off);
-        prop_assert!(after.errors.is_empty(), "{}", common::json(&after));
     }
 }
 
@@ -543,8 +538,9 @@ proptest! {
     #![proptest_config(crate::common::proptest_cases::cases(64))]
 
     /// A derivation invents nothing: in the document that `sokf new` creates,
-    /// every line after the frontmatter either is scaffolding that the schema
-    /// determines or contains text from one of the schema's `example` values.
+    /// and in the example of each section that its guide gives, every line
+    /// after the frontmatter either is scaffolding that the schema determines
+    /// or contains text from one of the schema's `example` values.
     #[test]
     fn a_derivation_invents_nothing(
         shapes in prop::collection::vec(arb_shape(), 1..4)
@@ -558,13 +554,21 @@ proptest! {
             o.id = Some(format!("gen-{state}"));
             o.states = vec![("state".into(), state.to_string())];
             let made = sokf_core::new(&tree.root(), &o).unwrap();
-            let body = made.document.splitn(3, "---\n").nth(2).unwrap_or_default();
+            // The body of the skeleton, and the examples of the sections that
+            // the guide gives, which the scaffold writes.
+            let skeleton = made.document.splitn(3, "---\n").nth(2).unwrap_or_default();
+            let sections: Vec<String> = made
+                .guide
+                .iter()
+                .flat_map(|g| g.sections.iter().filter_map(|s| s.example.clone()))
+                .collect();
+            let body = format!("{skeleton}\n{}", sections.join("\n\n"));
             for line in body.lines() {
                 prop_assert!(
                     scaffolding(line) || stated.iter().any(|s| line.contains(s)),
                     "`{}` in\n{}",
                     line,
-                    made.document
+                    body
                 );
             }
         }

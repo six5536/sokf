@@ -6,13 +6,19 @@ use std::io::{self, Write};
 use sokf_core::Report;
 
 /// `text` writes the text report: the fixes, then the findings, then the line
-/// of counts. The core builds the text, so `validate` and every other
-/// command that prints it print the report in the same form.
+/// of counts, and, in a run without `--fix`, the line that counts the
+/// findings that `--fix` repairs, where it lists one. The core builds the
+/// text, so `validate` and every other command that prints it print the
+/// report in the same form.
 // sokf-implements: CLI-4_AC-7
 // sokf-implements: CLI-4_AC-11
 // sokf-implements: CLI-4_AC-25
-pub fn text<W: Write>(w: &mut W, report: &Report, warnings: bool) -> io::Result<()> {
-    w.write_all(sokf_core::report_text(report, warnings).as_bytes())
+pub fn text<W: Write>(w: &mut W, report: &Report, warnings: bool, fix: bool) -> io::Result<()> {
+    w.write_all(sokf_core::report_text(report, warnings).as_bytes())?;
+    match sokf_core::report_fixable_line(report, warnings).filter(|_| !fix) {
+        Some(line) => writeln!(w, "{line}"),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -72,14 +78,14 @@ mod tests {
     #[test]
     fn text_report_matches_the_tool_spec() {
         let mut buf = Vec::new();
-        text(&mut buf, &report(), false).unwrap();
+        text(&mut buf, &report(), false, false).unwrap();
         insta::assert_snapshot!(String::from_utf8(buf).unwrap());
     }
 
     #[test]
     fn warnings_are_listed_on_request() {
         let mut buf = Vec::new();
-        text(&mut buf, &report(), true).unwrap();
+        text(&mut buf, &report(), true, false).unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains("/knowledge/a.md:3: warning:"), "{out}");
         assert!(
@@ -91,7 +97,43 @@ mod tests {
     #[test]
     fn counts_pluralize() {
         let mut buf = Vec::new();
-        text(&mut buf, &Report::default(), false).unwrap();
+        text(&mut buf, &Report::default(), false, false).unwrap();
         assert_eq!(String::from_utf8(buf).unwrap(), "0 errors, 0 warnings\n");
+    }
+
+    // A run without `--fix` that lists a finding which `--fix` repairs ends
+    // with one line that counts such findings, and a run with `--fix` or
+    // with none ends with the line of counts.
+    // sokf-tests: CLI-4_AC-30
+    #[test]
+    fn the_fixable_findings_are_counted_once() {
+        let mut report = report();
+        for line in [7, 9] {
+            report.errors.push(Finding::new(
+                path("/knowledge/b.md"),
+                Some(line),
+                Severity::Error,
+                "SOKF_FORMAT_85",
+                "`sokf:include /src/a.rs` is stale",
+            ));
+        }
+        let report = report.finish();
+        let render = |fix: bool| {
+            let mut buf = Vec::new();
+            text(&mut buf, &report, false, fix).unwrap();
+            String::from_utf8(buf).unwrap()
+        };
+        assert!(
+            render(false).ends_with(
+                "\n4 errors, 0 of 1 warnings listed\n2 potentially fixable with `sokf validate --fix`\n"
+            ),
+            "{}",
+            render(false)
+        );
+        assert!(
+            render(true).ends_with("\n4 errors, 0 of 1 warnings listed\n"),
+            "{}",
+            render(true)
+        );
     }
 }

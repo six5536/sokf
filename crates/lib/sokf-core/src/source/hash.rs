@@ -1,6 +1,6 @@
-//! The tool uses one hash, 64-bit Fowler–Noll–Vo (FNV-1a), because it gives the same value on
-//! every Rust version, so a store and a harness record stay valid after the
-//! toolchain changes (CLI-3_AC-53, CACHE-1_AC-6).
+//! The cache uses one hash, 64-bit Fowler–Noll–Vo (FNV-1a), because it gives the same value on
+//! every Rust version, so a store stays valid after the toolchain changes
+//! (CACHE-1_AC-6).
 
 /// `Fnv` computes a 64-bit FNV-1a hash over bytes fed to it in pieces.
 #[derive(Debug, Clone, Copy)]

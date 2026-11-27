@@ -6,9 +6,9 @@
 
 use std::collections::BTreeSet;
 
-use tramlines_md::markdown::LinkTarget;
+use tramlines_md::{check, markdown::LinkTarget};
 
-use super::states_of;
+use super::{doc_view, headings, states_of};
 use crate::{
     Compiled, Document, Model, RepoPath,
     grammar::SokfSchema,
@@ -17,39 +17,40 @@ use crate::{
 
 /// `planned_by` returns the paths that `doc` plans under `schema`: the
 /// `/`-rooted path links inside each planning section that the document's
-/// states admit. A planning section runs from its heading to the next
-/// heading of the same or a higher level. A link that ends with `/` plans a
-/// directory.
+/// states admit. A heading opens a planning section where the check matches
+/// it to the section, at the section's level, so that a formatter's
+/// spelling of the heading's markup changes no plan. A planning section
+/// runs from its heading to the next heading of the same or a higher level.
+/// A link that ends with `/` plans a directory.
 // sokf-implements: SOKF_SCHEMA_53
 // sokf-implements: SOKF_SCHEMA_55
+// sokf-implements: SOKF_SCHEMA_109
 pub fn planned_by(doc: &Document, schema: &SokfSchema) -> BTreeSet<Planned> {
     let mut out = BTreeSet::new();
     if schema.plans_paths.is_empty() {
         return out;
     }
     let states = states_of(doc.frontmatter.as_ref(), schema);
-    let value = |key: &str| {
-        doc.frontmatter
-            .as_ref()
-            .and_then(|f| f.get(key))
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-    };
     let headings = &doc.body.headings;
+    let mut matches = None;
     for plan in &schema.plans_paths {
         if !plan.common.only.admits(&states) {
             continue;
         }
-        let Some(section) = schema
+        let Some(j) = schema
             .core
             .sections
             .iter()
-            .find(|s| s.rule_id.as_deref() == Some(plan.section.as_str()))
+            .position(|s| s.rule_id.as_deref() == Some(plan.section.as_str()))
         else {
             continue;
         };
+        let section = &schema.core.sections[j];
+        let matches = matches.get_or_insert_with(|| {
+            check::match_headings(doc_view(doc).engine(), &schema.core, &states)
+        });
         for (i, h) in headings.iter().enumerate() {
-            if h.level != section.level || !section.heading.shape.matches(&h.text, value) {
+            if !headings::opens(doc, &schema.core.sections, matches, i, j) {
                 continue;
             }
             let end = headings[i + 1..]

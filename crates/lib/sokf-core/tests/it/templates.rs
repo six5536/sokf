@@ -70,7 +70,7 @@ fn a_counter_counts_a_malformed_line_and_hides_it_from_nothing() {
             "flowchart LR\n  one[\"One\"]:::block\n  two[Two]:::block\n"
         ),
         vec![
-            "12: `two[Two]:::block` matches no rule of the fence; the nearest fails at column 5: expected `\"`, found `Two]:::block`; a line of this kind reads   one[\"One\"]:::block"
+            "12: `two[Two]:::block` matches no rule of the fence; the nearest fails at column 5: expected `\"`, found `Two]:::block`; a line of this kind reads `  one[\"One\"]:::block`"
         ]
     );
 }
@@ -83,7 +83,9 @@ fn a_stray_line_fails_a_strict_fence_and_passes_an_open_one() {
     let stray = "flowchart LR\n  one[\"One\"]:::block\n  %% a note\n";
     assert_eq!(
         fence(&tree, stray),
-        vec!["12: `%% a note` matches no rule of the fence; declare it or set `lines-open`"]
+        vec![
+            "12: `%% a note` matches no rule of the fence; a line of this kind reads `  one[\"One\"]:::block`; declare it or set `lines-open`"
+        ]
     );
     let open = tree_with(&FENCE_SCHEMA.replace(
         "        each:\n          lines:\n",

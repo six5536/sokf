@@ -6,7 +6,7 @@ members = ["crates/app/*", "crates/lib/*"]
 default-members = ["crates/app/sokf", "crates/lib/sokf-core"]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 authors = ["six5536 <10079653+six5536@users.noreply.github.com>"]
 edition = "2024"
 rust-version = "1.99.1"
@@ -27,7 +27,7 @@ globset = "0.4"
 ignore = "0.4"
 jmespath = "0.5"
 regex = "1.13"
-rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
+rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 # sokf-implements: CLI-7_AC-58
@@ -43,15 +43,21 @@ boon = "0.6"
 proptest = "1.11"
 
 # Internal crates
-sokf-core = { path = "crates/lib/sokf-core", version = "0.8.0" }
+sokf-core = { path = "crates/lib/sokf-core", version = "0.9.0" }
 
 # The harness plumbing (the harnesses, install and status, hooks, loop guard,
 # CLI conventions, atomic writes)
-agent-harness-adapter-core = "0.4.0"
+agent-harness-adapter-core = "0.5.0"
 
 # The schema engine, from crates.io
-tramlines-core = "0.5.0"
-tramlines-md = "0.5.0"
+tramlines-core = "0.6.0"
+tramlines-md = "0.6.0"
+
+# The comparison of two texts by their meaning. `javascript` compares
+# JavaScript and TypeScript, `command` runs the formatter or the command that
+# `[format]` names, `detect` finds the project's formatter, and `cache` keeps
+# the fingerprints in `/.sokf/cache/same-same/`.
+same-same = { version = "0.1.0", features = ["javascript", "command", "detect", "cache"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -72,7 +78,7 @@ similar_names = "allow"
 
 # Optimise release builds for size
 [profile.release]
-opt-level = "z" # optimise for size rather than speed
+opt-level = 2 # optimise for speed; 3 gains little for a longer build, and "z" is for a WASM build alone
 strip = true # strip the debug information and symbols
 lto = true # optimise at link time across all the crates
 panic = "abort" # abort on a panic, without the cost of unwinding

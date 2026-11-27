@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    RepoPath,
+    RepoPath, Severity,
     grammar::{
         CitedFrom, Dispatch, FmFormat, FormatSource, KeyScope as Scope, Lang, RegexCache, Shape,
         SokfSchema, States, Text, compile, glob_inside, load_grammar,
@@ -25,6 +25,7 @@ fn compile_text(text: &str) -> std::result::Result<SokfSchema, Vec<String>> {
         &RepoPath::parse("/k/schemas/s.md").unwrap(),
         "s",
     )
+    .map(|(schema, _)| schema)
     .map_err(|f| f.into_iter().map(|f| f.message).collect())
 }
 
@@ -42,7 +43,7 @@ fn lowers_cited_by() {
     let first = &c.cited_by[0];
     assert_eq!(first.from, CitedFrom::Types(vec!["Stories".into()]));
     assert_eq!(first.keys.as_deref(), Some("criteria"));
-    assert_eq!(first.common.severity, crate::Severity::Warning);
+    assert_eq!(first.common.severity, Severity::Warning);
     assert!(first.common.only.admits(&States(BTreeMap::from([(
         "scope".to_string(),
         vec!["public".to_string()]
@@ -57,7 +58,7 @@ fn lowers_cited_by() {
         CitedFrom::Types(vec!["Overview".into(), "Design".into()])
     );
     assert_eq!(second.keys, None);
-    assert_eq!(second.common.severity, crate::Severity::Error);
+    assert_eq!(second.common.severity, Severity::Error);
 }
 
 /// The `only` of a `links`, a `plans-paths`, and a `cited-by` entry is a
@@ -330,20 +331,20 @@ fn semantic_refusals() {
         ),
         (
             "line-limit: 0\nfrontmatter:\n  type: {const: X}\nsections:\n  - heading: { pattern: '^(?P<k>a)$', key: k, example: a }\n    level: 1\n    guidance: d\n    for-each-key-of: nope\n",
-            "`for-each-key-of` names no rule `nope`",
+            "`for-each-key-of` names no set `nope`",
         ),
         (
             "line-limit: 0\nfrontmatter:\n  type: {const: X}\nsections:\n  - heading: { pattern: '^(?P<k>a)$', key: k, example: a }\n    level: 1\n    guidance: d\n    for-each-key-of: bare\n    blocks:\n      - kind: prose\n        rule-id: bare\n        each: {pattern: '^b$', example: b}\n",
-            "`for-each-key-of` names rule `bare`, which captures no key",
+            "`for-each-key-of` names set `bare`, which holds no key",
         ),
         // sokf-tests: EXT-9_AC-5
         (
             "line-limit: 0\nfrontmatter:\n  type: {const: X}\ncited-by:\n  - from-type: Stories\n    keys: nope\nsections: []\n",
-            "`keys` names no rule `nope`",
+            "`keys` names no set `nope`",
         ),
         (
             "line-limit: 0\nfrontmatter:\n  type: {const: X}\ncited-by:\n  - from-type: Stories\n    keys: bare\nsections:\n  - heading: A\n    level: 1\n    guidance: d\n    blocks:\n      - kind: prose\n        rule-id: bare\n        each: {pattern: '^b$', example: b}\n",
-            "`keys` names rule `bare`, which captures no key",
+            "`keys` names set `bare`, which holds no key",
         ),
         (
             "line-limit: 0\nfrontmatter:\n  type: {const: X}\ncited-by:\n  - keys: a\nsections: []\n",
@@ -359,7 +360,7 @@ fn semantic_refusals() {
         ),
         (
             "line-limit: 0\nfrontmatter:\n  type: {const: X}\nsections:\n  - heading: { template: 'A ${k:int}', key: k, key-derives-from: {rule: nope, separator: _}, example: A 1 }\n    level: 1\n    guidance: d\n",
-            "`key-derives-from` names no rule `nope`",
+            "`key-derives-from` names no set `nope`",
         ),
         (
             "line-limit: 0\nfrontmatter:\n  type: {const: X}\nsections:\n  - heading: A\n    level: 1\n    guidance: d\n    blocks:\n      - kind: prose\n        each: {template: '${k:word}: ${}', key: k, key-derives-from: {from: code, separator: _}, example: 'X_1: y'}\n",
@@ -581,4 +582,53 @@ proptest::proptest! {
             }
         }
     }
+}
+
+/// A schema whose only findings are warnings compiles, and `compile`
+/// returns the warnings with it; an error of the lowering beside a warning
+/// drops the schema, and `compile` returns both.
+// sokf-tests: EXT-1_AC-5
+#[test]
+fn a_schema_with_only_warnings_compiles_with_them() {
+    let grammar = load_grammar().unwrap();
+    let regexes = RegexCache::new();
+    let registry = super::requirements();
+    let path = RepoPath::parse("/k/schemas/s.md").unwrap();
+    let warned = "line-limit: 0\ncurrent-links: ['^__Planned__: ']\nfrontmatter:\n  type: {const: Note}\nsections: []\n";
+    let (_, warnings) = compile(
+        &yaml::parse(warned, 1).unwrap(),
+        &grammar,
+        &registry,
+        &regexes,
+        &path,
+        "s",
+    )
+    .unwrap();
+    let keys: Vec<(Severity, &str)> = warnings
+        .iter()
+        .map(|f| (f.severity, f.criterion.as_str()))
+        .collect();
+    assert_eq!(keys, [(Severity::Warning, "SOKF_SCHEMA_110")]);
+    let broken = "line-limit: 0\ncurrent-links: ['^__Planned__: ']\nsections: []\n";
+    let findings = compile(
+        &yaml::parse(broken, 1).unwrap(),
+        &grammar,
+        &registry,
+        &regexes,
+        &path,
+        "s",
+    )
+    .unwrap_err();
+    let keys: Vec<(Severity, &str)> = findings
+        .iter()
+        .map(|f| (f.severity, f.criterion.as_str()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            (Severity::Error, "SOKF_SCHEMA_3"),
+            (Severity::Warning, "SOKF_SCHEMA_110")
+        ],
+        "{findings:?}"
+    );
 }

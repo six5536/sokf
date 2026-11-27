@@ -20,15 +20,43 @@ inputs:
 runs:
   using: composite
   steps:
+    # A job that names its tools uses only those, because mise refuses to install a tool
+    # while a tool that its backend uses and the mise files pin is missing, such as the
+    # sccache of the Rust pack for a cargo: tool.
     - name: Keep the tools in one folder
       shell: bash
+      env:
+        JOB_TOOLS: ${{ inputs.tools }}
       run: |
         TOOLS="${USERPROFILE:-$HOME}/.tools"
         {
           echo "MISE_DATA_DIR=$TOOLS/mise"
           echo "MISE_RUSTUP_HOME=$TOOLS/rustup"
           echo "npm_config_cache=$TOOLS/npm"
+          # npm writes a log of each run into its cache by default, which would change the
+          # cache of the tools in every job.
+          echo "npm_config_logs_dir=$RUNNER_TEMP/npm-logs"
           echo "MISE_DISABLE_TOOLS=${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}npm:@anthropic-ai/claude-code"
+          set -f
+          # MISE_ENABLE_TOOLS names each tool without its version, such as node of
+          # node@22, but keeps the scope of a package, such as npm:@scope/name.
+          # shellcheck disable=SC2086 # Each word of the list is a tool.
+          set -- $JOB_TOOLS
+          for tool do
+            shift
+            name="${tool%@*}"
+            case "${tool##*@}" in
+              */*) name="$tool" ;;
+            esac
+            if [ -z "${name##*:}" ]; then
+              name="$tool"
+            fi
+            set -- "$@" "$name"
+          done
+          if [ "$#" -gt 0 ]; then
+            IFS=,
+            echo "MISE_ENABLE_TOOLS=${MISE_ENABLE_TOOLS:+$MISE_ENABLE_TOOLS,}$*"
+          fi
         } >> "$GITHUB_ENV"
     - name: Restore the caches
       if: hashFiles('.github/actions/cache-restore/action.yml') != ''
